@@ -59,3 +59,7 @@ coverage/
 .cache/
 .temp/
 tmp/
+
+# ── Tooling / agent caches ───────────────────────────────────
+.codegraph/
+.omp/
