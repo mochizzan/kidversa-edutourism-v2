@@ -1149,125 +1149,6 @@ func TestInxSendText(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// wa.go — waReady / waSessionName
-// ---------------------------------------------------------------------------
-
-func TestInxWaReady(t *testing.T) {
-	s, _ := newTestServer(t) // default base: unroutable 127.0.0.1:1
-
-	t.Run("unreachable server", func(t *testing.T) {
-		s.cfg.OpenwaBaseURL = "http://127.0.0.1:1"
-		require.False(t, s.waReady())
-	})
-
-	t.Run("invalid base URL", func(t *testing.T) {
-		s.cfg.OpenwaBaseURL = "http://127.0.0.1:1/\nbad"
-		require.False(t, s.waReady(), "a request-construction error must read as not ready")
-	})
-
-	t.Run("server answers 503", func(t *testing.T) {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != "/api/health/ready" {
-				t.Errorf("probed %q, want /api/health/ready", r.URL.Path)
-			}
-			w.WriteHeader(http.StatusServiceUnavailable)
-		}))
-		t.Cleanup(srv.Close)
-		s.cfg.OpenwaBaseURL = srv.URL
-		require.False(t, s.waReady())
-	})
-
-	t.Run("server answers 200", func(t *testing.T) {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusOK)
-		}))
-		t.Cleanup(srv.Close)
-		s.cfg.OpenwaBaseURL = srv.URL
-		require.True(t, s.waReady())
-	})
-}
-
-func TestInxWaSessionName(t *testing.T) {
-	s, _ := newTestServer(t)
-
-	newNameServer := func(t *testing.T, respond http.HandlerFunc) string {
-		t.Helper()
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			want := "/api/sessions/" + s.cfg.OpenwaSession
-			if r.URL.Path != want {
-				t.Errorf("path = %s, want %s", r.URL.Path, want)
-			}
-			if r.Header.Get("X-API-Key") != s.cfg.OpenwaAPIKey {
-				t.Errorf("X-API-Key = %q, want %q", r.Header.Get("X-API-Key"), s.cfg.OpenwaAPIKey)
-			}
-			respond(w, r)
-		}))
-		t.Cleanup(srv.Close)
-		s.cfg.OpenwaBaseURL = srv.URL
-		return srv.URL
-	}
-
-	t.Run("returns the live session name", func(t *testing.T) {
-		newNameServer(t, func(w http.ResponseWriter, _ *http.Request) {
-			io.WriteString(w, `{"id":"kidversa-test","name":"Sesi Cerdas"}`)
-		})
-		s.cfg.OpenwaAPIKey = "wa-key"
-		name, ok := s.waSessionName()
-		require.True(t, ok)
-		require.Equal(t, "Sesi Cerdas", name)
-	})
-
-	t.Run("empty name falls back", func(t *testing.T) {
-		newNameServer(t, func(w http.ResponseWriter, _ *http.Request) {
-			io.WriteString(w, `{"id":"kidversa-test","name":""}`)
-		})
-		name, ok := s.waSessionName()
-		require.False(t, ok)
-		require.Equal(t, "", name)
-	})
-
-	t.Run("non-200 status falls back", func(t *testing.T) {
-		newNameServer(t, func(w http.ResponseWriter, _ *http.Request) {
-			w.WriteHeader(http.StatusNotFound)
-		})
-		name, ok := s.waSessionName()
-		require.False(t, ok)
-		require.Equal(t, "", name)
-	})
-
-	t.Run("malformed JSON falls back", func(t *testing.T) {
-		newNameServer(t, func(w http.ResponseWriter, _ *http.Request) {
-			io.WriteString(w, `<oops`)
-		})
-		_, ok := s.waSessionName()
-		require.False(t, ok)
-	})
-
-	t.Run("unreadable body falls back", func(t *testing.T) {
-		newNameServer(t, func(w http.ResponseWriter, _ *http.Request) {
-			w.Header().Set("Content-Length", "10")
-			w.WriteHeader(http.StatusOK)
-			io.WriteString(w, "short") // promises 10 bytes, sends 5
-		})
-		_, ok := s.waSessionName()
-		require.False(t, ok)
-	})
-
-	t.Run("unreachable server falls back", func(t *testing.T) {
-		s.cfg.OpenwaBaseURL = "http://127.0.0.1:1"
-		name, ok := s.waSessionName()
-		require.False(t, ok)
-		require.Equal(t, "", name)
-	})
-
-	t.Run("invalid base URL falls back without a request", func(t *testing.T) {
-		s.cfg.OpenwaBaseURL = "http://127.0.0.1:1/\nbad"
-		_, ok := s.waSessionName()
-		require.False(t, ok)
-	})
-}
-
-// ---------------------------------------------------------------------------
 // wa.go — handleWaStatus (GET /api/wa/status)
 // ---------------------------------------------------------------------------
 
@@ -1308,14 +1189,15 @@ func TestInxHandleWaStatus(t *testing.T) {
 			"an unreachable OpenWA must answer exactly {connected:false} — never WA_FAILED")
 	})
 
-	t.Run("ready OpenWA answers the live session and checked_at", func(t *testing.T) {
+	t.Run("ready session answers the live session and checked_at", func(t *testing.T) {
 		expectAdminAuth(mock)
+		s.invalidateWaID()
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			switch r.URL.Path {
-			case "/api/health/ready":
-				w.WriteHeader(http.StatusOK)
+			case "/api/sessions":
+				io.WriteString(w, `[{"id":"kidversa-test","name":"Sesi Cerdas","status":"ready"}]`)
 			case "/api/sessions/kidversa-test":
-				io.WriteString(w, `{"name":"Sesi Cerdas"}`)
+				io.WriteString(w, `{"id":"kidversa-test","name":"Sesi Cerdas","status":"ready"}`)
 			default:
 				t.Errorf("unexpected probe path %q", r.URL.Path)
 				w.WriteHeader(http.StatusNotFound)
@@ -1333,14 +1215,41 @@ func TestInxHandleWaStatus(t *testing.T) {
 		}, data, "the status envelope must carry the live session name and the clock snapshot")
 	})
 
-	t.Run("ready but session info fails falls back to the configured id", func(t *testing.T) {
+	t.Run("qr_ready is not connected", func(t *testing.T) {
 		expectAdminAuth(mock)
+		s.invalidateWaID()
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			switch r.URL.Path {
-			case "/api/health/ready":
-				w.WriteHeader(http.StatusOK)
+			case "/api/sessions":
+				io.WriteString(w, `[{"id":"kidversa-test","name":"Sesi Cerdas","status":"qr_ready"}]`)
+			case "/api/sessions/kidversa-test":
+				io.WriteString(w, `{"id":"kidversa-test","name":"Sesi Cerdas","status":"qr_ready"}`)
 			default:
-				w.WriteHeader(http.StatusInternalServerError)
+				t.Errorf("unexpected probe path %q", r.URL.Path)
+				w.WriteHeader(http.StatusNotFound)
+			}
+		}))
+		t.Cleanup(srv.Close)
+		s.cfg.OpenwaBaseURL = srv.URL
+
+		res := doReq(t, app, "GET", "/api/wa/status", "", adminH)
+		data := requireDataEnvelope(t, res).(map[string]any)
+		require.Equal(t, false, data["connected"])
+		require.Equal(t, "Sesi Cerdas", data["session"])
+	})
+
+	t.Run("ready session without a name falls back to the configured id", func(t *testing.T) {
+		expectAdminAuth(mock)
+		s.invalidateWaID()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/api/sessions":
+				io.WriteString(w, `[{"id":"kidversa-test","name":"kidversa-test","status":"ready"}]`)
+			case "/api/sessions/kidversa-test":
+				io.WriteString(w, `{"status":"ready"}`)
+			default:
+				t.Errorf("unexpected probe path %q", r.URL.Path)
+				w.WriteHeader(http.StatusNotFound)
 			}
 		}))
 		t.Cleanup(srv.Close)
@@ -1352,13 +1261,19 @@ func TestInxHandleWaStatus(t *testing.T) {
 			"connected":  true,
 			"session":    "kidversa-test",
 			"checked_at": "2026-01-02T03:04:05Z",
-		}, data, "session info is best-effort: fall back to OPENWA_SESSION")
+		}, data, "an empty session name falls back to OPENWA_SESSION")
 	})
 
-	t.Run("ready endpoint unhealthy answers connected:false", func(t *testing.T) {
+	t.Run("session read failure answers connected:false", func(t *testing.T) {
 		expectAdminAuth(mock)
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.WriteHeader(http.StatusServiceUnavailable)
+		s.invalidateWaID()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/api/sessions":
+				io.WriteString(w, `[{"id":"kidversa-test","name":"kidversa-test","status":"ready"}]`)
+			default:
+				w.WriteHeader(http.StatusInternalServerError)
+			}
 		}))
 		t.Cleanup(srv.Close)
 		s.cfg.OpenwaBaseURL = srv.URL
@@ -1390,24 +1305,27 @@ func inxWaitFrame(t *testing.T, sub *subscription, within time.Duration) Frame {
 // Stop must then reap the goroutine before the test ends.
 func TestInxStartWaWatcherPollsPublishesAndStops(t *testing.T) {
 	s, _ := newTestServer(t)
-	var hits atomic.Int32
+	var stateHits atomic.Int32
 	ticks := make(chan struct{}, 4)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/health/ready" {
+		switch r.URL.Path {
+		case "/api/sessions":
+			io.WriteString(w, `[{"id":"kidversa-test","name":"Kidversa"}]`)
+		case "/api/sessions/kidversa-test":
+			n := stateHits.Add(1)
+			select {
+			case ticks <- struct{}{}:
+			default:
+			}
+			if n == 1 {
+				io.WriteString(w, `{"status":"disconnected"}`) // baseline: down
+				return
+			}
+			io.WriteString(w, `{"status":"ready"}`) // transition: up
+		default:
 			t.Errorf("watcher probed unexpected path %q", r.URL.Path)
 			http.NotFound(w, r)
-			return
 		}
-		n := hits.Add(1)
-		select {
-		case ticks <- struct{}{}:
-		default:
-		}
-		if n == 1 {
-			w.WriteHeader(http.StatusServiceUnavailable) // baseline: down
-			return
-		}
-		w.WriteHeader(http.StatusOK) // transition: up
 	}))
 	t.Cleanup(srv.Close)
 	s.cfg.OpenwaBaseURL = srv.URL
@@ -1453,7 +1371,7 @@ func TestInxStartWaWatcherPollsPublishesAndStops(t *testing.T) {
 		time.Sleep(25 * time.Millisecond)
 	}
 	require.False(t, watcherAlive(), "the startWaWatcher goroutine must exit after Stop")
-	require.Equal(t, int32(2), hits.Load(), "exactly two polls must have run")
+	require.Equal(t, int32(2), stateHits.Load(), "exactly two session reads must have run")
 }
 
 // inxAllStacks dumps every goroutine stack, growing the buffer until the dump

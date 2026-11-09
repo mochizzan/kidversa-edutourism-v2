@@ -341,68 +341,28 @@ func (s *Server) handleWaSessionStart(c fiber.Ctx) error {
 // handleWaStatus answers 200 ALWAYS: reachable → {connected, session,
 // checked_at}; unreachable → {connected:false} — never WA_FAILED (02 §2b).
 func (s *Server) handleWaStatus(c fiber.Ctx) error {
-	if !s.waReady() {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*waCallTimeout)
+	defer cancel()
+	_, sess, err := s.waLoadSession(ctx)
+	if err != nil {
 		return ok(c, fiber.Map{"connected": false})
 	}
-	session := s.cfg.OpenwaSession
-	if name, ok := s.waSessionName(); ok {
-		session = name
+	session := sess.Name
+	if session == "" {
+		session = s.cfg.OpenwaSession
 	}
 	return ok(c, fiber.Map{
-		"connected":  true,
+		"connected":  sess.Status == "ready",
 		"session":    session,
 		"checked_at": s.now().UTC().Format(time.RFC3339),
 	})
 }
 
-// waReady probes OpenWA /api/health/ready with a5 s budget.
-func (s *Server) waReady() bool {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.cfg.OpenwaBaseURL+"/api/health/ready", nil)
-	if err != nil {
-		return false
-	}
-	req.Header.Set("X-API-Key", s.cfg.OpenwaAPIKey)
-	resp, err := s.http.Do(req)
-	if err != nil {
-		return false
-	}
-	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10))
-	resp.Body.Close()
-	return resp.StatusCode >= 200 && resp.StatusCode < 300
-}
-
-// waSessionName is the best-effort session info call (5 s); falls back to the
-// configured session id when OpenWA does not answer with a name.
-func (s *Server) waSessionName() (string, bool) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		s.cfg.OpenwaBaseURL+"/api/sessions/"+s.cfg.OpenwaSession, nil)
-	if err != nil {
-		return "", false
-	}
-	req.Header.Set("X-API-Key", s.cfg.OpenwaAPIKey)
-	resp, err := s.http.Do(req)
-	if err != nil {
-		return "", false
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", false
-	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
-	if err != nil {
-		return "", false
-	}
-	var info struct {
-		Name string `json:"name"`
-	}
-	if json.Unmarshal(body, &info) != nil || info.Name == "" {
-		return "", false
-	}
-	return info.Name, true
+// waConnected reports whether the configured session has a linked phone
+// (OpenWA status `ready`) — gateway health is a different question.
+func (s *Server) waConnected(ctx context.Context) bool {
+	_, sess, err := s.waLoadSession(ctx)
+	return err == nil && sess.Status == "ready"
 }
 
 // startWaWatcher polls OpenWA every5 s and publishes wa.changed {connected}
@@ -415,7 +375,7 @@ func (s *Server) startWaWatcher() {
 		for {
 			select {
 			case <-t.C:
-				up := s.waReady()
+				up := s.waConnected(context.Background())
 				if last != nil && *last == up {
 					continue
 				}
