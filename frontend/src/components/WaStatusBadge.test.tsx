@@ -2,9 +2,10 @@
  * WaStatusBadge (spec F-13 / FL-14): hidden for FAS, event-driven from
  * `wa.changed` SSE frames (immediate value signal — no 300ms refetch
  * window), `GET /api/wa/status` only on popover open with fetch-once
- * caching, `errors.INTERNAL` on failure, and the click opens the OpenWA
- * dashboard (host:8003) in a new tab. Real timers everywhere except the
- * SSE test, which fakes only setTimeout/setInterval per the sessions
+ * caching, `errors.INTERNAL` on failure. Click behaviour is role-gated: an SA
+ * click opens the connect modal, an ADMIN click is inert (badge + popover
+ * still work), and FAS never sees the badge. Real timers everywhere except
+ * the SSE test, which fakes only setTimeout/setInterval per the sessions
  * integration pattern (MSW + undici keep their real macrotasks).
  */
 import { describe, expect, it, vi } from 'vitest'

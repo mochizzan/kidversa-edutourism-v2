@@ -377,6 +377,12 @@ func TestWaConnectRoleGuard(t *testing.T) {
 		requireErrEnvelope(t, res, CodeForbiddenRole)
 	})
 
+	t.Run("POST is forbidden for FASILITATOR", func(t *testing.T) {
+		expectFASAuth(mock)
+		res := doReq(t, app, "POST", "/api/wa/session/start", "{}", hFAS(t, s))
+		requireErrEnvelope(t, res, CodeForbiddenRole)
+	})
+
 	t.Run("POST is allowed for SA", func(t *testing.T) {
 		expectSAAuth(mock, 0)
 		res := doReq(t, app, "POST", "/api/wa/session/start", "{}", hSABare(t, s))
