@@ -1,6 +1,44 @@
 # 00 — Scope
 
-Status: DRAFT (2026-10-09; adding test strategy + A4 fixed report; pending audit)
+Status: DRAFT (2026-10-12; audit spek 5 dimensi selesai; pembaruan konsistensi + notifikasi antd terpasang)
+
+## [PEMBARUAN 2026-10-12] Audit spek 5 dimensi — konsistensi + notifikasi antd
+
+> Penanda pembaruan: hasil audit 5 dimensi paralel (scope & acceptance,
+> tech stack & arsitektur, fitur & flows, data & error, indeks & pola)
+> per 2026-10-12. Perbaikan kontradiksi/keambiguan diterapkan langsung di
+> teks terkait; ketentuan BARU = notifikasi antd `notification` untuk
+> hasil aksi user (keputusan 46 — normatif di `02§3`, `03 F-17`, `08`)
+> + keputusan 47–50 (route readiness kanonik, persetujuan `oxlint`,
+> buku audit §4 non-binding, `DESIGN.md` non-binding). Rincian:
+> `07` Change 18 + section indeks pembaruan di `SPEC-INDEX.md`.
+
+## [PEMBARUAN 2026-10-12] Penutupan butir audit §4 — keputusan 51–72
+
+> Penanda pembaruan: 22 butir
+> `docs/audit/2026-10-11-spec-codebase-sync-audit.md` §4 dijawab user
+> (2026-10-12) dan dikunci sebagai keputusan 51–72 (lihat `SPEC-INDEX`).
+> Relevan berkas ini: reveal reset-code self-destruct (51); granularitas
+> star distribution (66). Rincian: `07` Change 19 + section indeks
+> pembaruan di `SPEC-INDEX.md`.
+
+## [PEMBARUAN 2026-10-11] Ketentuan Upload Baru
+
+> Penanda pembaruan: ketentuan upload terbaru (berkas ini sebelumnya
+> tidak memuat batasan upload). Berlaku untuk semua jenis upload di
+> seluruh sistem dan menggantikan ketentuan upload lama di berkas spec
+> lainnya.
+
+- **Ukuran maksimum: 50 MB** per berkas yang di-upload (foto, badge
+  program/topik, frame).
+- **Validasi: client side validation only** — pemeriksaan format dan
+  ukuran dilakukan client sebelum file dikirim; server TIDAK melakukan
+  validasi ukuran/format (tanpa hard cap server-side, tanpa server mime
+  sniff untuk validasi). PENGECUALIAN framing transport: body > 52 MB
+  (Fiber `BodyLimit` + nginx `client_max_body_size`) → 200 `VALIDATION`
+  — framing permintaan, bukan validasi file per-berkas (lihat 06 §5).
+- **Format yang diizinkan: jpg, jpeg, png, webp** (case-insensitive);
+  format lain (termasuk ico) ditolak client sebelum pengiriman.
 
 ## 1. Problem
 
@@ -43,8 +81,12 @@ to parents via WhatsApp (text + public links; no file attachments).
   report and gallery; WhatsApp delivery single + batch (text + 2 URLs,
   3–10 s random jitter, per-item status).
 - Reset-password code relay: hashed storage; dashboard shows masked code +
-  expiry countdown; plaintext reveal-on-demand (audited) + revoke.
-- Dashboards, overview, analytics (counts, star distribution, progress).
+  expiry countdown; plaintext reveal-on-demand (audited, single-shot
+  self-destruct — purged immediately after the first reveal, decision 51)
+  + revoke.
+- Dashboards, overview, analytics (counts; star distribution =
+  per-tenant global BB/MB/BSH/BSB + per-topic aggregate, decision 66 —
+  per-activity histogram out of MVP; progress).
 - Bilingual UI (Indonesian default + English). Report content stays in
   Indonesian.
 - Docker deployment: 4 services (`db`, `api`, `web`, `wa`), bindmount
@@ -75,7 +117,10 @@ to parents via WhatsApp (text + public links; no file attachments).
 
 - Stack locked: Go 1.26.6 + Fiber v3, Vite React TS, MariaDB 12.3 LTS
   (see `01-TECHSTACK.md`).
-- Minimal libraries only (4 backend + 9 frontend npm packages, listed in `01`).
+- Minimal libraries only (4 backend Go modules, listed in `01§3`, +
+  9 frontend npm packages, listed in `01§5`); test tooling is a
+  separately user-approved dependency set (`01§10.4`, decisions 26–27,
+  48).
 - Database: zero FK constraints (all references loose, app-enforced);
   snapshots/duplication preferred over strict normalisation; every domain
   row carries `tenant_id`.
@@ -132,9 +177,14 @@ to parents via WhatsApp (text + public links; no file attachments).
 - Frame: PNG/JPG/WebP overlay for photos, owned per tenant, linkable to 1+ programs.
 - Consent: parent photo permission per child per session (first decision wins).
 - Rapor: portfolio report per child per session per topic.
-- Envelope: `{data}` success vs `{error:{code,message}}` business failure,
-  always HTTP 200 (except 500).
-- X-Tenant-ID: request header carrying the client's active tenant;
-  compared against the JWT tenant claim (`TENANT_MISMATCH` on stale tab).
+- Envelope: `{data}` success vs `{error:{code,message}}` business
+  failure, always HTTP 200 (except 500); per-item WA results ride
+  INSIDE `data` (never a top-level `{error}` — see 04 FL-13).
+- Per-child prefix `P`: shorthand for
+  `/api/sessions/:sid/topics/:stid/children/:cid` (used in `02`–`06`
+  and `08`); every `P` op is membership-gated (decision 18).
+- X-Tenant-ID: request header carrying the client's active tenant; for
+  NON-SA members it must match the JWT tenant claim (`TENANT_MISMATCH`
+  on stale tab); SA may point at any active tenant (switcher semantics).
 - Idempotency-Key: `X-Idempotency-Key` header on mutating POSTs listed in
-  `02§2b`; replay returns the original result without a second side-effect.
+  `02§2`; replay returns the original result without a second side-effect.

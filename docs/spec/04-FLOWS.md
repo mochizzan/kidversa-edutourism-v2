@@ -1,6 +1,43 @@
 # 04 — Flows
 
-Status: DRAFT (2026-10-09; adding test strategy + A4 fixed report; pending audit)
+Status: DRAFT (2026-10-12; audit spek 5 dimensi selesai; pembaruan konsistensi + notifikasi antd terpasang)
+
+## [PEMBARUAN 2026-10-12] Audit spek 5 dimensi — konsistensi + notifikasi antd
+
+> Penanda pembaruan: hasil audit 5 dimensi paralel (scope & acceptance,
+> tech stack & arsitektur, fitur & flows, data & error, indeks & pola)
+> per 2026-10-12. Perbaikan kontradiksi/keambiguan diterapkan langsung di
+> teks terkait; ketentuan BARU = notifikasi antd `notification` untuk
+> hasil aksi user (keputusan 46 — normatif di `02§3`, `03 F-17`, `08`)
+> + keputusan 47–50 (route readiness kanonik, persetujuan `oxlint`,
+> buku audit §4 non-binding, `DESIGN.md` non-binding). Rincian:
+> `07` Change 18 + section indeks pembaruan di `SPEC-INDEX.md`.
+
+## [PEMBARUAN 2026-10-12] Penutupan butir audit §4 — keputusan 51–72
+
+> Penanda pembaruan: 22 butir
+> `docs/audit/2026-10-11-spec-codebase-sync-audit.md` §4 dijawab user
+> (2026-10-12) dan dikunci sebagai keputusan 51–72 (lihat `SPEC-INDEX`).
+> Relevan berkas ini: FL-03 (51); FL-04 (59/62); FL-06 (57); FL-07/FL-08
+> (60/61); FL-12 (63); FL-13 (64); FL-16 (67). Rincian: `07` Change 19 +
+> section indeks pembaruan di `SPEC-INDEX.md`.
+
+## [PEMBARUAN 2026-10-11] Ketentuan Upload Baru
+
+> Penanda pembaruan: seluruh perubahan ketentuan upload per 2026-10-11
+> ditandai heading `[PEMBARUAN 2026-10-11]` agar mudah ditemukan.
+> Ketentuan upload lama di berkas ini (≤2 MB untuk badge/frame, ≤10 MB
+> untuk foto, validasi mime/ukuran server-side) DICABUT dan DIGANTIKAN
+> ketentuan di bawah ini.
+
+- **Ukuran maksimum: 50 MB** per berkas yang di-upload (foto, badge
+  program/topik, frame).
+- **Validasi: client side validation only** — pemeriksaan format dan
+  ukuran dilakukan client sebelum file dikirim; server TIDAK melakukan
+  validasi ukuran/format (tanpa hard cap server-side, tanpa server mime
+  sniff untuk validasi).
+- **Format yang diizinkan: jpg, jpeg, png, webp** (case-insensitive);
+  format lain (termasuk ico) ditolak client sebelum pengiriman.
 
 Canonical pipeline:
 
@@ -52,7 +89,7 @@ refetch (no poll).
 active? tenant active (or SA)? → bcrypt compare → access 15 min
 (`sub,role,tenant`) + refresh 7 d jti → whitelist row → `Set-Cookie
 refresh_token HttpOnly Path=/ SameSite=Lax (+Secure prod)`. Returns 200
-`{data:{user,tenant}}`. Client: access memory-only; tenant
+`{data:{access,user,tenant}}` (`access` = access JWT string). Client: access memory-only; tenant
 `localStorage kv-tenant` + header; SA switcher defaults latest tenant,
 `POST /api/auth/switch-tenant {tenant_id}` validates. Refresh: 200 envelope
 `INVALID_TOKEN` → `POST /api/auth/refresh` (cookie) → rotate
@@ -60,7 +97,8 @@ refresh_token HttpOnly Path=/ SameSite=Lax (+Secure prod)`. Returns 200
 `POST /api/auth/logout` revokes jti. Wrong password → 200
 `INVALID_CREDENTIALS`; inactive → 200 `ACCOUNT_INACTIVE`; member of
 inactive tenant → 200 `TENANT_INACTIVE`; stale-tab write to previous
-tenant → 200 `TENANT_MISMATCH` (client reloads context, re-switch).
+tenant by a NON-SA member → 200 `TENANT_MISMATCH` (client reloads
+context, re-switch; SA with a valid tenant header is always accepted).
 Realtime (round 7): login opens no stream by itself (`StreamGate` opens
 `GET /api/stream` on authenticated layout mount); logout closes the
 tab's stream (handshake jti revoked → any reconnect attempt gets 200
@@ -76,12 +114,15 @@ reconnects the stream (missed while tab asleep → next write/refetch gets
 `{data:{sent:true}}`. If user exists: 8-char code via `crypto/rand`,
 store `code_hash=SHA256`, `code_plain`, `expires_at` 15 min, single-use;
 SMTP attempt. `GET /api/reset-tokens` (SA all / ADMIN own-tenant) lists
-`{code_masked:"***AB", expires_at, seconds_left, user, revoked}` (EVENT-
+`{id, code_masked:"***AB", expires_at, seconds_left, revoked,
+mail_failed, user:{id,name,email}}` (EVENT-
 DRIVEN round 7: `reset.changed` → refetch list; `TokenCountdown` ticks
 down locally 1 s from `expires_at` — no 5 s poll; the public forgot page shows only
 "check email / ask admin", no countdown — it cannot call the authenticated
 list endpoint); `?reveal=1` / `POST /api/reset-tokens/:id/reveal` returns
-`code_plain` once (audit-logged); `POST /api/reset-tokens/:id/revoke` voids. Reset
+`code_plain` ONCE then PURGES it — single-shot self-destruct
+(audit-logged; decision 51; subsequent reveal → 200 `VALIDATION`,
+masked only); `POST /api/reset-tokens/:id/revoke` voids. Reset
 `POST /api/auth/reset {email,code,new_password}` → hash compare
 constant-time → bcrypt new → revoke ALL refresh + clear `code_plain`,
 set `used_at`. Expired → 200 `RESET_EXPIRED`; used/revoked → 200
@@ -91,13 +132,22 @@ on access. SMTP down: row still listed, admin reveals + relays manually.
 ## FL-04 Program → Topik → Kegiatan master [ADMIN/SA]
 
 CRUD `/api/programs|/topics|/activities` + query filters. Validate names*;
-badge both-or-neither (image PNG/JPG/WebP ≤2 MB) else 200 `VALIDATION`;
+badge both-or-neither else 200 `VALIDATION` (image JPG/JPEG/PNG/WebP
+≤50 MB — client side validation only, Pembaruan 2026-10-11);
 topic needs program*, activity needs program*+topic*. Badge files
-`uploads/<tenant_id>/badges/`. Delete any time (snapshot isolation);
-delete ALSO removes the badge file from disk in the same delete scope
-(crash-mid-delete orphans swept hourly, never announced).
-Eligible iff ≥1 topic and each ≥1 activity; else picker hides with reason,
-direct session-create → 200 `PROGRAM_INCOMPLETE`. Cross-tenant id → 200
+`uploads/badges/<tenant_id>/` (decision 33, tenant-di-luar — canonical in 05§8). Delete any time (snapshot isolation);
+delete ALSO removes the badge file from disk in the same delete scope,
+ALWAYS — no share-check (binding, decision 59: the badge belongs to its
+master; old sessions stay intact except the badge image, which the
+report omits via the badge-less rule; deleting a program/topic already
+used by ≥1 session requires typed-text confirmation showing the
+affected session count — decision 59; crash-mid-delete orphans swept
+hourly, never announced). Program delete also CASCADES its master
+topics + kegiatan + link rows in one Tx (decision 62).
+Eligible iff ≥1 topic and each ≥1 activity AND the program + its topics
+are `is_active` (decision 57); else picker shows it DISABLED with
+reason (not hidden — decision 57), direct session-create →
+200 `PROGRAM_INCOMPLETE`. Cross-tenant id → 200
 `NOT_FOUND` (no leak). Realtime (round 7): every master CRUD publishes
 `program/topic/activity.changed`; other tabs' lists + pickers refetch —
 admin B sees admin A's new program without reload (the motivating case).
@@ -105,8 +155,9 @@ admin B sees admin A's new program without reload (the motivating case).
 ## FL-05 Mission bank + Frame [ADMIN/SA]
 
 Mission `POST /api/missions {program*,name*,body*,topic_ids[1+]}` (same
-tenant). Frame `POST /api/frames` multipart (PNG/JPG/WebP ≤2 MB, ICO rejected → 200 `VALIDATION`) + `name*` + `program_ids[1+]` → `uploads/<tenant>/frames/`.
-Both LIVE (resolved at pick/capture; picks snapped). Update/delete follow the master shape (`PATCH` validates same rules → 200 `VALIDATION` on bad mime/size/empty name; unknown/cross-tenant id → 200 `NOT_FOUND`; terminal = updated row or deleted + file swept). Realtime (round 7):
+tenant). Frame `POST /api/frames` multipart (JPG/JPEG/PNG/WebP ≤50 MB — client side validation only, Pembaruan 2026-10-11) + `name*` + `program_ids[1+]` → `uploads/frames/<tenant_id>/` (decision 33, tenant-di-luar — canonical in 05§8).
+Both LIVE (resolved at pick/capture; mission name/body render LIVE from
+the bank — `report_missions` snaps are history-only, decision 56). Update/delete follow the master shape (`PATCH` validates same rules → 200 `VALIDATION` on empty name (format/size = client side only, Pembaruan 2026-10-11); unknown/cross-tenant id → 200 `NOT_FOUND`; terminal = updated row or deleted + file swept). Realtime (round 7):
 mission/frame CRUD publishes `mission.changed` / `frame.changed`; open
 pickers + capture frame lists refetch.
 
@@ -115,7 +166,8 @@ pickers + capture frame lists refetch.
 Validate name*, age* int (1–10 ok; 11–15 needs `age_confirmed=true` via
 modal; else 200 `VALIDATION`), school* free text, mother name* + WA*
 (digits → `+62…`), father/guardian optional (same norm), tenant auto.
-Deactivate → excluded from pickers/creates; history + public report stay.
+Deactivate → shown DISABLED with reason in pickers (not hidden —
+decision 57), excluded from creates; history + public report stay.
 Hard delete (typed confirm): removes members, assessments, photo rows +
 disk, narratives, mission picks, consent/public rows (links revoked);
 `wa_outbox` retained; masters untouched. Invalid WA → 200 `VALIDATION`.
@@ -124,12 +176,14 @@ Realtime (round 7): child CRUD/activate/deactivate/delete publishes
 revoked link + `link.revoked` on each revoked token's public stream
 (same tail as session-wipe revoke — open parent pages show
 "link invalid" + close); other tabs' lists + pickers refetch (deactivated child
-vanishes from pickers without reload).
+goes DISABLED with reason in pickers without reload — decision 57).
 
 ## FL-07 Session create (Draft) [ADMIN/SA]
 
 Client picks eligible program → meta (name*, desc, date* past/present/future
-allowed — backdate permitted, format-only validation; start/end blank=24 h with end>start check, location*) → groups[] OPTIONAL
+allowed — backdate permitted, format-only validation; start/end
+BOTH-OR-NEITHER (decision 61: one without the other → 200 `VALIDATION`;
+both empty → NULL = all-day; both set → end>start check), location*) → groups[] OPTIONAL
 (round 5: missing/empty allowed → Draft with zero groups; groups added
 later; when present: name + active
 owner + active children, dedup client+server). `POST /api/sessions` +
@@ -151,10 +205,11 @@ lists refetch.
 
 - Open: `POST /api/sessions/:id/open` allowed from DRAFT only
   (already-OPENED → 200 `{data:{status:"OPENED", already:true}}`;
-  on FINISHED → 200 `SESSION_LOCKED`); needs
-  every group with an active owner (else 200 `GROUP_WITHOUT_FACILITATOR` +
-  list) AND every group non-empty (else 200 `VALIDATION` + list) AND at
-  least 1 group exists (empty Draft must add groups before open).
+  on FINISHED → 200 `SESSION_LOCKED`); DETERMINISTIC gate order
+  (decision 60): (1) ≥1 group exists AND every group non-empty
+  (else 200 `VALIDATION` + list — empty-group check FIRST) AND (2)
+  every group with an active owner (else 200 `GROUP_WITHOUT_FACILITATOR`
+  + list). Empty Draft must add groups before open.
   Draft→Opened via `UPDATE … WHERE status='DRAFT'`; loser → 200
   `STATE_CONFLICT` (publishes nothing). Winner publishes
   `session.status` (round 7); other tabs refetch detail + status chip.
@@ -164,8 +219,8 @@ lists refetch.
   Snapshot names/dates/program immutable (200 `SESSION_LOCKED`).
   Removing assessed child deletes their session assessments silently.
   Every group/member/owner mutation publishes `group.changed` /
-  `member.changed` (round 7); member-add also recomputes the
-  `copy_available` hint so other tabs' copy modals stay accurate.
+  `member.changed` (round 7); member add AND member remove recompute
+  the `copy_available` hint so other tabs' copy modals stay accurate.
 - Finish: `POST /api/sessions/:id/finish` (partial allowed, warn list). Opened→Finished
   (guarded update; winner publishes `session.status`). Stars/notes frozen; photos free.
 - Reopen (ADMIN/SA): `POST /api/sessions/:id/reopen` → Opened (writes resume; publishes `session.status`).
@@ -190,7 +245,9 @@ lists refetch.
 `PUT /api/sessions/:sid/topics/:stid/children/:cid/activities/:said
 {stars:1-4, note?}` (prefix P, no `:gid` — ownership resolved server-side;
 partial ok). Checks: session Opened? caller is owner (via membership) or
-ADMIN/SA? → upsert (single-row atomic, LWW accepted).
+ADMIN/SA? group has an active owner? → upsert (single-row atomic, LWW
+accepted); group without active owner (e.g. owner deactivated after
+open) → 200 `GROUP_WITHOUT_FACILITATOR` (03 F-08 / 06 E14).
 Client StarInput BB–BSB + per-card state + progress. Derived: topic
 complete ⇔ all activities starred → badge (if defined); all topics →
 program badge (values ignored). Finished → 200 `SESSION_LOCKED`
@@ -212,14 +269,17 @@ Capture `PhotoCapture` (portrait, frame preview, canvas 9:16 fuse) →
 client holds a TRANSIENT local preview (blob URL, labelled
 "mengunggah…", NOT in gallery, NOT candidate-able) →
 `POST /api/sessions/:sid/topics/:stid/children/:cid/photos` multipart +
-Idempotency-Key (prefix P; frame optional, program-linked only). Server: consent → mime sniff →
-≤10 MB → Tx `COUNT(*) … FOR UPDATE` (<10 else 200 `PHOTO_LIMIT`) → write
-file durable FIRST (temp + `fsync` + atomic rename into
+Idempotency-Key (prefix P; frame optional, program-linked only). Pembaruan
+2026-10-11 (client side validation only): the client checks
+jpg/jpeg/png/webp ≤50 MB before send; the server does not validate
+mime/size. Server: consent →
+write file durable FIRST (temp + `fsync` + atomic rename into
 `<tenant_id>/<session_id>/<stid>/<child_id>/<rand32hex>.<ext>`, numeric
-IDs, ext from sniffed mime) → row commit in the same durable step (a row
-without its file, or a file without its row, NEVER becomes visible) →
-200 `{data:{photo}}` → publish `photo.changed` (signal only — no bytes,
-only after durability; never on intent, never on preview). Upload same
+IDs, ext from the client-declared type) → ONE Tx (`COUNT(*) … FOR UPDATE` (<10 else
+200 `PHOTO_LIMIT`) + INSERT row) → publish `photo.changed` (signal only —
+no bytes, only after durability; never on intent, never on preview) →
+200 `{data:{photo}}` — a row without its file, or a file without its row,
+NEVER becomes visible. Upload same
 endpoint as-is. Client on 200: drops the local preview, waits for
 `photo.changed` (own signal included) → refetch `GET P/photos` →
 renders gallery `<img src="/uploads/…">` from SERVER bytes. No success
@@ -247,7 +307,11 @@ Resend after decision → 200 `{data:{token, decision, resent:false}}`
 wins over decided — a decided link on a FINISHED session returns
 `SESSION_LOCKED`, never `{resent:false}`.
 Same idem-key replay → original envelope.
-FAS sees status only. Parent (no auth):
+The consent wire item is ONE shape for ALL roles (02§2b / contracts):
+`{child_id, child_name, group_name, status, respondent_name,
+responded_at, consent_url?}` — `consent_url` present while PENDING for
+all roles INCLUDING FAS; "FAS sees status only" means FAS cannot SEND
+(send/resend action hidden, decision 12), NOT field redaction. Parent (no auth):
 `GET /public/consent?token=` summary → submit `{token,decision,
 respondent_name}` → first-wins `UPDATE … WHERE PENDING`; repeat returns
 200 `{data:{decision, already:true}}` (idempotent success). Setuju unlocks
@@ -268,8 +332,9 @@ that token's stream (page shows recorded state without refresh).
 
 `POST P/narrative` (Idempotency-Key; full path
 `/api/sessions/:sid/topics/:stid/children/:cid/narrative`): gather
-snapshot names + stars + notes → render `system.md` + `user.md`
-(`strings.Replace`, no HTML-escape of prompt) → `POST
+snapshot names + stars + notes → render `user.md`
+(`strings.Replace`, no HTML-escape of prompt) + paste `system.md`
+VERBATIM as system instruction (no placeholders — decision 63) → `POST
 https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent`
 body `{contents:[{parts:[{text: rendered_prompt}]}]}` + headers
 `x-goog-api-key` + `Content-Type: application/json` (15 s timeout;
@@ -285,10 +350,17 @@ Empty set → 200 `NOTHING_TO_NARRATE`. Failure → 200 `AI_FAILED`
 photo `photo.changed` + `gallery.changed`); manual PATCH publishes
 the same pair; other tabs refetch `GET P/narrative`.
 
-## FL-13 Report compose → export → links → WA (link-only)
+## FL-13 Report compose → export → links → WA (link-only) [FAS own-groups; ADMIN all-tenant; SA active-tenant]
 
-Gate `GET P/readiness` → blocked 200 `REPORT_INCOMPLETE` + missing
-list until all starred. Compose: `ReportView` (plain CSS), mission picker
+Gate: the CLIENT readiness UI reads `GET P/readiness` and blocks compose
+until all starred; the server-side 200 `REPORT_INCOMPLETE` + missing
+list fires on the SEND paths — `POST P/send-report` + batch items
+(per-topic, others still send; 03 F-12) — AND on public-link creation
+— `POST P/public-links` is rejected entirely while incomplete
+(decision 64: an incomplete report can never have a public link; the
+parent never sees an incomplete report) — while `GET P/report` is never
+gated (returns `complete` + `missing`; admin/FAS/SA previews stay
+open). Compose: `ReportView` (plain CSS), mission picker
 `PUT P/missions {mission_ids[]}` (Tx replace, ≤4 else 200 `MISSION_LIMIT`),
 narrative (FL-12), candidate indicator, derived badges, attestation:
 LIVE owner name (binding, user decision 2026-10-08 option A — same as
@@ -302,12 +374,18 @@ topic too: batch items for incomplete topics return per-item 200
 `REPORT_INCOMPLETE` (others send). Links `POST P/public-links {kind}`
 (Idempotency-Key) → `/view/report?token=`
 + `/view/gallery?token=`; `POST /api/public-links/:token/revoke|
-regenerate` (regenerate revokes old, one Tx). WA single `POST P/send-report
+regenerate` (regenerate revokes old, one Tx; ADMIN caller must belong
+to the link's tenant — SA any, cross-tenant → 200 `NOT_FOUND` no-leak,
+decision 65). WA single `POST P/send-report
 {to}` (if supplied, `to` must match one of the child's registered
 numbers else 200 `VALIDATION`) / batch `POST /api/sessions/:sid/batch-send {items[]}` (per-item `to` same rule; plus
 `X-Idempotency-Key` header; max 10, jitter 3–10 s): render `wa_report.md` + 2 URLs → `send-text` →
-per-item `{status, message_id?, code?}` + `wa_outbox` row. No file bytes
-touch the server. Failures 200 `WA_FAILED` per item + URL-copy fallback.
+per-item `{status, message_id?, code?}` + `wa_outbox` row (single send
+returns the SAME per-item status INSIDE `data`, e.g.
+`{data:{status:"FAILED",code:"WA_FAILED",…}}` — per-item status always
+lives in `data`, never a top-level `{error}`). No file bytes
+touch the server. Failures → 200 per item with
+`{data:{status:"FAILED",code:"WA_FAILED",…}}` + URL-copy fallback.
 Realtime (round 7): mission replace-set publishes `mission-pick.changed`;
 public-link create/revoke/regenerate publishes `report-link.changed`;
 batch WA publishes ONE `report-link.changed` per session after the batch
@@ -319,24 +397,29 @@ open parent pages receive public `report.changed` / `gallery.changed`
 
 `GET /api/dashboard/overview|analytics?period=7d|30d|all` (tenant from
 `X-Tenant-ID`; SA `?tenant=` override). Aggregates: children, sessions
-open/finished, reports issued (= narratives + REPORT links), progress/
+open/finished, reports issued (= narratives + ACTIVE REPORT links,
+`revoked_at IS NULL` — the SA tenant-summary counts ALL REPORT links
+instead, intentional split per 02§2b), progress/
 session, pending approvals; star distribution; facilitator activity.
 Plain SQL, no OLAP; EVENT-DRIVEN round 7: server aggregator ticks 5–10 s
 (not per-mutation) and publishes `stats.changed`; client refetches on
-signal OR when data older than 60 s at mount/focus (stale-while-render
-guard — NOT an interval poll; no timer fires without mount, focus, or
-signal). DB slow → 200 `DB_UNAVAILABLE` +
+SSE signal only (no data-age guard, no mount/focus refetch, and NOT an
+interval poll; no timer fires without a signal). DB slow → 200 `DB_UNAVAILABLE` +
 Retry.
 
-WA status badge [SA/ADMIN] (round 6): dashboard mounts `WaStatusBadge`
-→ EVENT-DRIVEN round 7: server polls OpenWA `/api/health/ready` +
-session info (5 s each) and publishes `wa.changed {connected}`; badge
-renders `{connected}` directly and calls `GET /api/wa/status` only for
-detail on demand (no 30 s client poll) → green (`connected:true`) / red
+WA status badge [SA/ADMIN] (round 6; connect flow updated 2026-11-09):
+dashboard mounts `WaStatusBadge` → EVENT-DRIVEN round 7: server polls the
+configured OpenWA session every 5 s and publishes `wa.changed
+{connected}` (true only when the session is `ready`); badge renders
+`{connected}` directly and calls `GET /api/wa/status` only for detail on
+demand (no 30 s client poll) → green (`connected:true`) / red
 (`connected:false`, incl. OpenWA unreachable — status only, never
-`WA_FAILED`); click opens OpenWA dashboard `:8003` in a new tab. Activation/QR pairing
-happens ONLY in OpenWA dashboard (API key minted there, stored in `.env`
-as `OPENWA_API_KEY`, `api` recreated after) — never in our SPA.
+`WA_FAILED`). SA click opens the connect modal: **Open OpenWA** opens the
+OpenWA dashboard `:8003` in a new tab; **Connect Directly** starts the
+session (`POST /api/wa/session/start`, SA-only) and shows the QR (`GET
+/api/wa/session`, SA-only) until `ready`, then Connected + linked phone.
+ADMIN click is inert (badge and popover still work). The OpenWA API key
+never leaves the server; the QR lives only in the open modal.
 
 ## FL-15 Public JSON + pages (no login)
 
@@ -345,7 +428,9 @@ JSON (limiter, 200): `GET /public/report?token=`, `GET
 `POST /public/consent/respond`. Revoked/unknown → 200 `TOKEN_INVALID`
 (identical shape). Pages (SPA, no auth): `/view/report?token=`,
 `/view/gallery?token=`, `/view/consent?token=` fetch JSON above via
-`useSearchParams`. Tokens 32-byte hex (`crypto/rand`); limiter per IP.
+`useSearchParams`. Tokens 32-byte hex (`crypto/rand`); limiter per
+IP+token (60/min per `GET /public/*`, 10/min per
+`POST /public/consent/respond` — 01§2).
 EVENT-DRIVEN round 7: each open `/view/*` page also opens
 `GET /public/stream?token=` (same token, scope-locked); server
 `report/gallery.changed` → page refetches its JSON (bytes from server
@@ -362,14 +447,21 @@ add succeeds) calls `GET
 modal "Salin nilai dari Sesi X?" with dropdown (default latest FINISHED,
 fallback latest date) + Ya/Tidak. Tidak = stop (no copy, member stays).
 Ya → `POST /api/sessions/:sid/children/:cid/copy {source_session_id}`
-(Idempotency-Key) → server: source session/rows deleted mid-copy →
-200 `NOT_FOUND`, Tx rolled back (no half-copy); same-tenant + same-program check (else 200
-`VALIDATION`); inactive child → 200 `CHILD_INACTIVE`; target FINISHED →
-200 `SESSION_LOCKED` for stars/notes/narratives/missions (photo part may
-still proceed); match topics by master `topic_id`, activities by master
+(Idempotency-Key) → server: source already gone before the copy Tx →
+200 `NOT_FOUND` (nothing copied); source wiped MID-execution (after
+the pre-Tx probe — zero-FK) → 200 with the ACTUAL (possibly partial)
+counts, accepted race (decision 67) — re-run copies the remainder;
+source unknown or
+cross-tenant → 200 `NOT_FOUND` (no-leak); same tenant but different
+program → 200 `VALIDATION`; inactive child → 200 `CHILD_INACTIVE`; target FINISHED →
+200 `SESSION_LOCKED` for the ENTIRE copy (stars/notes/narratives/
+missions AND photos all blocked — the photo part never runs, nothing is
+copied); match topics by master `topic_id`, activities by master
 `activity_id`; fill-empty only (existing target stars kept; narratives
 only-if-empty; missions only-if-zero-and-linked; photos only-if-target-
-topic-zero, `io.Copy` files to new paths, cap 10 in Tx); `assessor_id` /
+topic-zero, `io.Copy` files to new paths, cap 10 in Tx; the candidate
+FLAG never transfers — the candidate photo copies as a normal photo,
+decision 67); `assessor_id` /
 `generated_by` = copier; consent/links/outbox never copied; badges
 recompute. Response 200
 `{data:{copied:{assessments, narratives, missions, photos}, skipped:{...}}}`;
@@ -409,7 +501,7 @@ Fiber handler → mock DB (sqlmock) → assertion → coverage report
 
 ```text
 Test trigger → go test -tags=integration → httptest server →
-Fiber app → real DB (dockertest) → HTTP request →
+Fiber app → mock DB (sqlmock — no real DB, no dockertest) → HTTP request →
 assertion → coverage report
 ```
 
@@ -442,7 +534,7 @@ user-event interaction → assertion → coverage report
 - API client (envelope handling, retry logic)
 - SSE stream parser
 
-**Structure:** `src/**/*.test.tsx` (co-located with source)
+**Structure:** `src/**/*.test.ts(x)` (co-located with source)
 
 **Commands:**
 - `vitest run` (unit only)
@@ -479,8 +571,8 @@ user-event interaction → MSW API mock → assertion → coverage report
 | Integration test | `go test` + `httptest` + `sqlmock` | `vitest` + `msw` + `@testing-library/react` |
 | Coverage target | ≥90% business logic, 100% critical | ≥90% components, 100% critical |
 | Critical paths | auth, validation, idempotency, tenant isolation, envelope, SSE | auth context, forms, report export, SSE, envelope |
-| Structure | `internal/<domain>_test.go` | `src/**/*.test.tsx` |
-| Pass criteria | all pass + coverage + vet + gofmt | all pass + coverage + tsc + eslint |
+| Structure | `internal/<domain>_test.go` | `src/**/*.test.ts(x)` |
+| Pass criteria | all pass + coverage + vet + gofmt | all pass + coverage + tsc + oxlint |
 
 ### FL-17.6 Test Execution
 
@@ -488,10 +580,11 @@ user-event interaction → MSW API mock → assertion → coverage report
 - Backend: `go test ./internal/... -v -cover` (unit only)
 - Frontend: `vitest run` (unit only)
 
-**CI pipeline:**
+**Local coverage run (on demand — NO CI pipeline: CI is out of MVP scope,
+no CI step exists or is required):**
 - Backend: `go test ./... -v -coverprofile=coverage.out` + `go tool cover -html=coverage.out`
-- Frontend: `vitest run --coverage` + `tsc --noEmit` + `eslint`
+- Frontend: `vitest run --coverage` + `tsc --noEmit` + `oxlint`
 
-**Integration tests (nightly or on-demand):**
-- Backend: `go test ./internal/integration/... -v -tags=integration`
+**Integration tests (on-demand):**
+- Backend: `go test ./internal/integration/... -v -tags=integration` (sqlmock — mock DB, never a real database)
 - Frontend: `vitest run --config vitest.integration.config.ts`

@@ -1,6 +1,44 @@
 # 05 — Data
 
-Status: DRAFT (2026-10-09; adding test strategy + A4 fixed report; pending audit)
+Status: DRAFT (2026-10-12; audit spek 5 dimensi selesai; pembaruan konsistensi + notifikasi antd terpasang)
+
+## [PEMBARUAN 2026-10-12] Audit spek 5 dimensi — konsistensi + notifikasi antd
+
+> Penanda pembaruan: hasil audit 5 dimensi paralel (scope & acceptance,
+> tech stack & arsitektur, fitur & flows, data & error, indeks & pola)
+> per 2026-10-12. Perbaikan kontradiksi/keambiguan diterapkan langsung di
+> teks terkait; ketentuan BARU = notifikasi antd `notification` untuk
+> hasil aksi user (keputusan 46 — normatif di `02§3`, `03 F-17`, `08`)
+> + keputusan 47–50 (route readiness kanonik, persetujuan `oxlint`,
+> buku audit §4 non-binding, `DESIGN.md` non-binding). Rincian:
+> `07` Change 18 + section indeks pembaruan di `SPEC-INDEX.md`.
+
+## [PEMBARUAN 2026-10-12] Penutupan butir audit §4 — keputusan 51–72
+
+> Penanda pembaruan: 22 butir
+> `docs/audit/2026-10-11-spec-codebase-sync-audit.md` §4 dijawab user
+> (2026-10-12) dan dikunci sebagai keputusan 51–72 (lihat `SPEC-INDEX`).
+> Relevan berkas ini: purge reset-code saat reveal pertama (51); CHECK
+> jam sesi both-or-neither (61); snaps misi = riwayat (56); catatan
+> backup manual MVP (71). Rincian: `07` Change 19 + section indeks
+> pembaruan di `SPEC-INDEX.md`.
+
+## [PEMBARUAN 2026-10-11] Ketentuan Upload Baru
+
+> Penanda pembaruan: seluruh perubahan ketentuan upload per 2026-10-11
+> ditandai heading `[PEMBARUAN 2026-10-11]` agar mudah ditemukan.
+> Ketentuan upload lama di berkas ini (≤2 MB untuk badge/frame, ≤10 MB
+> untuk foto, validasi mime/ukuran server-side) DICABUT dan DIGANTIKAN
+> ketentuan di bawah ini.
+
+- **Ukuran maksimum: 50 MB** per berkas yang di-upload (foto, badge
+  program/topik, frame).
+- **Validasi: client side validation only** — pemeriksaan format dan
+  ukuran dilakukan client sebelum file dikirim; server TIDAK melakukan
+  validasi ukuran/format (tanpa hard cap server-side, tanpa server mime
+  sniff untuk validasi).
+- **Format yang diizinkan: jpg, jpeg, png, webp** (case-insensitive);
+  format lain (termasuk ico) ditolak client sebelum pengiriman.
 
 ## 1. Principles (binding)
 
@@ -11,7 +49,9 @@ Status: DRAFT (2026-10-09; adding test strategy + A4 fixed report; pending audit
   `VALIDATION` before the DB ever rejects). Snapshots/duplication over
   normalisation.
 - Every domain, link, and snapshot row carries `tenant_id NOT NULL`
-  and every list-driving query filters by it (+ a tenant-leading INDEX on
+  and every tenant-scoped list-driving query filters by it (exception:
+  the tenant-0 unscoped SA READs explicitly allowed by the `02§2`
+  clarifier — every WRITE stays tenant-guarded) (+ a tenant-leading INDEX on
   each table — see `INDEX` lines in §2, which are normative: where a
   table's §2 line omits the tenant INDEX, the migration MUST still add
   `INDEX(tenant_id, …)`); exceptions: `tenants`, `migrations`
@@ -27,7 +67,6 @@ Status: DRAFT (2026-10-09; adding test strategy + A4 fixed report; pending audit
   `session_members` UNIQUE(child_id,session_id),
   `assessments` UNIQUE(session_activity_id,child_id),
   `narratives` UNIQUE(session_id,session_topic_id,child_id),
-  `consent_links` UNIQUE(session_id,child_id),
   `idempotency_keys` UNIQUE(tenant_id,route,idem_key) (tenant-scoped —
   same key+route in another tenant is a distinct row, never a replay),
   active `public_links` uniqueness enforced by app Tx (revoke-old +
@@ -66,10 +105,20 @@ created_at. Rotation = insert new + revoke old in one Tx.
 `reset_tokens`: id, tenant_id NULLABLE+INDEX (NULL for SA rows — SA has no
 tenant; ADMIN scope = own-tenant rows, SA sees all), user_id* (loose)+INDEX,
 `code_hash CHAR(64)*`, `code_plain VARCHAR(16)` NULL (cleared on
-use/revoke/expiry), expires_at* (15 min), used_at NULL, revoked_at NULL,
-revealed_at NULL, revealed_by NULL (loose user id), created_at.
+use/revoke/expiry/FIRST-REVEAL — the audited reveal returns it once
+then purges immediately, single-shot self-destruct, decision 51),
+expires_at* (15 min), used_at NULL, revoked_at NULL,
+revealed_at NULL, revealed_by NULL (loose user id), `mail_failed` BOOL
+DEFAULT FALSE (TRUE = SMTP send failed during forgot — surfaces in the
+reset dashboard as `mail_failed:true`, the 200-`MAIL_FAILED` signal the
+admin acts on), created_at.
 Dashboard shows `code_masked = "***"+RIGHT(code_plain,2)` (never the full
-code except audited reveal). `INDEX(expires_at)`, `INDEX(user_id,expires_at)`.
+code except the single audited reveal; after the first-reveal purge
+`code_plain` is NULL and the item shows plain `"***"` — decision 51). Paged list item (`GET /api/reset-tokens`):
+`{id, code_masked, expires_at, seconds_left, revoked, mail_failed,
+user:{id,name,email}}` — unified with 02§2b/03 F-01/04 FL-03 (2026-10-11);
+`mail_failed` is the SMTP-failure signal field, `revoked` derives from
+`revoked_at`. `INDEX(expires_at)`, `INDEX(user_id,expires_at)`.
 Purge by hourly janitor + sweep on access.
 
 `programs`: id, tenant_id*+INDEX, name* `VARCHAR(200)`, description TEXT
@@ -104,8 +153,11 @@ TRUE`, created_at. `INDEX(tenant_id,is_active)`.
 
 `sessions`: id, tenant_id*+INDEX, program_id* (loose),
 program_name_snap*, name*, description NULL, date* DATE,
-start_time/end_time TIME NULL (`CHECK(end_time IS NULL OR
-start_time IS NULL OR end_time>start_time)`), location*,
+start_time/end_time TIME NULL (CHECK both-or-neither — decision 61:
+`(start_time IS NULL AND end_time IS NULL) OR (start_time IS NOT NULL
+AND end_time IS NOT NULL AND end_time>start_time)`; one without the
+other also rejected at API level, 200 `VALIDATION`; DDL enforcement
+rides the migration update), location*,
 status* ENUM(DRAFT,OPENED,FINISHED) DEFAULT DRAFT,
 created_by (loose, NULL=deleted), created_at.
 `INDEX(tenant_id,status,date)`. No CANCELED value exists.
@@ -149,10 +201,10 @@ see 06 E29); FALSE rows stuck >24 h are deleted row+files by the janitor
 overcommit under concurrent copy); scoped predicate below; >10 → 200
 `PHOTO_LIMIT`). Copy-data NEVER copies `is_candidate` (always inserts
 FALSE — candidate must be chosen explicitly in the target, so a pending
-row can never block the target's candidate slot). Single-candidate enforced by Tx
+row can never block the target's candidate slot). Single-candidate
+enforced by Tx
 (`SELECT COUNT(*) FROM photos WHERE session_id=? AND session_topic_id=?
-AND child_id=? FOR UPDATE` — scoped count, never global; >10 → 200
-`PHOTO_LIMIT`). Single-candidate enforced by Tx
+AND child_id=? FOR UPDATE` — scoped count, never global). Single-candidate enforced by Tx
 clear+set AND DDL generated column (MariaDB partial-unique trick):
 `candidate_slot VARCHAR(128) GENERATED ALWAYS AS
 (IF(is_candidate=1, CONCAT(session_id,':',session_topic_id,':',child_id), NULL))
@@ -167,9 +219,13 @@ session_topic_id,child_id)`. Upsert on success only.
 `report_missions`: session_id*, session_topic_id*, child_id*,
 mission_id* (loose), mission_name_snap*, mission_body_snap* TEXT,
 tenant_id*. PK(session_id,session_topic_id,child_id,mission_id).
-Replace-set in one Tx; app + `CHECK`-via-count (≤4 → else `MISSION_LIMIT`).
+Replace-set in one Tx; app + `CHECK`-via-count (≤4 → else
+`MISSION_LIMIT`). The snaps are HISTORY-ONLY as of decision 56 — the
+report render resolves the mission name/body LIVE from the bank.
 
-`consent_links`: id, tenant_id*, session_id*+INDEX, child_id*+INDEX,
+`consent_links`: id, tenant_id*, session_id* (its index IS the leading
+column of the `UNIQUE(session_id,child_id)` below — no separate KEY
+needed), child_id*+INDEX,
 token* `CHAR(64)` UNIQUE, status* ENUM(PENDING,SETUJU,DITOLAK) DEFAULT
 PENDING, respondent_name `VARCHAR(160)` NULL, responded_at NULL,
 created_at. `UNIQUE(session_id,child_id)` (one link per child+session).
@@ -198,8 +254,10 @@ tenant_id*, response JSON MEDIUMTEXT, created_at,
   scope/filter/sort/search/pagination ALL server-side; defaults `page=1,
   per_page=20`; allowed `per_page` 20/50/100/1000, max 1000; client page-size
   selector offers 20/50/100/1000. Canonical list keys: `page`, `per_page`,
-  `q` (substring search where the route shows `q=`), `sort`, `dir`
-  (`asc|desc`) + the route's stated equality filters; any other query key
+  `q` (case-insensitive substring; applied on ALL paged list GETs — 02§2b governs, decision 43), `sort`, `dir`
+  (`asc|desc`) + the route's stated equality filters; `GET /api/tenants`
+  additionally accepts `?is_active=true|false` (invalid → 200
+  `VALIDATION`; decision 31); any other query key
   is ignored; invalid `page`/`per_page`/`sort`/`dir`/filter values → 200
   `VALIDATION`. Default sort `id ASC` (`id ASC` always appended as final
   tiebreak) except: topics/activities (+ session copies) default
@@ -221,12 +279,13 @@ tenant_id*, response JSON MEDIUMTEXT, created_at,
   report, readiness, progress + reports matrices, public-links,
   copy-candidates, `pending-count`, `wa/status`, dashboard aggregates,
   public JSON, `GET /api/auth/tenants` picker. `wa_outbox` has no list
-  route (retention only).);
+  route (retention only);
   business failure
   `{error:{code,message}}`; unhandled → HTTP 500
   `{error:{code:"INTERNAL",message:"…"}}`.
-- Auth: login req `{email,password}` → `{data:{user:{…},tenant:{…}}}`
-  + cookie. Register/forgot/reset as in FL-01..03.
+- Auth: login req `{email,password}` → `{data:{access, user:{…},
+  tenant:{…}}}` + cookie (`access` = access JWT string, stored
+  memory-only by the client). Register/forgot/reset as in FL-01..03.
 - Session create req `{program_id,name,description,date,start_time?,
   end_time?,location,groups:[{name,facilitator_id,child_ids[]}]}` →
   `{data:{session_id}}`.
@@ -238,7 +297,18 @@ tenant_id*, response JSON MEDIUMTEXT, created_at,
   missions, photos}, skipped:{assessments, narratives, missions,
   photos}}}` (counts per category).
 - WA status → `{data:{connected, session, checked_at}}` (200 always;
-  unreachable → `{connected:false}`).
+  unreachable → `{connected:false}`; `connected` = the session is `ready`).
+- WA session [SA-only] → `{data:{connected, status, session, phone,
+  qr_code, last_error, checked_at}}`; `status` is OpenWA's raw status or
+  the synthetic `"unreachable"` / `"missing"`; `last_error` is OpenWA's
+  own field only (never a Go transport error). `POST
+  /api/wa/session/start` returns the same payload after a permitted start.
+- WA single send (`POST P/send-report`) → 200 `{data:{status:"SENT"|
+  FAILED", message_id?, code?}}`. SINGLE-SEND IS NEVER a top-level
+  `{error}`: the per-item status is returned INSIDE `data`, so an
+  OpenWA failure is `{data:{status:"FAILED",code:"WA_FAILED",…}}`
+  (identical per-item shape to a batch item — batch items return the
+  same per-item status objects inside `data`).
 - SSE signal frame (round 7, binding — `text/event-stream`, NOT an
   envelope): `id: <rev>\nevent: <name>\ndata: {"entity":"…",
   "entity_id":N, "rev":N, "tenant_id":N, "session_id":N|null,
@@ -247,9 +317,17 @@ tenant_id*, response JSON MEDIUMTEXT, created_at,
   `data` NEVER carries names, notes, photos, tokens, codes, or bytes —
   only routing keys. Four full-value exceptions ONLY (small derived
   non-PII merged into `data`): `readiness.changed {complete}`,
-  `pending.changed {pending}`, `wa.changed {connected}`, public
-  `consent.ack {decision}` (own decision only). Heartbeat = `:ping`
-  comment (15 s). Terminal public frame: `link.revoked` (then close).
+  `pending.changed {pending}`, `wa.changed {connected}` (true = phone
+  linked / session `ready`), public
+  `consent.ack {decision}` (own decision only). Plus the non-PII
+  `copy_available` hint on `member.changed` / `session.changed{created}`
+  and routing keys `child_id`/`stid` (`stid` currently ratified on the
+  `readiness.changed` exception per `02§2c`; still no names/notes/
+  photos/tokens/codes/bytes).
+  `auth.expiring` is a DIRECTED control frame with `{exp: RFC3339}`
+  only (no `id`, no `rev`; 02§2c).
+  Heartbeat = `: ping` comment (15 s). Terminal public frame:
+  `link.revoked` (then close).
 - Readiness `{data:{complete, missing:[{said,name}], badges:{topic,
   program}}}`. Report JSON = full ReportView content (profile, outcomes,
   narrative, missions, badges, candidate photo URL via `/uploads/…`,
@@ -263,7 +341,8 @@ tenant_id*, response JSON MEDIUMTEXT, created_at,
   else if starts `8`, prefix `62`; else if starts `62`, keep; else if starts
   `+`, strip `+` and apply above to remainder; else reject (`VALIDATION`).
   Stored `+62…` (8–15 digits after country code); `chatId = 62…@c.us`
-  (strip `+`). Default country 62 prefilled in UI picker.
+  (strip `+`). Default country 62 applied server-side; the UI uses a
+  plain WA number input with a `+62…` preview (no dial-code picker).
 - Stars 1↔BB, 2↔MB, 3↔BSH, 4↔BSB (i18n labels; report stays ID).
 - Prompts: `{{Var}}` via `strings.Replace` (no HTML-escaping);
   vars ChildName/ChildAge/SessionName/TopicName/SessionDate/Assessments.
@@ -283,25 +362,33 @@ tenant_id*, response JSON MEDIUMTEXT, created_at,
 - Migrations `NNNN_*.sql` in order at boot: acquire MySQL advisory
   `GET_LOCK('kidversa_migrate',30)`, apply missing versions into
   `migrations(version INT PRIMARY KEY, applied_at)`, `RELEASE_LOCK`;
-  lock timeout/failure = refuse listen. Seed (Bandung + SA) idempotent via
-  UNIQUE keys + `INSERT IGNORE` + update-if-exists for SA password rotate
-  (env-driven, never duplicated).
+  lock timeout/failure = refuse listen. Seed (Bandung + SA) runs after
+  migrations from hardcoded constants in `internal/seed.go` (never env):
+  `INSERT IGNORE` for the tenant, and insert-or-overwrite-in-place keyed by
+  the SA email for the account, so reruns never duplicate rows.
 - In-process hourly janitor (single `time.Ticker` goroutine in `api`,
   NOT a separate service): purge expired/used `reset_tokens`, expired
   `refresh_tokens`, `idempotency_keys` older than 24 h, `wa_outbox` older
   than 90 d, `photos` rows stuck `file_ready=FALSE` older than 24 h
   (copy-crash residue — row + partial files deleted together),
-  and orphan upload files (on disk but no DB row). Sweep
+  and orphan upload files (on disk but no DB row — orphan grace 1 h:
+  files younger than 1 h are kept, honoring file-before-row upload
+  ordering). Sweep
   failures only logged (`slog`), never crash boot.
 - Uploads `<tenant_id>/<session_id>/<stid>/<child_id>/<rand32hex>.<ext>`
   (all numeric IDs, never names — stable on rename, no traversal;
-  `<ext>` from sniffed mime: jpg/png/webp, never original filename); badges
-  `…/badges/<tenant_id>/<rand>.<ext>`; frames `…/frames/<tenant_id>/<rand>.<ext>`;
+  `<ext>` from the client-declared type: jpg/jpeg/png/webp, never original filename); badges
+  badges `badges/<tenant_id>/<rand32hex>.<ext>`; frames `frames/<tenant_id>/<rand32hex>.<ext>`
+  (tenant-di-LUAR, decision 33 — normative; NEW writes go to this layout
+  while EXISTING tenant-di-dalam files stay put and keep serving — reads
+  are path-agnostic, decision 45 / D-4; stance in §8);
   DB relative path only; static
   `Browse:false, Download:false, CacheDuration:10*time.Second`; nginx proxy.
-  Server hard caps (binding): photos 10 MB (client pre-checks 10 MB);
-  curriculum images (program/topic badges, frames) PNG/JPG/WebP ≤2 MB
-  (ICO rejected → 200 `VALIDATION`); mime always sniffed server-side.
+  Upload caps (binding, Pembaruan 2026-10-11): ALL uploads (photos,
+  program/topic badges, frames) JPG/JPEG/PNG/WebP ≤50 MB — CLIENT SIDE
+  VALIDATION ONLY: the server does NOT validate size/format (no hard cap,
+  no server-side mime sniff for validation); other formats (incl. ICO)
+  are rejected client-side before send.
 - Durable-file rule (round 7, binding): photo/frame/badge writes use
   temp-file + `fsync` + atomic rename; the row commit and the durable
   file form ONE visible step — never file-without-row ANNOUNCED, never a
@@ -318,18 +405,25 @@ tenant_id*, response JSON MEDIUMTEXT, created_at,
   row+files by the janitor — see §5).
   Orphan temp/disk-without-row files (crash mid-write) are swept by the
   janitor and were NEVER announced on SSE (no fake status).
-- Report bytes never persisted. Backups = host copy of
-  `data/mariadb + data/uploads + data/openwa` (non-atomic live copy;
-  PITR out of scope for MVP).
+- Report bytes never persisted. Backups = MANUAL host copy of
+  `data/mariadb + data/uploads + data/openwa` for MVP (non-atomic live
+  copy; PITR out of scope; NO schedule/tool/restore-test in repo by
+  design — automation + restore verification = post-MVP,
+  decision 71).
 
 ## 6. Caching & sync
 
-- No server cache. Client memo rule (round 7, binding): refetch on SSE
-  signal OR when data older than 60 s (no blind poll). Refresh/consent/
-  public/idempotency DB-backed; limiter in-process (restart reset
+- No server cache. Client refetch rule (round 7, binding): refetch on
+  SSE signal only — all pages; no blind poll, no data-age guard (the
+  memo age rule is gone). Refresh-token whitelist and consent state are
+  DB-backed (survive restart); limiter is in-process (restart reset
   accepted). Stream hub (`internal/stream.go`): in-memory fan-out per
   `(tenant, scope)` + ring 100 events / 5 min per tenant for
-  `Last-Event-ID` replay; single `api` replica for MVP (no Redis).
+  `Last-Event-ID` replay — auth connections replay the UNION of their
+  own tenant ring + the tenant-0 broadcast ring (stats/wa/reset
+  broadcasts; LIVE fan-out delivers those broadcast frames to every
+  authenticated connection — `02§2c` filter predicate); single `api`
+  replica for MVP (no Redis).
 
 ## 7. Transactions & idempotency (binding SQL intent)
 
@@ -369,5 +463,35 @@ tenant_id*, response JSON MEDIUMTEXT, created_at,
   fails/retries the mutation. Guarded-transition losers (`STATE_CONFLICT`)
   publish nothing. Batch WA publishes ONE `report-link.changed` per
   session after the batch loop (not per item). `rev` is assigned by the
-  hub (monoton per tenant; in-memory counter + `created_at` fallback —
-  restart resets the counter and all clients full-refetch once).
+  hub (monoton per tenant; in-memory counter per tenant — restart resets
+  the counter; the replay-gap detection makes clients full-refetch
+  once).
+
+## 8. File-storage layout & runtime data dirs (binding, decision 33)
+
+Canonical relative upload paths under `UPLOAD_DIR` (default `/data/uploads`,
+bindmounted from host `./data/uploads`), all filenames `<rand32hex>.<ext>`
+(server-generated, never the original filename):
+
+- Photos: `<tenant_id>/<session_id>/<stid>/<child_id>/<rand32hex>.<ext>`
+- Program/topic badges: `badges/<tenant_id>/<rand32hex>.<ext>`
+- Frames: `frames/<tenant_id>/<rand32hex>.<ext>`
+
+Badges and frames are **tenant-di-luar** (decision 33, 2026-10-11): the
+`badges/`/`frames/` segment precedes the tenant id. This supersedes all
+earlier path wording, including the tenant-di-dalam wording in
+`04-FL-04`/`04-FL-05` and the then-current implementation, which wrote
+`<tenant_id>/badges|frames/<rand32hex>.<ext>` — reconciled via Change 16.
+
+Migration stance (decision 45 / D-4, user-confirmed 2026-10-11): NEW
+writes go to the tenant-di-luar layout (`badges/<tenant_id>/…`,
+`frames/<tenant_id>/…`); EXISTING tenant-di-dalam data stays untouched —
+reads are path-agnostic (both layouts keep serving; no file is moved or
+rewritten); the tenant hard-delete wipe covers ALL THREE dirs:
+`<uploads>/<tenant_id>/`, `<uploads>/badges/<tenant_id>/`, and
+`<uploads>/frames/<tenant_id>/` (03 F-02 / 02§4).
+
+Runtime data dirs (host, relative bindmounts — no named volumes): `data/mariadb`
+(MariaDB datadir), `data/openwa` (OpenWA `/app/data`), `data/uploads`
+(api `UPLOAD_DIR`). There is NO `backend/uploads/` dir — earlier AGENTS.md
+wording to that effect is corrected to `data/uploads` (decision 34).
