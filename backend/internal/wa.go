@@ -164,10 +164,12 @@ func (s *Server) waStart(ctx context.Context, id string) error {
 	return nil
 }
 
-// RegisterWaStatus mounts GET /api/wa/status [SA/ADMIN] — the status-only
-// OpenWA proxy (02 §2b). main.go calls it.
-func (s *Server) RegisterWaStatus(api fiber.Router) {
+// RegisterWa mounts the OpenWA proxy (02 §2b): the status badge stays
+// SA/ADMIN-readable; starting a session and fetching its QR are SA-only.
+func (s *Server) RegisterWa(api fiber.Router) {
 	api.Get("/wa/status", s.authed("ADMIN"), s.handleWaStatus)
+	api.Get("/wa/session", s.authed("SA"), s.handleWaSession)
+	api.Post("/wa/session/start", s.authed("SA"), s.handleWaSessionStart)
 }
 
 // sendText posts one text message to OpenWA (01 §7 verified endpoint) with
@@ -211,6 +213,129 @@ func (s *Server) sendText(chatID, text string) (string, error) {
 		return out.MessageID, nil
 	}
 	return "", lastErr
+}
+
+// waStatus is the connect-modal payload (design §7.1). Empty fields are
+// omitted; connected is true only for OpenWA's `ready` state.
+type waStatus struct {
+	Connected bool   `json:"connected"`
+	Status    string `json:"status,omitempty"`
+	Session   string `json:"session,omitempty"`
+	Phone     string `json:"phone,omitempty"`
+	QRCode    string `json:"qr_code,omitempty"`
+	LastError string `json:"last_error,omitempty"`
+	CheckedAt string `json:"checked_at,omitempty"`
+}
+
+// waStartRequest is the optional POST body; retry lets the modal explicitly
+// resume an action_required session.
+type waStartRequest struct {
+	Retry bool `json:"retry"`
+}
+
+// waLoadSession resolves the configured session and reads its state. A 404
+// invalidates the cached id and re-resolves once (a recreated session can
+// have a new id); a second 404 surfaces as errWaMissing.
+func (s *Server) waLoadSession(ctx context.Context) (string, waSession, error) {
+	id, err := s.waResolveSession(ctx)
+	if err != nil {
+		return "", waSession{}, err
+	}
+	sess, err := s.waSessionState(ctx, id)
+	if errors.Is(err, errWaMissing) {
+		s.invalidateWaID()
+		id, err = s.waResolveSession(ctx)
+		if err != nil {
+			return "", waSession{}, err
+		}
+		sess, err = s.waSessionState(ctx, id)
+	}
+	return id, sess, err
+}
+
+// waErrorStatus maps a failed session read to the modal's synthetic status.
+// errWaMissing is a configuration error; everything else is an outage. Raw
+// Go errors are never copied into the payload (they can name the internal URL).
+func (s *Server) waErrorStatus(err error) waStatus {
+	if errors.Is(err, errWaMissing) {
+		return waStatus{Status: "missing", Session: s.cfg.OpenwaSession}
+	}
+	return waStatus{Status: "unreachable"}
+}
+
+// waStatusFor assembles the payload; a QR is fetched only while the session
+// is not ready, and a 400 (no QR yet / already linked) is simply omitted.
+func (s *Server) waStatusFor(ctx context.Context, id string, sess waSession) waStatus {
+	name := sess.Name
+	if name == "" {
+		name = s.cfg.OpenwaSession
+	}
+	out := waStatus{
+		Connected: sess.Status == "ready",
+		Status:    sess.Status,
+		Session:   name,
+		Phone:     sess.Phone,
+		LastError: sess.LastError,
+		CheckedAt: s.now().UTC().Format(time.RFC3339),
+	}
+	if !out.Connected {
+		if qr, err := s.waQR(ctx, id); err == nil && qr != "" {
+			out.QRCode = qr
+		}
+	}
+	return out
+}
+
+// waStartable decides whether the start endpoint may boot the session. A
+// pairing in progress (initializing/qr_ready/authenticating) and a ready
+// session are left alone; action_required needs the explicit Retry.
+func waStartable(status string, retry bool) bool {
+	switch status {
+	case "created", "disconnected", "failed":
+		return true
+	case "action_required":
+		return retry
+	}
+	return false
+}
+
+// handleWaSession answers GET /api/wa/session: resolve → read state → QR when
+// not ready. Upstream failures become a status, never an error envelope.
+func (s *Server) handleWaSession(c fiber.Ctx) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*waCallTimeout)
+	defer cancel()
+	id, sess, err := s.waLoadSession(ctx)
+	if err != nil {
+		return ok(c, s.waErrorStatus(err))
+	}
+	return ok(c, s.waStatusFor(ctx, id, sess))
+}
+
+// handleWaSessionStart answers POST /api/wa/session/start: start only when
+// waStartable allows it, then re-read the state before returning the payload.
+//
+// Deliberately NOT wrapped in s.idempotent: this is a control/proxy action
+// with an ephemeral response (no stored mutation), so the client's automatic
+// X-Idempotency-Key is ignored.
+func (s *Server) handleWaSessionStart(c fiber.Ctx) error {
+	var req waStartRequest
+	if !bindBody(c, &req) {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*waCallTimeout)
+	defer cancel()
+	id, sess, err := s.waLoadSession(ctx)
+	if err != nil {
+		return ok(c, s.waErrorStatus(err))
+	}
+	if waStartable(sess.Status, req.Retry) {
+		if err := s.waStart(ctx, id); err == nil {
+			if next, rerr := s.waSessionState(ctx, id); rerr == nil {
+				sess = next
+			}
+		}
+	}
+	return ok(c, s.waStatusFor(ctx, id, sess))
 }
 
 // handleWaStatus answers 200 ALWAYS: reachable → {connected, session,
