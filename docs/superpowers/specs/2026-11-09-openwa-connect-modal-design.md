@@ -339,3 +339,38 @@ superadmin decisions, so check them while reading:
 ## 10. Open questions
 
 None blocking. The superadmin decisions in §6 settle the product behaviour.
+
+## 11. Post-implementation review (2026-11-09)
+
+The final whole-branch review found no critical defects. Two Important items
+were fixed before merge, plus two trivial follow-ups folded into the same
+pass:
+
+- **Deadline sizing.** Both connect handlers now size their outer deadline to
+  the worst-case upstream call count (4 for `GET /api/wa/session`, 5 for
+  `POST /api/wa/session/start`) instead of 2x/3x a single call. Otherwise a
+  slow `missing` path could expire mid-sequence and be reported as
+  `unreachable`.
+- **QR retention pinned by a test.** A poll that omits `qr_code` must leave
+  the previous code on screen (verified RED before the fix, GREEN after).
+- **Guard matrix closed.** The role test now also covers FAS on
+  `POST /api/wa/session/start`.
+- **Stale header refreshed.** The badge test header no longer claims the
+  click opens the OpenWA dashboard.
+
+Deferred deliberately (low risk; revisit if the deployment changes):
+
+1. **Open OpenWA uses the page protocol** (`http(s)://<host>:8003`). This
+   matches the pre-existing badge and the local HTTP deployment; a
+   TLS-served SPA would open `https://...:8003` against a plain-HTTP OpenWA.
+2. **New lint warning** `react(set-state-in-effect)` on the modal's
+   reset-on-open effect - the same class already present across the repo.
+3. **`url` shadows `net/url`** in `sendText` (function-scoped; compiles).
+4. **`waResolveSession` never returns an error today**; callers keep the
+   error branch as future-proofing.
+5. **Handlers use `context.Background()`**, not `c.Context()`: a client
+   abort on close does not cancel the in-flight upstream call (bounded by
+   the per-call budget).
+6. **Back keeps the previous state**, so re-entering Connect Directly can
+   flash the old QR until the new POST resolves.
+7. **`07-BEFORE-AFTER.md`** was left untouched (historical change log).
