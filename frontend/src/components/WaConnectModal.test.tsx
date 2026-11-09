@@ -121,6 +121,33 @@ describe('WaConnectModal connect view', () => {
     expect(gets).toBe(2)
   })
 
+  it('keeps the last QR when a poll transiently returns none', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
+    let gets = 0
+    server.use(
+      http.post('/api/wa/session/start', () =>
+        ok({ connected: false, status: 'qr_ready', qr_code: QR_A }),
+      ),
+      // A mid-scan poll can come back without a code (OpenWA regenerating it).
+      http.get('/api/wa/session', () => {
+        gets += 1
+        return ok({ connected: false, status: 'qr_ready' })
+      }),
+    )
+    renderApp(<WaConnectModal open onClose={() => {}} />, { session: saSession() })
+
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Hubungkan Langsung' }))
+    await until(() => screen.queryByRole('img', { name: 'Kode QR WhatsApp' }) !== null)
+    expect(screen.getByRole('img', { name: 'Kode QR WhatsApp' })).toHaveAttribute('src', QR_A)
+
+    await advance(2000)
+    await until(() => gets === 1)
+
+    // The poll omitted qr_code: the previous code must stay so the UI does not
+    // blank mid-scan.
+    expect(screen.getByRole('img', { name: 'Kode QR WhatsApp' })).toHaveAttribute('src', QR_A)
+  })
+
   it('already ready shows connected + phone with no QR and no polling', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
     let gets = 0

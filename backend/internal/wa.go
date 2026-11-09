@@ -301,8 +301,13 @@ func waStartable(status string, retry bool) bool {
 
 // handleWaSession answers GET /api/wa/session: resolve → read state → QR when
 // not ready. Upstream failures become a status, never an error envelope.
+//
+// The outer deadline covers the WORST-CASE call count (4: resolve, state,
+// re-resolve after a 404, state again). Sizing it smaller would let the
+// deadline expire mid-sequence, turning a "missing" configuration error into
+// a bogus "unreachable" outage.
 func (s *Server) handleWaSession(c fiber.Ctx) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*waCallTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), 4*waCallTimeout)
 	defer cancel()
 	id, sess, err := s.waLoadSession(ctx)
 	if err != nil {
@@ -317,12 +322,15 @@ func (s *Server) handleWaSession(c fiber.Ctx) error {
 // Deliberately NOT wrapped in s.idempotent: this is a control/proxy action
 // with an ephemeral response (no stored mutation), so the client's automatic
 // X-Idempotency-Key is ignored.
+//
+// The outer deadline covers the worst-case call count (5: load, start,
+// re-read, QR) so a slow upstream cannot masquerade as "unreachable".
 func (s *Server) handleWaSessionStart(c fiber.Ctx) error {
 	var req waStartRequest
 	if !bindBody(c, &req) {
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*waCallTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*waCallTimeout)
 	defer cancel()
 	id, sess, err := s.waLoadSession(ctx)
 	if err != nil {
