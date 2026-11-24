@@ -89,10 +89,10 @@ jsPDF, open-wa.org.
   EXCEPTION (round 7, binding): `GET /api/stream` and
   `GET /public/stream?token=` are NOT envelopes — they are
   `text/event-stream` (HTTP 200, held open). Handshake failures
-  (bad token, wrong role, tenant mismatch, revoked public token, dead
+  (bad token, wrong role, school mismatch, revoked public token, dead
   refresh session, DB down) return
   a NORMAL 200 envelope (`INVALID_TOKEN` / `FORBIDDEN_ROLE` /
-  `TENANT_MISMATCH` / `TENANT_INACTIVE` / `TOKEN_INVALID` /
+  `SCHOOL_MISMATCH` / `SCHOOL_INACTIVE` / `TOKEN_INVALID` /
   `ACCOUNT_INACTIVE` / `DB_UNAVAILABLE` — the last two from the
   `sessionAlive` live-refresh-session probe and the DB hit it performs;
   full list in `02§2b` + `06§2`) and the stream
@@ -101,7 +101,7 @@ jsPDF, open-wa.org.
   the FOUR full-value exception frames `{readiness,pending,wa,
   consent-ack}` carry small derived non-PII per `02§2c` / decision 24);
   all DATA still flows through 200-envelope REST refetch.
-- Custom headers (binding): `X-Tenant-ID` (active tenant, REQUIRED on
+- Custom headers (binding): `X-School-ID` (active school, REQUIRED on
   every authenticated call) and
   `X-Idempotency-Key` (mutating POSTs: register,
   user create (`POST /api/users`), session create, WA single/batch,
@@ -135,15 +135,15 @@ jsPDF, open-wa.org.
   INVALID_TOKEN}})` for access / `{code:INVALID_TOKEN}` (cookie missing or
   jti revoked/expired) for refresh — otherwise the HTTP-200 transport rule
   breaks) →
-  `RequireRole` → tenant guard (`X-Tenant-ID` vs JWT claim;
-  mismatch → 200 + `TENANT_MISMATCH`) → handler.
+  `RequireRole` → school guard (`X-School-ID` vs JWT claim;
+  mismatch → 200 + `SCHOOL_MISMATCH`) → handler.
 - CORS (binding): `AllowOrigins` = EXACT list from
   `CORS_ALLOWED_ORIGINS` (comma-separated, 1–2 origins — count enforced
   1–2 at boot; MVP: the single
   `PUBLIC_WEB_BASE_URL` origin — e.g. `https://rapor.kidversa.id` prod /
   `http://localhost:8002` local; never `"*"` with credentials).
   `AllowMethods:[GET,POST,PUT,PATCH,DELETE,OPTIONS]`,
-  `AllowHeaders:[Authorization,Content-Type,X-Tenant-ID,X-Idempotency-Key]`,
+  `AllowHeaders:[Authorization,Content-Type,X-School-ID,X-Idempotency-Key]`,
   `ExposeHeaders:[Retry-After]`, `MaxAge:600`. Requests arrive
   same-origin via nginx, so browsers send no preflight; CORS only guards
   direct `api:3000` access and future split-hosting.
@@ -152,7 +152,7 @@ jsPDF, open-wa.org.
   IP+token): `POST /api/auth/register` 5/min/IP; `POST /api/auth/login`
   10/min per IP+lowercased-email; `POST /api/auth/forgot` 3/15min per
   IP+email; `POST /api/auth/reset` 5/15min per IP+email;
-  `POST /api/auth/refresh` 30/min/IP; `GET /api/auth/tenants` 60/min/IP;
+  `POST /api/auth/refresh` 30/min/IP; `GET /api/auth/schools` 60/min/IP;
   `GET /public/*` 60/min per
   IP+token; `POST /public/consent/respond` 10/min per IP+token (the ONLY
   counter that increments on respond — respond is EXEMPT from the generic
@@ -164,7 +164,7 @@ jsPDF, open-wa.org.
   (session-scoped, NOT under `P`);
   `GET /api/sessions/:sid/children/:cid/copy-candidates` 30/min/IP;
   `POST /api/sessions/:sid/children/:cid/copy` 5/min/IP (copy executes
-  disk IO). All other mutating routes (tenants/users/masters/children/
+  disk IO). All other mutating routes (schools/users/masters/children/
   session/groups/members/assessments/photos/narratives/missions/report/
   public-link create) are INTENTIONALLY unlimited (auth+scope+gates are
   the protection; adding limiters there is a new Change, not a silent
@@ -174,7 +174,7 @@ jsPDF, open-wa.org.
   `GET /public/stream?token=` are NEVER rate-limited (a held-open
   connection is not a request); abuse is bounded by concurrent-connection
   caps (single table, binding): max 100 per `api` replica + max 6 per IP
-  + max 20 per tenant — enforced at handshake, excess handshake → 200
+  + max 20 per school — enforced at handshake, excess handshake → 200
   `RATE_LIMITED` + `Retry-After` (no separate handshake limiter exists;
   earlier "handshake limiter" wording is superseded by these caps).
 - `healthcheck`: `app.Get(healthcheck.LivenessEndpoint, healthcheck.New())`
@@ -280,7 +280,7 @@ jsPDF, open-wa.org.
 - Access via `database/sql` only. Schema rule (binding): zero FK
   constraints — all references loose (`BIGINT UNSIGNED`, app-enforced).
   Snapshots/duplication over normalisation. Every domain row (including
-  link and snapshot tables) carries `tenant_id` + `INDEX(tenant_id, …)`.
+  link and snapshot tables) carries `school_id` + `INDEX(school_id, …)`.
 - Upload whitelist (binding, Pembaruan 2026-10-11): ALL uploads (photos,
   frames, program/topic badges) JPG/JPEG/PNG/WebP ≤50 MB — client side
   validation only (format/size checked client-side; server does not sniff
@@ -314,7 +314,7 @@ jsPDF, open-wa.org.
 ## 8. Protocols & contracts
 
 - SPA → API: same-origin relative `/api/*` (nginx → `api:3000`);
-  `Authorization: Bearer <access>`; `X-Tenant-ID` on every authenticated
+  `Authorization: Bearer <access>`; `X-School-ID` on every authenticated
   call; `X-Idempotency-Key` on mutating POSTs.
 - Cookies: `refresh_token` HttpOnly, `Path=/`, `SameSite=Lax`
   (+`Secure` in prod).
@@ -348,17 +348,17 @@ jsPDF, open-wa.org.
   `GET /public/stream?token=` (parent pages). Both `text/event-stream`
   (HTTP 200, held open; NOT envelopes). Opened via `fetch` +
   `ReadableStream` reader (NOT native `EventSource` — it cannot send
-  `Authorization` / `X-Tenant-ID`); `lib/stream.ts` (~40 lines parser,
+  `Authorization` / `X-School-ID`); `lib/stream.ts` (~40 lines parser,
   zero new npm deps) parses `event:/data:/id:/retry:/: ping` frames.
   Frame = signal only: `{entity, entity_id, rev}` + routing keys
-  (`tenant_id`, `session_id?`) + `action` — NEVER names/notes/photos/
+  (`school_id`, `session_id?`) + `action` — NEVER names/notes/photos/
   tokens/codes/bytes (the FOUR full-value exceptions — readiness/
   pending/wa/consent-ack — carry small derived non-PII per decision 24 /
   `02§2c`). `id` = `rev` string (drives `Last-Event-ID`
   replay). Heartbeat `: ping` 15 s (below nginx 180 s). Reconnect
   backoff 1 s → 30 s max with `Last-Event-ID`; server ring 100
-  events / 5 min per tenant (gap unclosable → full-refetch active page).
-  Auth pages: `Authorization: Bearer` + `X-Tenant-ID` on handshake
+  events / 5 min per school (gap unclosable → full-refetch active page).
+  Auth pages: `Authorization: Bearer` + `X-School-ID` on handshake
   (same guards as REST); `auth.expiring` at T-60 s → refresh-once →
   reconnect with new Bearer + last id. Public: scope locked to the token
   (child+session[+topic]); revoked → terminal `link.revoked` + close.
@@ -371,7 +371,7 @@ jsPDF, open-wa.org.
   transport-level Fiber `BodyLimit` 52 MB (+ nginx `client_max_body_size
   52m`) is request framing ONLY and maps an oversize body to 200
   `VALIDATION` (see 06 — framing ≠ file validation);
-  path `<tenant_id>/<session_id>/<stid>/<child_id>/<rand32hex>.<ext>`
+  path `<school_id>/<session_id>/<stid>/<child_id>/<rand32hex>.<ext>`
   (numeric IDs, ext from the client-declared type), DB stores relative.
 - Honest-file rule (round 7, binding): bytes are served ONLY from server
   disk via `/uploads/…` AFTER durable save (DB row committed + file
@@ -412,7 +412,7 @@ jsPDF, open-wa.org.
   (MOCK DB for the repository layer — NO real database, NO dockertest, NO
   CI pipeline; the backend suite is unit + integration tests only).
 - **Coverage**: Minimal 90% business logic, 100% critical paths (auth,
-  validation, idempotency, tenant isolation, envelope transport, SSE —
+  validation, idempotency, school isolation, envelope transport, SSE —
   decision 26).
 - **Structure**: `internal/<domain>_test.go` (co-located with source),
   `internal/integration/*_test.go` (cross-domain flows).
@@ -449,7 +449,7 @@ jsPDF, open-wa.org.
 | Unit test | `go test` + `testify` + `httptest` | `vitest` + `@testing-library/react` |
 | Integration test | `go test` + `httptest` + `sqlmock` | `vitest` + `msw` + `@testing-library/react` |
 | Coverage target | ≥90% business logic, 100% critical | ≥90% components, 100% critical |
-| Critical paths | auth, validation, idempotency, tenant isolation, envelope, SSE | auth context, forms, report export, SSE, envelope |
+| Critical paths | auth, validation, idempotency, school isolation, envelope, SSE | auth context, forms, report export, SSE, envelope |
 | Structure | `internal/<domain>_test.go` | `src/**/*.test.ts(x)` |
 | Pass criteria | all pass + coverage + vet + gofmt | all pass + coverage + tsc + oxlint |
 

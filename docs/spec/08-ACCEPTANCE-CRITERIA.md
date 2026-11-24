@@ -48,7 +48,7 @@ the former decision-49 non-blocking bookkeeping is superseded; open
 verification items tracked under decision 72). Every API assertion below means HTTP 200 with the named
 `{error:{code}}` unless marked `500 INTERNAL`.
 
-## Auth & tenant
+## Auth & school
 
 - Given a visitor When registering (valid) Then 200
   `{data:{id,status:"pending"}}`; replay same `X-Idempotency-Key` Then
@@ -57,9 +57,9 @@ verification items tracked under decision 72). Every API assertion below means H
   `X-Idempotency-Key` When replayed within 24 h Then 200 `{data}` of the
   ORIGINAL envelope and only one user row (no `EMAIL_TAKEN` mask).
 - Given pending facilitator When ADMIN approves Then login works (access
-  memory + refresh cookie + `kv-tenant`); When rejected Then stays inactive.
+  memory + refresh cookie + `kv-school`); When rejected Then stays inactive.
 - Given valid credentials When logging in Then 200
-  `{data:{access,user,tenant}}`;
+  `{data:{access,user,school}}`;
   refresh rotates (single-use jti); logout revokes; parallel double
   refresh → loser 200 `INVALID_TOKEN` → re-login (no loop).
 - Given all refresh tokens of a user revoked (logout everywhere) When
@@ -88,15 +88,15 @@ verification items tracked under decision 72). Every API assertion below means H
   `{error:{code:"INTERNAL"}}` (the ONLY 500 in the system).
 - Given deactivated user When calling with old access Then 200
   `ACCOUNT_INACTIVE`; refresh rejected; client clears session.
-- Given inactive tenant When member registers/logs in/calls Then 200
-  `TENANT_INACTIVE`; SA READ of inactive-tenant data allowed, SA WRITE →
-  `TENANT_INACTIVE` (decision 53).
-- Given SA first login Then default tenant = latest created; switcher
-  validates via `POST switch-tenant`; stale-tab write by a NON-SA member
-  → 200 `TENANT_MISMATCH` → context reload (SA with a valid tenant header
-  is always accepted; SA to a deleted tenant → `TENANT_INACTIVE`; SA to
-  an inactive tenant → READ allowed, WRITE → `TENANT_INACTIVE`,
-  decision 53; SA with `tenant:null` auto-picks the latest ACTIVE tenant
+- Given inactive school When member registers/logs in/calls Then 200
+  `SCHOOL_INACTIVE`; SA READ of inactive-school data allowed, SA WRITE →
+  `SCHOOL_INACTIVE` (decision 53).
+- Given SA first login Then default school = latest created; switcher
+  validates via `POST switch-school`; stale-tab write by a NON-SA member
+  → 200 `SCHOOL_MISMATCH` → context reload (SA with a valid school header
+  is always accepted; SA to a deleted school → `SCHOOL_INACTIVE`; SA to
+  an inactive school → READ allowed, WRITE → `SCHOOL_INACTIVE`,
+  decision 53; SA with `school:null` auto-picks the latest ACTIVE school
   for the stream — decision 54).
 - Given forgot request When submitted Then always 200 `{sent:true}`;
   dashboard lists masked code + countdown; reveal returns plain ONCE
@@ -284,8 +284,8 @@ verification items tracked under decision 72). Every API assertion below means H
   full-refetch of the active page (no stale forever, no double-write).
 - Given access expiry approaching While stream open Then `auth.expiring`
   → refresh-once → reconnect with new Bearer + last id (max 1 retry,
-  then re-login); Given tenant switch Then stream closes + reopens
-  (no cross-tenant frame).
+  then re-login); Given school switch Then stream closes + reopens
+  (no cross-school frame).
 - Given SA/ADMIN dashboard open While the phone becomes unlinked Then
   `wa.changed {connected:false}` renders red without poll; Given reset row created/
   revealed/revoked/used Then `reset.changed` → dashboard refetches
@@ -294,9 +294,9 @@ verification items tracked under decision 72). Every API assertion below means H
   Setuju Then `gallery.changed` → page refetches `GET
   /public/gallery?token=` and shows server bytes; Given link revoked
   Then `link.revoked` → "link invalid" + stream closes.
-- Given bad token/role/tenant on handshake When opening a stream Then
+- Given bad token/role/school on handshake When opening a stream Then
   normal 200 envelope (`INVALID_TOKEN` / `FORBIDDEN_ROLE` /
-  `TENANT_MISMATCH` / `TENANT_INACTIVE` / `TOKEN_INVALID`) and NO stream
+  `SCHOOL_MISMATCH` / `SCHOOL_INACTIVE` / `TOKEN_INVALID`) and NO stream
   opens; Given a dead refresh session / DB failure on the `sessionAlive`
   probe Then 200 `ACCOUNT_INACTIVE` / `DB_UNAVAILABLE` and NO stream;
   Given over-cap handshake Then 200 `RATE_LIMITED` + `Retry-After`.
@@ -320,19 +320,19 @@ verification items tracked under decision 72). Every API assertion below means H
 
 ## Dashboards/i18n/persistence
 
-- Given ADMIN Then own-tenant counts + progress; SA switcher + summary;
-  FAS own sessions + profile; SA `?tenant=` overrides header.
-- Given SA When opening the dashboard Then the per-tenant summary table
-  renders (`GET /api/dashboard/tenant-summary` — each row's numbers
-  belong to ONE tenant; no cross-tenant mixed aggregate) and refetches on
+- Given ADMIN Then own-school counts + progress; SA switcher + summary;
+  FAS own sessions + profile; SA `?school=` overrides header.
+- Given SA When opening the dashboard Then the per-school summary table
+  renders (`GET /api/dashboard/school-summary` — each row's numbers
+  belong to ONE school; no cross-school mixed aggregate) and refetches on
   `stats.changed`.
-- Given `GET /api/tenants?is_active=true|false` When called Then filtered
+- Given `GET /api/schools?is_active=true|false` When called Then filtered
   rows return; invalid value → 200 `VALIDATION`.
 - Given EN switch Then UI English (persisted `kv-lang`); report stays ID.
 - Given restart Then sessions/assessments/photos/tokens persist; no WA
   re-pair (bindmount kept).
 - Given fresh `docker compose up` with only `.env` Then 4 services boot,
-  seed idempotent (Bandung + SA), migrations lock, `/readyz` gates
+  seed idempotent (`Kidversa` school + SA, via `backend/seeds/*.sql`), migrations lock (`0001`–`0004`), `/readyz` gates
   traffic; QR pairing is the only manual step.
 
 ## Endpoint feedback notifications (user-confirmed 2026-10-12, decision 46)
@@ -356,15 +356,15 @@ verification items tracked under decision 72). Every API assertion below means H
   When called Then 200, jti revoked, cookie cleared (decision 52).
 - Given refresh-retry returning INVALID_TOKEN twice consecutively When
   observed Then the client forces logout (clear session → login);
-  refresh rotation against an inactive tenant → revoke + clear +
-  200 `TENANT_INACTIVE` (decision 55).
+  refresh rotation against an inactive school → revoke + clear +
+  200 `SCHOOL_INACTIVE` (decision 55).
 - Given a mission in the bank edited after being picked When the report
   link is opened Then the report shows the CURRENT bank name/body
   (decision 56 — snaps are history-only).
 - Given a program/topic `is_active=false` or without ≥1×1 activity When
   the session-create picker opens Then the entry is DISABLED with
   reason (decision 57); direct API create → 200 `PROGRAM_INCOMPLETE`.
-- Given FAS When calling `GET /api/missions` Then 200 with own-tenant
+- Given FAS When calling `GET /api/missions` Then 200 with own-school
   list (decision 58; other master routes stay ADMIN/SA → `FORBIDDEN_ROLE`).
 - Given a program used by ≥1 session When ADMIN deletes it Then the
   typed confirm shows the affected session count; after confirm the
@@ -377,7 +377,7 @@ verification items tracked under decision 72). Every API assertion below means H
   `end>start` enforced (decision 61).
 - Given an incomplete topic When `POST P/public-links` is called Then
   200 `REPORT_INCOMPLETE` (no link exists; decision 64).
-- Given an ADMIN of tenant B with a valid token of tenant A's link When
+- Given an ADMIN of school B with a valid token of school A's link When
   calling revoke/regenerate Then 200 `NOT_FOUND` (no-leak;
   decision 65).
 - Given a non-member child with an INVALID payload When calling a
@@ -395,7 +395,7 @@ verification items tracked under decision 72). Every API assertion below means H
 
 - Given `go test ./internal/... -v -cover` When executed Then all tests pass,
   coverage ≥90% (business logic), 100% (critical paths: auth, validation,
-  idempotency, tenant isolation, envelope transport, SSE — decision 26).
+  idempotency, school isolation, envelope transport, SSE — decision 26).
 - Given `go vet ./...` When executed Then no warnings.
 - Given `gofmt -l .` When executed Then no files listed (all formatted).
 - Given `go test ./internal/... -run TestAuth` When executed Then auth tests
@@ -404,8 +404,8 @@ verification items tracked under decision 72). Every API assertion below means H
   validation tests pass (input validation, business rules, error codes).
 - Given `go test ./internal/... -run TestIdempotency` When executed Then
   idempotency tests pass (X-Idempotency-Key replay, no double side-effect).
-- Given `go test ./internal/... -run TestTenant` When executed Then tenant
-  isolation tests pass (cross-tenant access blocked, tenant guard).
+- Given `go test ./internal/... -run TestSchool` When executed Then school
+  isolation tests pass (cross-school access blocked, school guard).
 - Given `go test ./internal/... -run TestEnvelope` When executed Then
   envelope transport tests pass (HTTP 200 + `{data}` / `{error:{code}}`).
 
@@ -431,7 +431,7 @@ verification items tracked under decision 72). Every API assertion below means H
 - Given `oxlint .` When executed Then 0 error AND 0 warning
   (zero-warning strict — decision 70).
 - Given `vitest run --testNamePattern=auth` When executed Then auth context
-  tests pass (login, refresh, logout, tenant switch).
+  tests pass (login, refresh, logout, school switch).
 - Given `vitest run --testNamePattern=form` When executed Then form tests
   pass (validation, submission, error handling).
 - Given `vitest run --testNamePattern=report` When executed Then report
@@ -460,7 +460,7 @@ verification items tracked under decision 72). Every API assertion below means H
 | Unit test | `go test` + `testify` + `httptest` | `vitest` + `@testing-library/react` |
 | Integration test | `go test` + `httptest` + `sqlmock` | `vitest` + `msw` + `@testing-library/react` |
 | Coverage target | ≥90% business logic, 100% critical | ≥90% components, 100% critical |
-| Critical paths | auth, validation, idempotency, tenant isolation, envelope, SSE | auth context, forms, report export, SSE, envelope |
+| Critical paths | auth, validation, idempotency, school isolation, envelope, SSE | auth context, forms, report export, SSE, envelope |
 | Structure | `internal/<domain>_test.go` | `src/**/*.test.ts(x)` |
 | Pass criteria | all pass + coverage + vet + gofmt | all pass + coverage + tsc + oxlint |
 

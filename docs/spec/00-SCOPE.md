@@ -57,10 +57,10 @@ to parents via WhatsApp (text + public links; no file attachments).
 
 ## 3. Scope (IN)
 
-- Multi-tenant data isolation (tenant = generic: city today, country/other tomorrow).
-- 3 login roles: Superadmin (SA), Admin (per tenant), Facilitator (assessor).
+- Multi-school data isolation (school = the product's School entity: `school_name`, `country` defaulting to Indonesia, nullable `city`; the old generic type classification is removed).
+- 3 login roles: Superadmin (SA), Admin (per school), Facilitator (assessor).
 - Registered-only data: Child (Siswa/Peserta), Parent (Orang tua, no login, no dashboard).
-- Master data per tenant: Program, Topik, Kegiatan, Bank Misi, Frame, Child, User.
+- Master data per school: Program, Topik, Kegiatan, Bank Misi, Frame, Child, User.
 - Session management: snapshot a whole Program into a Session, organise
   Groups (group name + owner facilitator + child participants; `groups[]`
   OPTIONAL at create — Draft may start empty, groups added later, gate at
@@ -85,7 +85,7 @@ to parents via WhatsApp (text + public links; no file attachments).
   self-destruct — purged immediately after the first reveal, decision 51)
   + revoke.
 - Dashboards, overview, analytics (counts; star distribution =
-  per-tenant global BB/MB/BSH/BSB + per-topic aggregate, decision 66 —
+  per-school global BB/MB/BSH/BSB + per-topic aggregate, decision 66 —
   per-activity histogram out of MVP; progress).
 - Bilingual UI (Indonesian default + English). Report content stays in
   Indonesian.
@@ -95,7 +95,7 @@ to parents via WhatsApp (text + public links; no file attachments).
 ## 4. Out of scope
 
 - Parent/student login or dashboards.
-- Global program templates shared across tenants.
+- Global program templates shared across schools.
 - Online payment, scheduling beyond session date/time/location.
 - Native mobile apps (web app only for MVP).
 - Automatic PDF rendering on the server; WA file attachments (link-only).
@@ -107,8 +107,8 @@ to parents via WhatsApp (text + public links; no file attachments).
 
 | Actor | Login | Scope |
 |---|---|---|
-| Superadmin (SA) | yes (seeded) | all tenants via tenant switcher; manages tenants + admin accounts; can act as admin in any active tenant |
-| Admin | yes (register + SA approval) | one tenant; manages everything in that tenant except tenants |
+| Superadmin (SA) | yes (seeded) | all schools via school switcher; manages schools + admin accounts; can act as admin in any active school |
+| Admin | yes (register + SA approval) | one school; manages everything in that school except schools |
 | Facilitator | yes (register + Admin/SA approval) | own groups only: assess, photo, gallery, report, report-WA send (link-only); consent status read-only (send hidden); plus own profile |
 | Child | no | registered data row |
 | Parent | no | registered data (mother required, father/guardian optional); receives WA text+links; opens public links; responds to consent link |
@@ -123,7 +123,7 @@ to parents via WhatsApp (text + public links; no file attachments).
   48).
 - Database: zero FK constraints (all references loose, app-enforced);
   snapshots/duplication preferred over strict normalisation; every domain
-  row carries `tenant_id`.
+  row carries `school_id`.
 - Photos stored on server disk (`/data/uploads`), DB stores relative path only.
 - Report PDF/PNG generated in the browser, never stored or proxied.
 - WA delivery is text + public URLs only (`send-text`); server never
@@ -138,7 +138,7 @@ to parents via WhatsApp (text + public links; no file attachments).
 
 ## 7. Assumptions
 
-- Seed: 1 tenant (Bandung, type KOTA) + 1 SA account (idempotent rerun).
+- Seed: 1 school (`Kidversa`, `country = Indonesia`, `city = NULL`) + 1 SA account (idempotent SQL seeds).
 - Email is globally unique (one email = one account system-wide).
 - 1 session always covers 1 whole program (all topics assessed in it).
 - Same child MAY join 2+ sessions of the same program (round 6): each
@@ -154,14 +154,14 @@ to parents via WhatsApp (text + public links; no file attachments).
   durably stored (no fake status).
 - No limits on group/session/participant counts; batch WA max 10 items
   per request (client chunks larger sets).
-- School name is free text (no school master).
+- A child's `school` is free text (no school lookup); new children default to the active school's `school_name` (prefilled, editable; server fallback when omitted). The school entity's `school_name` is not unique — duplicate names are allowed (no school master/hierarchy).
 - Duplicate child names allowed (no dedup check; UI disambiguates).
 - Logo on reports is global/static placeholder for MVP.
 - Server clock is UTC; JWT leeway 60 s; reset/AI TTLs server-side only.
 
 ## 8. Terminology
 
-- Tenant: isolated data owner (city/country/other). All domain rows carry it.
+- School: isolated data owner (`school_name`, `country`, `city`). All domain rows carry `school_id`. `school_name` is not unique; duplicate names are allowed.
 - Program → Topik → Kegiatan: curriculum hierarchy. Kegiatan is the unit of assessment.
 - Sesi (Session): scheduled execution of one whole program; holds an
   isolated snapshot copy of program/topics/activities/badges.
@@ -172,9 +172,9 @@ to parents via WhatsApp (text + public links; no file attachments).
   (UNIQUE(child,session) + app check).
 - Badge: completion marker (topic-level + program-level), independent of
   star values (completion-only).
-- Misi (Mission): home activity from the per-tenant mission bank, linked
+- Misi (Mission): home activity from the per-school mission bank, linked
   to 1+ topics, manually picked (max 4, server-enforced) at report time.
-- Frame: PNG/JPG/WebP overlay for photos, owned per tenant, linkable to 1+ programs.
+- Frame: PNG/JPG/WebP overlay for photos, owned per school, linkable to 1+ programs.
 - Consent: parent photo permission per child per session (first decision wins).
 - Rapor: portfolio report per child per session per topic.
 - Envelope: `{data}` success vs `{error:{code,message}}` business
@@ -183,8 +183,8 @@ to parents via WhatsApp (text + public links; no file attachments).
 - Per-child prefix `P`: shorthand for
   `/api/sessions/:sid/topics/:stid/children/:cid` (used in `02`–`06`
   and `08`); every `P` op is membership-gated (decision 18).
-- X-Tenant-ID: request header carrying the client's active tenant; for
-  NON-SA members it must match the JWT tenant claim (`TENANT_MISMATCH`
-  on stale tab); SA may point at any active tenant (switcher semantics).
+- X-School-ID: request header carrying the client's active school; for
+  NON-SA members it must match the JWT school claim (`SCHOOL_MISMATCH`
+  on stale tab); SA may point at any active school (switcher semantics).
 - Idempotency-Key: `X-Idempotency-Key` header on mutating POSTs listed in
   `02§2`; replay returns the original result without a second side-effect.

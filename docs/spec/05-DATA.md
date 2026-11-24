@@ -48,15 +48,15 @@ Status: DRAFT (2026-10-12; audit spek 5 dimensi selesai; pembaruan konsistensi +
   re-validated in `validate.go` (defence in depth; API returns 200
   `VALIDATION` before the DB ever rejects). Snapshots/duplication over
   normalisation.
-- Every domain, link, and snapshot row carries `tenant_id NOT NULL`
-  and every tenant-scoped list-driving query filters by it (exception:
-  the tenant-0 unscoped SA READs explicitly allowed by the `02§2`
-  clarifier — every WRITE stays tenant-guarded) (+ a tenant-leading INDEX on
+- Every domain, link, and snapshot row carries `school_id NOT NULL`
+  and every school-scoped list-driving query filters by it (exception:
+  the school-0 unscoped SA READs explicitly allowed by the `02§2`
+  clarifier — every WRITE stays school-guarded) (+ a school-leading INDEX on
   each table — see `INDEX` lines in §2, which are normative: where a
-  table's §2 line omits the tenant INDEX, the migration MUST still add
-  `INDEX(tenant_id, …)`); exceptions: `tenants`, `migrations`
-  (no tenant column). Nullable-tenant tables (SA rows): `users`,
-  `refresh_tokens`, `reset_tokens` (`users.tenant_id` NULL for SA).
+  table's §2 line omits the school INDEX, the migration MUST still add
+  `INDEX(school_id, …)`); exceptions: `schools`, `migrations`
+  (no school column). Nullable-school tables (SA rows): `users`,
+  `refresh_tokens`, `reset_tokens` (`users.school_id` NULL for SA).
 - `id BIGINT UNSIGNED AUTO_INCREMENT` PK on all entity tables
   (incl. `session_topics`, `session_activities`, `session_groups`,
   `photos`, which keep a surrogate id despite being snapshot-value rows).
@@ -67,8 +67,8 @@ Status: DRAFT (2026-10-12; audit spek 5 dimensi selesai; pembaruan konsistensi +
   `session_members` UNIQUE(child_id,session_id),
   `assessments` UNIQUE(session_activity_id,child_id),
   `narratives` UNIQUE(session_id,session_topic_id,child_id),
-  `idempotency_keys` UNIQUE(tenant_id,route,idem_key) (tenant-scoped —
-  same key+route in another tenant is a distinct row, never a replay),
+  `idempotency_keys` UNIQUE(school_id,route,idem_key) (school-scoped —
+  same key+route in another school is a distinct row, never a replay),
   active `public_links` uniqueness enforced by app Tx (revoke-old +
   insert-new in one Tx; NO filtered-UNIQUE DDL — MariaDB 12.3 has no
   `UNIQUE … WHERE` syntax), single-candidate via `candidate_slot`
@@ -80,30 +80,33 @@ Status: DRAFT (2026-10-12; audit spek 5 dimensi selesai; pembaruan konsistensi +
 
 ## 2. Entities & fields
 
-`tenants`: id, name* `VARCHAR(160)` UNIQUE (avoids picker confusion),
-type* ENUM(KOTA,NEGARA,LAINNYA),
-`is_active BOOL DEFAULT TRUE`, created_at. Seed (idempotent):
-(Bandung, KOTA, active).
+`schools`: id, school_name* `VARCHAR(200) NOT NULL` (NOT unique —
+duplicate school names are allowed; indexed `idx_schools_school_name`,
+no global UNIQUE), country* `VARCHAR(100) NOT NULL DEFAULT 'Indonesia'`
+after school_name, city `VARCHAR(100) NULL` after country,
+`is_active BOOL DEFAULT TRUE`, created_at. The old `type` column is
+removed. Seed (idempotent SQL seed): (`Kidversa`, `Indonesia`, `NULL`,
+active).
 
-`users`: id, tenant_id NULLABLE+INDEX (SA NULL), name* `VARCHAR(160)`,
+`users`: id, school_id NULLABLE+INDEX (SA NULL), name* `VARCHAR(160)`,
 email* `VARCHAR(320)` UNIQUE GLOBAL, wa_number `VARCHAR(20)` NULL,
 password_hash* `VARCHAR(255)`, role* ENUM(SA,ADMIN,FASILITATOR),
 decision* ENUM(PENDING,APPROVED,REJECTED) DEFAULT PENDING,
 `is_active BOOL DEFAULT FALSE`, created_at.
-`INDEX(tenant_id,role,decision,is_active)`.
+`INDEX(school_id,role,decision,is_active)`.
 Semantics: register sets (PENDING,false). Approve sets (APPROVED,true).
 Reject sets (REJECTED,false) — row retained, never shown as pending.
 Deactivate sets is_active=false (decision untouched); reactivate sets true.
 Pending list = `decision=PENDING`. Login requires
 decision=APPROVED AND is_active=true (else 200 `ACCOUNT_INACTIVE`).
 
-`refresh_tokens`: id, tenant_id NULLABLE+INDEX (NULL for SA sessions —
-SA `users.tenant_id` is NULL), user_id* (loose)+INDEX,
+`refresh_tokens`: id, school_id NULLABLE+INDEX (NULL for SA sessions —
+SA `users.school_id` is NULL), user_id* (loose)+INDEX,
 jti* `VARCHAR(64)` UNIQUE, expires_at* (7 d), revoked_at NULL,
 created_at. Rotation = insert new + revoke old in one Tx.
 
-`reset_tokens`: id, tenant_id NULLABLE+INDEX (NULL for SA rows — SA has no
-tenant; ADMIN scope = own-tenant rows, SA sees all), user_id* (loose)+INDEX,
+`reset_tokens`: id, school_id NULLABLE+INDEX (NULL for SA rows — SA has no
+school; ADMIN scope = own-school rows, SA sees all), user_id* (loose)+INDEX,
 `code_hash CHAR(64)*`, `code_plain VARCHAR(16)` NULL (cleared on
 use/revoke/expiry/FIRST-REVEAL — the audited reveal returns it once
 then purges immediately, single-shot self-destruct, decision 51),
@@ -121,37 +124,40 @@ user:{id,name,email}}` — unified with 02§2b/03 F-01/04 FL-03 (2026-10-11);
 `revoked_at`. `INDEX(expires_at)`, `INDEX(user_id,expires_at)`.
 Purge by hourly janitor + sweep on access.
 
-`programs`: id, tenant_id*+INDEX, name* `VARCHAR(200)`, description TEXT
+`programs`: id, school_id*+INDEX, name* `VARCHAR(200)`, description TEXT
 NULL, badge_name `VARCHAR(200)` NULL, badge_image_path `VARCHAR(512)`
 NULL (`CHECK`: both NULL or both NOT NULL), `is_active DEFAULT TRUE`,
-created_at. `INDEX(tenant_id,is_active)`.
+created_at. `INDEX(school_id,is_active)`.
 
-`topics`: id, tenant_id*, program_id* (loose)+INDEX, program_name_snap*
+`topics`: id, school_id*, program_id* (loose)+INDEX, program_name_snap*
 `VARCHAR(200)`, name*, description NULL, sort_order INT DEFAULT 0,
 badge pair (same CHECK), is_active, created_at.
-`INDEX(tenant_id,program_id,sort_order)`.
+`INDEX(school_id,program_id,sort_order)`.
 
-`activities`: id, tenant_id*, program_id* + topic_id* (loose)+INDEX,
+`activities`: id, school_id*, program_id* + topic_id* (loose)+INDEX,
 program/topic_name_snap*, name*, indicator TEXT NULL, sort_order,
-created_at. `INDEX(tenant_id,topic_id,sort_order)`.
+created_at. `INDEX(school_id,topic_id,sort_order)`.
 
-`missions`: id, tenant_id*, program_id* (loose), program_name_snap*,
+`missions`: id, school_id*, program_id* (loose), program_name_snap*,
 name*, body* TEXT, created_at. `mission_topics(mission_id*,
-topic_id*, topic_name_snap*, tenant_id*)`
+topic_id*, topic_name_snap*, school_id*)`
 PK(mission_id,topic_id), `INDEX(topic_id)`.
 
-`frames`: id, tenant_id*, image_path* `VARCHAR(512)`, name*
+`frames`: id, school_id*, image_path* `VARCHAR(512)`, name*
 `VARCHAR(200)`, created_at. `frame_programs(frame_id*, program_id*,
-program_name_snap*, tenant_id*)` PK(frame_id,program_id).
+program_name_snap*, school_id*)` PK(frame_id,program_id).
 
-`children`: id, tenant_id*+INDEX, name*, age* `TINYINT UNSIGNED`
-(`CHECK 1–15`), age_confirmed* `BOOL DEFAULT FALSE`
-(`CHECK(age<=10 OR age_confirmed=TRUE)`), school* `VARCHAR(200)`,
+`children`: id, school_id*+INDEX, name*, age* `TINYINT UNSIGNED`
+(`CHECK 1-15`), age_confirmed* `BOOL DEFAULT FALSE`
+(`CHECK(age<=10 OR age_confirmed=TRUE)`), school `VARCHAR(200)` — a
+separate free-text child-school field (wire key `school`, NOT the school
+entity's `school_name`); optional on create, defaulted to the latest
+active school's `school_name` (VALIDATION if none active),
 mother_name*, mother_wa* `VARCHAR(20)` (`+62…`), father_name,
 father_wa `VARCHAR(20)` NULL, guardian_name NULL, `is_active DEFAULT
-TRUE`, created_at. `INDEX(tenant_id,is_active)`.
+TRUE`, created_at. `INDEX(school_id,is_active)`.
 
-`sessions`: id, tenant_id*+INDEX, program_id* (loose),
+`sessions`: id, school_id*+INDEX, program_id* (loose),
 program_name_snap*, name*, description NULL, date* DATE,
 start_time/end_time TIME NULL (CHECK both-or-neither — decision 61:
 `(start_time IS NULL AND end_time IS NULL) OR (start_time IS NOT NULL
@@ -160,31 +166,31 @@ other also rejected at API level, 200 `VALIDATION`; DDL enforcement
 rides the migration update), location*,
 status* ENUM(DRAFT,OPENED,FINISHED) DEFAULT DRAFT,
 created_by (loose, NULL=deleted), created_at.
-`INDEX(tenant_id,status,date)`. No CANCELED value exists.
+`INDEX(school_id,status,date)`. No CANCELED value exists.
 
-`session_topics`: id, tenant_id*, session_id*+INDEX, topic_id* (loose),
+`session_topics`: id, school_id*, session_id*+INDEX, topic_id* (loose),
 topic_name_snap*, sort_order, badge_name_snap NULL, badge_image_snap
 NULL. `INDEX(session_id,sort_order)`.
 
-`session_activities`: id, tenant_id*, session_id*+INDEX,
+`session_activities`: id, school_id*, session_id*+INDEX,
 session_topic_id*+INDEX, activity_id* (loose), activity_name_snap*,
 indicator_snap NULL, sort_order. `INDEX(session_topic_id,sort_order)`.
 
-`session_groups`: id, tenant_id*, session_id*+INDEX, name*,
+`session_groups`: id, school_id*, session_id*+INDEX, name*,
 facilitator_id NULL (loose; NULL = missing → assessment blocked),
 facilitator_name_snap*.
 
 `session_members`: session_id*, group_id*+INDEX, child_id*,
-child_name_snap*, tenant_id*, `UNIQUE(child_id,session_id)`,
+child_name_snap*, school_id*, `UNIQUE(child_id,session_id)`,
 `INDEX(session_id,group_id)`.
 
 `assessments`: session_id*, session_activity_id* (loose),
-child_id*, tenant_id*, stars* `TINYINT CHECK 1–4`, note TEXT NULL,
+child_id*, school_id*, stars* `TINYINT CHECK 1–4`, note TEXT NULL,
 activity_name_snap*, child_name_snap*, assessor_id (loose, NULL kept),
 updated_at. `UNIQUE(session_activity_id,child_id)`,
 `INDEX(session_id,child_id)`. Upsert atomic; LWW accepted.
 
-`photos`: id, tenant_id*, session_id*+INDEX, session_topic_id*+INDEX,
+`photos`: id, school_id*, session_id*+INDEX, session_topic_id*+INDEX,
 child_id*+INDEX, child_name_snap*, path* `VARCHAR(512)` (relative),
 frame_id NULL (loose), is_candidate* `BOOL DEFAULT FALSE`, file_size INT,
 mime `VARCHAR(64)`, created_by (loose), created_at, file_ready*
@@ -211,41 +217,41 @@ clear+set AND DDL generated column (MariaDB partial-unique trick):
 VIRTUAL NULL, UNIQUE(candidate_slot)` (multiple NULLs allowed, one non-NULL
 per child+topic+session).
 
-`narratives`: session_id*, session_topic_id*, child_id*, tenant_id*,
+`narratives`: session_id*, session_topic_id*, child_id*, school_id*,
 text* TEXT (≤50 words by template, not DB), model `VARCHAR(64)` NULL,
 generated_at NULL, generated_by (loose). `UNIQUE(session_id,
 session_topic_id,child_id)`. Upsert on success only.
 
 `report_missions`: session_id*, session_topic_id*, child_id*,
 mission_id* (loose), mission_name_snap*, mission_body_snap* TEXT,
-tenant_id*. PK(session_id,session_topic_id,child_id,mission_id).
+school_id*. PK(session_id,session_topic_id,child_id,mission_id).
 Replace-set in one Tx; app + `CHECK`-via-count (≤4 → else
 `MISSION_LIMIT`). The snaps are HISTORY-ONLY as of decision 56 — the
 report render resolves the mission name/body LIVE from the bank.
 
-`consent_links`: id, tenant_id*, session_id* (its index IS the leading
+`consent_links`: id, school_id*, session_id* (its index IS the leading
 column of the `UNIQUE(session_id,child_id)` below — no separate KEY
 needed), child_id*+INDEX,
 token* `CHAR(64)` UNIQUE, status* ENUM(PENDING,SETUJU,DITOLAK) DEFAULT
 PENDING, respondent_name `VARCHAR(160)` NULL, responded_at NULL,
 created_at. `UNIQUE(session_id,child_id)` (one link per child+session).
 
-`public_links`: id, tenant_id*, session_id*+INDEX, session_topic_id*,
+`public_links`: id, school_id*, session_id*+INDEX, session_topic_id*,
 child_id*+INDEX, kind* ENUM(REPORT,GALLERY), token* `CHAR(64)` UNIQUE,
 revoked_at NULL, created_at. Active-link uniqueness enforced by app Tx
 (regenerate = revoke old + insert new in one Tx; NO filtered-UNIQUE DDL —
 MariaDB 12.3 has no `UNIQUE … WHERE` syntax).
 
-`wa_outbox`: id, tenant_id*+INDEX, kind* ENUM(REPORT,CONSENT),
+`wa_outbox`: id, school_id*+INDEX, kind* ENUM(REPORT,CONSENT),
 target_wa* `VARCHAR(20)`, payload_ref* `VARCHAR(512)` (report URL or
 consent URL — never file bytes), status* ENUM(SENT,FAILED)
 (no QUEUED value), message_id `VARCHAR(128)` NULL, error TEXT NULL,
 idem_key `VARCHAR(64)` NULL+INDEX, created_at.
-`INDEX(status,created_at)`, `INDEX(tenant_id,created_at)`. Retention 90 d.
+`INDEX(status,created_at)`, `INDEX(school_id,created_at)`. Retention 90 d.
 
 `idempotency_keys`: route* `VARCHAR(200)`, idem_key* `VARCHAR(64)`,
-tenant_id*, response JSON MEDIUMTEXT, created_at,
-`UNIQUE(tenant_id,route,idem_key)`, purge >24 h.
+school_id*, response JSON MEDIUMTEXT, created_at,
+`UNIQUE(school_id,route,idem_key)`, purge >24 h.
 
 ## 3. Request/response shapes (canonical; all HTTP 200)
 
@@ -255,7 +261,7 @@ tenant_id*, response JSON MEDIUMTEXT, created_at,
   per_page=20`; allowed `per_page` 20/50/100/1000, max 1000; client page-size
   selector offers 20/50/100/1000. Canonical list keys: `page`, `per_page`,
   `q` (case-insensitive substring; applied on ALL paged list GETs — 02§2b governs, decision 43), `sort`, `dir`
-  (`asc|desc`) + the route's stated equality filters; `GET /api/tenants`
+  (`asc|desc`) + the route's stated equality filters; `GET /api/schools`
   additionally accepts `?is_active=true|false` (invalid → 200
   `VALIDATION`; decision 31); any other query key
   is ignored; invalid `page`/`per_page`/`sort`/`dir`/filter values → 200
@@ -263,7 +269,7 @@ tenant_id*, response JSON MEDIUMTEXT, created_at,
   tiebreak) except: topics/activities (+ session copies) default
   `sort_order ASC`; photos default `created_at ASC`; sessions default
   `date DESC`; copy-candidates fixed FINISHED-first then date DESC
-  (full-array, not pageable). Sort allowlist per list: tenants/users/
+  (full-array, not pageable). Sort allowlist per list: schools/users/
   programs/missions/frames/children `id|name|created_at` (+ users `email`);
   topics/activities `sort_order|name|id`; sessions
   `id|name|date|status|created_at`; consents `id|child_name|status|
@@ -272,19 +278,19 @@ tenant_id*, response JSON MEDIUMTEXT, created_at,
   (`GET /api/sessions/:sid/consents?status=` and
   `GET /api/consents?session_id=&child_id=` — same keys, same defaults).
   Paged lists (meta
-  REQUIRED): tenants, users, programs, topics, activities, missions,
+  REQUIRED): schools, users, programs, topics, activities, missions,
   frames, children, sessions, session-consents, consents, reset-tokens.
   Full/singleton (no meta, bounded scope): session detail (topics+groups ONE
   response), `P/assessments`, `P/photos` (≤10), narrative, mission picks,
   report, readiness, progress + reports matrices, public-links,
   copy-candidates, `pending-count`, `wa/status`, dashboard aggregates,
-  public JSON, `GET /api/auth/tenants` picker. `wa_outbox` has no list
+  public JSON, `GET /api/auth/schools` picker. `wa_outbox` has no list
   route (retention only);
   business failure
   `{error:{code,message}}`; unhandled → HTTP 500
   `{error:{code:"INTERNAL",message:"…"}}`.
 - Auth: login req `{email,password}` → `{data:{access, user:{…},
-  tenant:{…}}}` + cookie (`access` = access JWT string, stored
+  school:{…}}}` + cookie (`access` = access JWT string, stored
   memory-only by the client). Register/forgot/reset as in FL-01..03.
 - Session create req `{program_id,name,description,date,start_time?,
   end_time?,location,groups:[{name,facilitator_id,child_ids[]}]}` →
@@ -311,9 +317,9 @@ tenant_id*, response JSON MEDIUMTEXT, created_at,
   same per-item status objects inside `data`).
 - SSE signal frame (round 7, binding — `text/event-stream`, NOT an
   envelope): `id: <rev>\nevent: <name>\ndata: {"entity":"…",
-  "entity_id":N, "rev":N, "tenant_id":N, "session_id":N|null,
+  "entity_id":N, "rev":N, "school_id":N, "session_id":N|null,
   "action":"created|updated|deleted|…", "ts":"RFC3339"}\n\n`.
-  `id` = `rev` string (monoton per tenant; drives `Last-Event-ID`).
+  `id` = `rev` string (monoton per school; drives `Last-Event-ID`).
   `data` NEVER carries names, notes, photos, tokens, codes, or bytes —
   only routing keys. Four full-value exceptions ONLY (small derived
   non-PII merged into `data`): `readiness.changed {complete}`,
@@ -362,10 +368,15 @@ tenant_id*, response JSON MEDIUMTEXT, created_at,
 - Migrations `NNNN_*.sql` in order at boot: acquire MySQL advisory
   `GET_LOCK('kidversa_migrate',30)`, apply missing versions into
   `migrations(version INT PRIMARY KEY, applied_at)`, `RELEASE_LOCK`;
-  lock timeout/failure = refuse listen. Seed (Bandung + SA) runs after
-  migrations from hardcoded constants in `internal/seed.go` (never env):
-  `INSERT IGNORE` for the tenant, and insert-or-overwrite-in-place keyed by
-  the SA email for the account, so reruns never duplicate rows.
+  lock timeout/failure = refuse listen. `0001`–`0003` are immutable;
+  `0004_school_rename.sql` renames `tenants` → `schools`, `name` →
+  `school_name`, adds `country`/`city`, drops `type` and the old unique
+  name index, and renames every `tenant_id` column/index to `school_id`.
+  After migrations, single-statement idempotent SQL files in
+  `backend/seeds/` (`0001_school.sql`, `0002_sa.sql`) are executed in
+  filename order by `internal/seed.go`: the Kidversa school is inserted
+  only when `schools` is empty, and the SA row is upserted by globally
+  unique email with `IF(role = 'SA', …)` guards. Reruns never duplicate.
 - In-process hourly janitor (single `time.Ticker` goroutine in `api`,
   NOT a separate service): purge expired/used `reset_tokens`, expired
   `refresh_tokens`, `idempotency_keys` older than 24 h, `wa_outbox` older
@@ -375,12 +386,12 @@ tenant_id*, response JSON MEDIUMTEXT, created_at,
   files younger than 1 h are kept, honoring file-before-row upload
   ordering). Sweep
   failures only logged (`slog`), never crash boot.
-- Uploads `<tenant_id>/<session_id>/<stid>/<child_id>/<rand32hex>.<ext>`
+- Uploads `<school_id>/<session_id>/<stid>/<child_id>/<rand32hex>.<ext>`
   (all numeric IDs, never names — stable on rename, no traversal;
   `<ext>` from the client-declared type: jpg/jpeg/png/webp, never original filename); badges
-  badges `badges/<tenant_id>/<rand32hex>.<ext>`; frames `frames/<tenant_id>/<rand32hex>.<ext>`
-  (tenant-di-LUAR, decision 33 — normative; NEW writes go to this layout
-  while EXISTING tenant-di-dalam files stay put and keep serving — reads
+  badges `badges/<school_id>/<rand32hex>.<ext>`; frames `frames/<school_id>/<rand32hex>.<ext>`
+  (school-di-LUAR, decision 33 — normative; NEW writes go to this layout
+  while EXISTING school-di-dalam files stay put and keep serving — reads
   are path-agnostic, decision 45 / D-4; stance in §8);
   DB relative path only; static
   `Browse:false, Download:false, CacheDuration:10*time.Second`; nginx proxy.
@@ -418,9 +429,9 @@ tenant_id*, response JSON MEDIUMTEXT, created_at,
   memo age rule is gone). Refresh-token whitelist and consent state are
   DB-backed (survive restart); limiter is in-process (restart reset
   accepted). Stream hub (`internal/stream.go`): in-memory fan-out per
-  `(tenant, scope)` + ring 100 events / 5 min per tenant for
+  `(school, scope)` + ring 100 events / 5 min per school for
   `Last-Event-ID` replay — auth connections replay the UNION of their
-  own tenant ring + the tenant-0 broadcast ring (stats/wa/reset
+  own school ring + the school-0 broadcast ring (stats/wa/reset
   broadcasts; LIVE fan-out delivers those broadcast frames to every
   authenticated connection — `02§2c` filter predicate); single `api`
   replica for MVP (no Redis).
@@ -457,13 +468,13 @@ tenant_id*, response JSON MEDIUMTEXT, created_at,
   the janitor; orphan
   disk-without-row files swept hourly.
 - SSE publish (round 7, binding): every Tx above is followed (on COMMIT
-  only, never on rollback) by `stream.Publish(tenant_id, frame)` in the
+  only, never on rollback) by `stream.Publish(school_id, frame)` in the
   same handler AFTER commit (+ after file durability for photo/copy
   paths). Publish is best-effort (`slog` on hub-full drop) and NEVER
   fails/retries the mutation. Guarded-transition losers (`STATE_CONFLICT`)
   publish nothing. Batch WA publishes ONE `report-link.changed` per
   session after the batch loop (not per item). `rev` is assigned by the
-  hub (monoton per tenant; in-memory counter per tenant — restart resets
+  hub (monoton per school; in-memory counter per school — restart resets
   the counter; the replay-gap detection makes clients full-refetch
   once).
 
@@ -473,23 +484,23 @@ Canonical relative upload paths under `UPLOAD_DIR` (default `/data/uploads`,
 bindmounted from host `./data/uploads`), all filenames `<rand32hex>.<ext>`
 (server-generated, never the original filename):
 
-- Photos: `<tenant_id>/<session_id>/<stid>/<child_id>/<rand32hex>.<ext>`
-- Program/topic badges: `badges/<tenant_id>/<rand32hex>.<ext>`
-- Frames: `frames/<tenant_id>/<rand32hex>.<ext>`
+- Photos: `<school_id>/<session_id>/<stid>/<child_id>/<rand32hex>.<ext>`
+- Program/topic badges: `badges/<school_id>/<rand32hex>.<ext>`
+- Frames: `frames/<school_id>/<rand32hex>.<ext>`
 
-Badges and frames are **tenant-di-luar** (decision 33, 2026-10-11): the
-`badges/`/`frames/` segment precedes the tenant id. This supersedes all
-earlier path wording, including the tenant-di-dalam wording in
+Badges and frames are **school-di-luar** (decision 33, 2026-10-11): the
+`badges/`/`frames/` segment precedes the school id. This supersedes all
+earlier path wording, including the school-di-dalam wording in
 `04-FL-04`/`04-FL-05` and the then-current implementation, which wrote
-`<tenant_id>/badges|frames/<rand32hex>.<ext>` — reconciled via Change 16.
+`<school_id>/badges|frames/<rand32hex>.<ext>` — reconciled via Change 16.
 
 Migration stance (decision 45 / D-4, user-confirmed 2026-10-11): NEW
-writes go to the tenant-di-luar layout (`badges/<tenant_id>/…`,
-`frames/<tenant_id>/…`); EXISTING tenant-di-dalam data stays untouched —
+writes go to the school-di-luar layout (`badges/<school_id>/…`,
+`frames/<school_id>/…`); EXISTING school-di-dalam data stays untouched —
 reads are path-agnostic (both layouts keep serving; no file is moved or
-rewritten); the tenant hard-delete wipe covers ALL THREE dirs:
-`<uploads>/<tenant_id>/`, `<uploads>/badges/<tenant_id>/`, and
-`<uploads>/frames/<tenant_id>/` (03 F-02 / 02§4).
+rewritten); the school hard-delete wipe covers ALL THREE dirs:
+`<uploads>/<school_id>/`, `<uploads>/badges/<school_id>/`, and
+`<uploads>/frames/<school_id>/` (03 F-02 / 02§4).
 
 Runtime data dirs (host, relative bindmounts — no named volumes): `data/mariadb`
 (MariaDB datadir), `data/openwa` (OpenWA `/app/data`), `data/uploads`

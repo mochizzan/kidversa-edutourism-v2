@@ -52,7 +52,7 @@ with `{data}` or `{error:{code,message}}`. Only unhandled faults return
 HTTP 500 `{error:{code:"INTERNAL"}}`. Rate limiting returns 200 +
 `Retry-After`. All flows below use snapshot ids inside sessions
 (`stid=session_topics.id`, `said=session_activities.id`,
-`gid=session_groups.id`). Every authenticated call sends `X-Tenant-ID`.
+`gid=session_groups.id`). Every authenticated call sends `X-School-ID`.
 Realtime (round 7, binding): after every successful mutation below, the
 server publishes a signal frame on the SSE hub (post-commit,
 best-effort — never fails the mutation); other tabs' `lib/stream.ts`
@@ -69,41 +69,41 @@ Full event catalogue: `02§2c`.
 Trigger: visitor opens Register. Client validates email format, password
 min 8 letters+numbers, WA digits. `POST /api/auth/register` JSON +
 `X-Idempotency-Key`. Server: limiter → `Bind().Body` → email globally
-unique? tenant active? role allowed? → bcrypt hash → insert
+unique? school active? role allowed? → bcrypt hash → insert
 `is_active=false`. Returns 200 `{data:{id,status:"pending"}}`; replay
 same key returns original. Login now → 200 `{error:{code:
-ACCOUNT_INACTIVE}}`. SA sees pending admins (all tenants), ADMIN sees
-pending facilitators (own tenant) via `GET /api/users?decision=PENDING` →
+ACCOUNT_INACTIVE}}`. SA sees pending admins (all schools), ADMIN sees
+pending facilitators (own school) via `GET /api/users?decision=PENDING` →
 `POST /api/users/:id/approve|reject`. Rejected address is INTENTIONALLY
 terminal (no re-register, no auto-delete — SA/ADMIN deletes the rejected
 row explicitly if the person must re-apply, then the address is reusable).
 Duplicate email → 200 `EMAIL_TAKEN`; inactive
-tenant at register → 200 `TENANT_INACTIVE`. Realtime (round 7):
+school at register → 200 `SCHOOL_INACTIVE`. Realtime (round 7):
 register publishes `user.changed` + `pending.changed {pending}`; approve/
 reject publishes the same pair; other tabs' user tables + pending badges
 refetch (no poll).
 
-## FL-02 Login → JWT pair → tenant context
+## FL-02 Login → JWT pair → school context
 
 `POST /api/auth/login {email,password}` (limiter). Server: find user →
-active? tenant active (or SA)? → bcrypt compare → access 15 min
-(`sub,role,tenant`) + refresh 7 d jti → whitelist row → `Set-Cookie
+active? school active (or SA)? → bcrypt compare → access 15 min
+(`sub,role,school`) + refresh 7 d jti → whitelist row → `Set-Cookie
 refresh_token HttpOnly Path=/ SameSite=Lax (+Secure prod)`. Returns 200
-`{data:{access,user,tenant}}` (`access` = access JWT string). Client: access memory-only; tenant
-`localStorage kv-tenant` + header; SA switcher defaults latest tenant,
-`POST /api/auth/switch-tenant {tenant_id}` validates. Refresh: 200 envelope
+`{data:{access,user,school}}` (`access` = access JWT string). Client: access memory-only; school
+`localStorage kv-school` + header; SA switcher defaults latest school,
+`POST /api/auth/switch-school {school_id}` validates. Refresh: 200 envelope
 `INVALID_TOKEN` → `POST /api/auth/refresh` (cookie) → rotate
 (insert new + revoke old, one Tx) → retry original once. Logout:
 `POST /api/auth/logout` revokes jti. Wrong password → 200
 `INVALID_CREDENTIALS`; inactive → 200 `ACCOUNT_INACTIVE`; member of
-inactive tenant → 200 `TENANT_INACTIVE`; stale-tab write to previous
-tenant by a NON-SA member → 200 `TENANT_MISMATCH` (client reloads
-context, re-switch; SA with a valid tenant header is always accepted).
+inactive school → 200 `SCHOOL_INACTIVE`; stale-tab write to previous
+school by a NON-SA member → 200 `SCHOOL_MISMATCH` (client reloads
+context, re-switch; SA with a valid school header is always accepted).
 Realtime (round 7): login opens no stream by itself (`StreamGate` opens
 `GET /api/stream` on authenticated layout mount); logout closes the
 tab's stream (handshake jti revoked → any reconnect attempt gets 200
-`INVALID_TOKEN`, no stream); SA tenant-switch closes + reopens with the
-new `X-Tenant-ID`. Proactive expiry (binding): server emits directed
+`INVALID_TOKEN`, no stream); SA school-switch closes + reopens with the
+new `X-School-ID`. Proactive expiry (binding): server emits directed
 `auth.expiring` at T-60 s per connection → client refreshes once →
 reconnects the stream (missed while tab asleep → next write/refetch gets
 200 `INVALID_TOKEN` → refresh-once → reconnect, max 1 retry, then re-login).
@@ -113,7 +113,7 @@ reconnects the stream (missed while tab asleep → next write/refetch gets
 `POST /api/auth/forgot {email}` (strict limiter) → always 200
 `{data:{sent:true}}`. If user exists: 8-char code via `crypto/rand`,
 store `code_hash=SHA256`, `code_plain`, `expires_at` 15 min, single-use;
-SMTP attempt. `GET /api/reset-tokens` (SA all / ADMIN own-tenant) lists
+SMTP attempt. `GET /api/reset-tokens` (SA all / ADMIN own-school) lists
 `{id, code_masked:"***AB", expires_at, seconds_left, revoked,
 mail_failed, user:{id,name,email}}` (EVENT-
 DRIVEN round 7: `reset.changed` → refetch list; `TokenCountdown` ticks
@@ -135,7 +135,7 @@ CRUD `/api/programs|/topics|/activities` + query filters. Validate names*;
 badge both-or-neither else 200 `VALIDATION` (image JPG/JPEG/PNG/WebP
 ≤50 MB — client side validation only, Pembaruan 2026-10-11);
 topic needs program*, activity needs program*+topic*. Badge files
-`uploads/badges/<tenant_id>/` (decision 33, tenant-di-luar — canonical in 05§8). Delete any time (snapshot isolation);
+`uploads/badges/<school_id>/` (decision 33, school-di-luar — canonical in 05§8). Delete any time (snapshot isolation);
 delete ALSO removes the badge file from disk in the same delete scope,
 ALWAYS — no share-check (binding, decision 59: the badge belongs to its
 master; old sessions stay intact except the badge image, which the
@@ -147,7 +147,7 @@ topics + kegiatan + link rows in one Tx (decision 62).
 Eligible iff ≥1 topic and each ≥1 activity AND the program + its topics
 are `is_active` (decision 57); else picker shows it DISABLED with
 reason (not hidden — decision 57), direct session-create →
-200 `PROGRAM_INCOMPLETE`. Cross-tenant id → 200
+200 `PROGRAM_INCOMPLETE`. Cross-school id → 200
 `NOT_FOUND` (no leak). Realtime (round 7): every master CRUD publishes
 `program/topic/activity.changed`; other tabs' lists + pickers refetch —
 admin B sees admin A's new program without reload (the motivating case).
@@ -155,17 +155,20 @@ admin B sees admin A's new program without reload (the motivating case).
 ## FL-05 Mission bank + Frame [ADMIN/SA]
 
 Mission `POST /api/missions {program*,name*,body*,topic_ids[1+]}` (same
-tenant). Frame `POST /api/frames` multipart (JPG/JPEG/PNG/WebP ≤50 MB — client side validation only, Pembaruan 2026-10-11) + `name*` + `program_ids[1+]` → `uploads/frames/<tenant_id>/` (decision 33, tenant-di-luar — canonical in 05§8).
+school). Frame `POST /api/frames` multipart (JPG/JPEG/PNG/WebP ≤50 MB — client side validation only, Pembaruan 2026-10-11) + `name*` + `program_ids[1+]` → `uploads/frames/<school_id>/` (decision 33, school-di-luar — canonical in 05§8).
 Both LIVE (resolved at pick/capture; mission name/body render LIVE from
-the bank — `report_missions` snaps are history-only, decision 56). Update/delete follow the master shape (`PATCH` validates same rules → 200 `VALIDATION` on empty name (format/size = client side only, Pembaruan 2026-10-11); unknown/cross-tenant id → 200 `NOT_FOUND`; terminal = updated row or deleted + file swept). Realtime (round 7):
+the bank — `report_missions` snaps are history-only, decision 56). Update/delete follow the master shape (`PATCH` validates same rules → 200 `VALIDATION` on empty name (format/size = client side only, Pembaruan 2026-10-11); unknown/cross-school id → 200 `NOT_FOUND`; terminal = updated row or deleted + file swept). Realtime (round 7):
 mission/frame CRUD publishes `mission.changed` / `frame.changed`; open
 pickers + capture frame lists refetch.
 
 ## FL-06 Child CRUD + activate/deactivate [ADMIN/SA; FAS read-only — user-confirmed 2026-10-08]
 
 Validate name*, age* int (1–10 ok; 11–15 needs `age_confirmed=true` via
-modal; else 200 `VALIDATION`), school* free text, mother name* + WA*
-(digits → `+62…`), father/guardian optional (same norm), tenant auto.
+modal; else 200 `VALIDATION`), `school` free text (optional — prefilled
+from the active school's `school_name` and editable; server falls back to
+the latest active school's `school_name` when omitted/blank, `VALIDATION`
+if none active), mother name* + WA* (digits → `+62…`), father/guardian
+optional (same norm), school_id auto.
 Deactivate → shown DISABLED with reason in pickers (not hidden —
 decision 57), excluded from creates; history + public report stay.
 Hard delete (typed confirm): removes members, assessments, photo rows +
@@ -187,11 +190,11 @@ both empty → NULL = all-day; both set → end>start check), location*) → gro
 (round 5: missing/empty allowed → Draft with zero groups; groups added
 later; when present: name + active
 owner + active children, dedup client+server). `POST /api/sessions` +
-Idempotency-Key, one Tx: eligibility + in-tenant + owners active →
+Idempotency-Key, one Tx: eligibility + in-school + owners active →
 COPY program/topics/activities/badges (+names) into `session_*` → groups
 + members. Replay returns original `session_id`. Double child → 200
 `CHILD_DUPLICATE`; owner inactive → 200 `GROUP_WITHOUT_FACILITATOR`;
-ineligible program → 200 `PROGRAM_INCOMPLETE`; cross-tenant/unknown
+ineligible program → 200 `PROGRAM_INCOMPLETE`; cross-school/unknown
 program/child/owner id → 200 `NOT_FOUND` (no leak); end≤start →
 200 `VALIDATION`. Create-with-`groups[]` recomputes the `copy_available`
 hint at publish time and carries it INSIDE the `session.changed`
@@ -274,7 +277,7 @@ Idempotency-Key (prefix P; frame optional, program-linked only). Pembaruan
 jpg/jpeg/png/webp ≤50 MB before send; the server does not validate
 mime/size. Server: consent →
 write file durable FIRST (temp + `fsync` + atomic rename into
-`<tenant_id>/<session_id>/<stid>/<child_id>/<rand32hex>.<ext>`, numeric
+`<school_id>/<session_id>/<stid>/<child_id>/<rand32hex>.<ext>`, numeric
 IDs, ext from the client-declared type) → ONE Tx (`COUNT(*) … FOR UPDATE` (<10 else
 200 `PHOTO_LIMIT`) + INSERT row) → publish `photo.changed` (signal only —
 no bytes, only after durability; never on intent, never on preview) →
@@ -350,7 +353,7 @@ Empty set → 200 `NOTHING_TO_NARRATE`. Failure → 200 `AI_FAILED`
 photo `photo.changed` + `gallery.changed`); manual PATCH publishes
 the same pair; other tabs refetch `GET P/narrative`.
 
-## FL-13 Report compose → export → links → WA (link-only) [FAS own-groups; ADMIN all-tenant; SA active-tenant]
+## FL-13 Report compose → export → links → WA (link-only) [FAS own-groups; ADMIN all-school; SA active-school]
 
 Gate: the CLIENT readiness UI reads `GET P/readiness` and blocks compose
 until all starred; the server-side 200 `REPORT_INCOMPLETE` + missing
@@ -375,7 +378,7 @@ topic too: batch items for incomplete topics return per-item 200
 (Idempotency-Key) → `/view/report?token=`
 + `/view/gallery?token=`; `POST /api/public-links/:token/revoke|
 regenerate` (regenerate revokes old, one Tx; ADMIN caller must belong
-to the link's tenant — SA any, cross-tenant → 200 `NOT_FOUND` no-leak,
+to the link's school — SA any, cross-school → 200 `NOT_FOUND` no-leak,
 decision 65). WA single `POST P/send-report
 {to}` (if supplied, `to` must match one of the child's registered
 numbers else 200 `VALIDATION`) / batch `POST /api/sessions/:sid/batch-send {items[]}` (per-item `to` same rule; plus
@@ -395,10 +398,10 @@ open parent pages receive public `report.changed` / `gallery.changed`
 
 ## FL-14 Dashboards & analytics
 
-`GET /api/dashboard/overview|analytics?period=7d|30d|all` (tenant from
-`X-Tenant-ID`; SA `?tenant=` override). Aggregates: children, sessions
+`GET /api/dashboard/overview|analytics?period=7d|30d|all` (school from
+`X-School-ID`; SA `?school=` override). Aggregates: children, sessions
 open/finished, reports issued (= narratives + ACTIVE REPORT links,
-`revoked_at IS NULL` — the SA tenant-summary counts ALL REPORT links
+`revoked_at IS NULL` — the SA school-summary counts ALL REPORT links
 instead, intentional split per 02§2b), progress/
 session, pending approvals; star distribution; facilitator activity.
 Plain SQL, no OLAP; EVENT-DRIVEN round 7: server aggregator ticks 5–10 s
@@ -441,7 +444,7 @@ only); `consent.ack {decision}` → consent page shows recorded state;
 
 Trigger: `POST /api/sessions/:id/groups/:gid/members {child_ids[]}`
 (or session create with `groups[]`) includes a child who is already a
-member of other same-program sessions (same tenant). Client (after the
+member of other same-program sessions (same school). Client (after the
 add succeeds) calls `GET
 /api/sessions/:sid/children/:cid/copy-candidates` → if non-empty, shows
 modal "Salin nilai dari Sesi X?" with dropdown (default latest FINISHED,
@@ -452,7 +455,7 @@ Ya → `POST /api/sessions/:sid/children/:cid/copy {source_session_id}`
 the pre-Tx probe — zero-FK) → 200 with the ACTUAL (possibly partial)
 counts, accepted race (decision 67) — re-run copies the remainder;
 source unknown or
-cross-tenant → 200 `NOT_FOUND` (no-leak); same tenant but different
+cross-school → 200 `NOT_FOUND` (no-leak); same school but different
 program → 200 `VALIDATION`; inactive child → 200 `CHILD_INACTIVE`; target FINISHED →
 200 `SESSION_LOCKED` for the ENTIRE copy (stars/notes/narratives/
 missions AND photos all blocked — the photo part never runs, nothing is
@@ -485,7 +488,7 @@ Fiber handler → mock DB (sqlmock) → assertion → coverage report
 
 **Scope:**
 - Business logic (validation, calculations, transformations)
-- Middleware (auth, tenant guard, role check, limiter)
+- Middleware (auth, school guard, role check, limiter)
 - Handlers (request parsing, response building, error mapping)
 - SQL queries (with sqlmock)
 
@@ -530,7 +533,7 @@ user-event interaction → assertion → coverage report
 - Components (rendering, props, state)
 - Hooks (useState, useEffect, useContext)
 - Utilities (transformations, validations)
-- Context (auth, tenant)
+- Context (auth, school)
 - API client (envelope handling, retry logic)
 - SSE stream parser
 
@@ -570,7 +573,7 @@ user-event interaction → MSW API mock → assertion → coverage report
 | Unit test | `go test` + `testify` + `httptest` | `vitest` + `@testing-library/react` |
 | Integration test | `go test` + `httptest` + `sqlmock` | `vitest` + `msw` + `@testing-library/react` |
 | Coverage target | ≥90% business logic, 100% critical | ≥90% components, 100% critical |
-| Critical paths | auth, validation, idempotency, tenant isolation, envelope, SSE | auth context, forms, report export, SSE, envelope |
+| Critical paths | auth, validation, idempotency, school isolation, envelope, SSE | auth context, forms, report export, SSE, envelope |
 | Structure | `internal/<domain>_test.go` | `src/**/*.test.ts(x)` |
 | Pass criteria | all pass + coverage + vet + gofmt | all pass + coverage + tsc + oxlint |
 

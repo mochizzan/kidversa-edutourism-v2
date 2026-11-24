@@ -1,6 +1,19 @@
 # SPEC-INDEX — Kidversa EduTourism v2
 
-Specification Status: DRAFT (2026-10-12; audit spek 5 dimensi selesai; pembaruan konsistensi + notifikasi antd terpasang)
+Specification Status: DRAFT (2026-10-12; audit spek 5 dimensi selesai; pembaruan konsistensi + notifikasi antd terpasang; rename ke model School terpasang 2026-11-18)
+
+## [PEMBARUAN 2026-11-18] Rename penuh ke model School
+
+> Seluruh dokumentasi `docs/spec/` kini memakai kosakata **school**
+> (mantan "tenant"): tabel `schools`, kolom `school_id`, header
+> `X-School-ID`, storage `kv-school`, kode `SCHOOL_INACTIVE` /
+> `SCHOOL_MISMATCH`, SSE `school.changed`, envelope `school`, route
+> `/api/schools`, `/api/auth/schools`, `/api/auth/switch-school`,
+> `/api/dashboard/school-summary` (`data.schools`, `?school=`).
+> `school_name` tidak unik (nama ganda dibolehkan), `type` dihapus,
+> `country` default `Indonesia`, `city` nullable. `0004_school_rename.sql`
+> + seed SQL di `backend/seeds/`. child `school` tetap field teks bebas
+> yang terpisah. Rincian: `docs/superpowers/specs/2026-11-18-tenant-to-school-design.md`.
 
 ## Project
 
@@ -11,14 +24,14 @@ application. Fresh build (no v1). See `00-SCOPE.md`.
 
 | File | Content |
 |---|---|
-| `00-SCOPE.md` | problem, objective, scope, actors, constraints, assumptions, terminology (incl. envelope, X-Tenant-ID, Idempotency-Key) |
+| `00-SCOPE.md` | problem, objective, scope, actors, constraints, assumptions, terminology (incl. envelope, X-School-ID, Idempotency-Key) |
 | `01-TECHSTACK.md` | locked stack + verified APIs (Fiber v3 incl. `middleware/sse` transport-only, React 19, Vite 8, antd v5, OpenWA send-text, Gemini generateContent) + SSE protocol + honest-file rule |
 | `02-ARCHITECTURE.md` | components, pipeline, canonical route table (`GET /api/stream` + `GET /public/stream?token=`), event catalogue + filter + caps (§2c), frontend guards/menu (`lib/stream.ts`, `StreamGate`, event-driven badge/countdown), isolation, boundaries |
 | `03-FEATURES.md` | feature inventory + functional requirements + business rules per role (F-01..F-17 incl. realtime SSE + endpoint feedback notifications) |
 | `04-FLOWS.md` | canonical end-to-end flows FL-01..FL-17 (FL-01..FL-16 product flows + FL-17 test flows) with snapshot ids, failure branches, and SSE publish → signal → refetch tails (FL-10 honest bytes) |
 | `05-DATA.md` | entities, fields, checks, indexes, shapes (incl. SSE frame), transforms, persistence (durable-file rule), hub + publish-after-commit |
 | `06-ERRORS-AND-EDGE-CASES.md` | HTTP-200 envelope taxonomy (E1..E32 + EX), stream propagation/reconnect/filter/caps, retry, races, edges (incl. SSE gap/orphan/revoke) |
-| `07-BEFORE-AFTER.md` | BEFORE (empty) vs AFTER per change incl. decisions recorded per change (Change 11 = SSE migration, Change 12 = server-side paging, Change 13 = test strategy + A4 fixed, Change 14 = spec-code sync remediation round 10, Change 15 = upload rule 50 MB client-side only, Pembaruan 2026-10-11, Change 16 = project structure decisions 33–37, Change 17 = spec↔code audit + total antd migration decisions 38–45, Change 18 = consistency audit round 12 + antd notification decisions 46–50, Change 19 = audit-§4 closure decisions 51–72) |
+| `07-BEFORE-AFTER.md` | BEFORE (empty) vs AFTER per change incl. decisions recorded per change (Change 11 = SSE migration, Change 12 = server-side paging, Change 13 = test strategy + A4 fixed, Change 14 = spec-code sync remediation round 10, Change 15 = upload rule 50 MB client-side only, Pembaruan 2026-10-11, Change 16 = project structure decisions 33–37, Change 17 = spec↔code audit + total antd migration decisions 38–45, Change 18 = consistency audit round 12 + antd notification decisions 46–50, Change 19 = audit-§4 closure decisions 51–72, Pembaruan 2026-11-18 = rename penuh ke model School) |
 | `08-ACCEPTANCE-CRITERIA.md` | testable Given/When/Then (all 200-envelope assertions + SSE realtime + paging blocks + test strategy acceptance criteria) |
 | `SPEC-INDEX.md` | document index, locked user decisions 1–72 (incl. project-structure decisions 33–37 + audit & antd-migration decisions 38–45 + consistency/notification decisions 46–50 + audit-§4 closure decisions 51–72), implementation notes |
 
@@ -61,7 +74,7 @@ Letak pembaruan struktur di tiap berkas:
 | Berkas | Letak |
 |---|---|
 | `02-ARCHITECTURE.md` | §2 (modul lintas-domain envelope/pscope/idempotency) + §7 baru (peta struktur + decisions 33–37) |
-| `04-FLOWS.md` | FL-04 (badge path), FL-05 (frame path) → tenant-di-luar |
+| `04-FLOWS.md` | FL-04 (badge path), FL-05 (frame path) → school-di-luar |
 | `05-DATA.md` | §5 (badge/frame path), §8 baru (layout penyimpanan + data dirs) |
 | `SPEC-INDEX.md` | section ini + self-row + decisions 33–37 |
 
@@ -83,12 +96,12 @@ Letak pembaruan di tiap berkas:
 
 | Berkas | Letak |
 |---|---|
-| `00-SCOPE.md` | marker + §PEMBARUAN upload (caveat framing 52 MB) + §6 (sitasi `01§3`/`01§5` + carve-out test-dep) + §8 (gloss X-Tenant-ID non-SA, envelope per-item, istilah `P`) |
-| `01-TECHSTACK.md` | marker + §2 (kalimat `X-Tenant-ID` lengkap, 4 exception frames, pointer `02§2b`) + §5 (`docs/ANTD-DOCS.md`) + §8 (exception frames) + §10.1/§10.3 (SSE di critical paths) + §10.4 (oxlint) |
-| `02-ARCHITECTURE.md` | marker + §2c (carve-out broadcast tenant-0 di predikat filter) + §2b (hapus route readiness duplikat) + §3 (group `gallery`, `SettingsModal`/`PageHeader`, bullet notifikasi decision 46) + §7 (recap keputusan 33 & 37) |
+| `00-SCOPE.md` | marker + §PEMBARUAN upload (caveat framing 52 MB) + §6 (sitasi `01§3`/`01§5` + carve-out test-dep) + §8 (gloss X-School-ID non-SA, envelope per-item, istilah `P`) |
+| `01-TECHSTACK.md` | marker + §2 (kalimat `X-School-ID` lengkap, 4 exception frames, pointer `02§2b`) + §5 (`docs/ANTD-DOCS.md`) + §8 (exception frames) + §10.1/§10.3 (SSE di critical paths) + §10.4 (oxlint) |
+| `02-ARCHITECTURE.md` | marker + §2c (carve-out broadcast school-0 di predikat filter) + §2b (hapus route readiness duplikat) + §3 (group `gallery`, `SettingsModal`/`PageHeader`, bullet notifikasi decision 46) + §7 (recap keputusan 33 & 37) |
 | `03-FEATURES.md` | marker + F-10 (wording consent FAS + clarifier honest-bytes jendela copy) + F-15 (wording realtime copy) + F-17 baru (notifikasi endpoint) |
 | `04-FLOWS.md` | marker + FL-04/FL-05 (sitasi kanonik `05§8`) + FL-09 (cabang `GROUP_WITHOUT_FACILITATOR`) + FL-13 (tag peran) |
-| `05-DATA.md` | marker + §1 (clarifier baca SA tenant-0) + §2 (catatan ganda `consent_links`) + §3 (typo, cite decision 31, scope cite `stid`) + §6 (fragment rusak + catatan broadcast live) |
+| `05-DATA.md` | marker + §1 (clarifier baca SA school-0) + §2 (catatan ganda `consent_links`) + §3 (typo, cite decision 31, scope cite `stid`) + §6 (fragment rusak + catatan broadcast live) |
 | `06-ERRORS-AND-EDGE-CASES.md` | marker + E1/E23/E32 (sel When lengkap) + catatan removed-codes (kode vs nilai ENUM) + §5 (`<rand32hex>` bukan UUID) |
 | `07-BEFORE-AFTER.md` | marker + Change 16 NOTE superseded + **Change 18** |
 | `08-ACCEPTANCE-CRITERIA.md` | marker + header (scope 1–50 + audit §4) + kriteria backend +SSE + section "Endpoint feedback notifications" |
@@ -109,13 +122,13 @@ Letak pembaruan di tiap berkas:
 |---|---|
 | `00-SCOPE.md` | marker + §3 (reveal self-destruct 51; granularitas star distribution 66) |
 | `01-TECHSTACK.md` | marker + §10.2/§10.4 (gerbang oxlint zero-warning 70) |
-| `02-ARCHITECTURE.md` | marker + §2 (SA inactive READ 53; logout cookie-only 52; reveal 51; misi live 56) + §2b (missions FAS 58; gate link 64; revoke tenant-scope 65) + §3 (SA auto-pick stream 54) |
+| `02-ARCHITECTURE.md` | marker + §2 (SA inactive READ 53; logout cookie-only 52; reveal 51; misi live 56) + §2b (missions FAS 58; gate link 64; revoke school-scope 65) + §3 (SA auto-pick stream 54) |
 | `03-FEATURES.md` | marker + F-01 (51/52/55) + F-04 (57/59/62) + F-05 (56) + F-08 (61) + F-11 (63) + F-12 (64/65) + F-13 (66) + F-15/F-16 (67) |
 | `04-FLOWS.md` | marker + FL-03 (51) + FL-04 (59/62) + FL-05 (56) + FL-06 (57) + FL-07 (61) + FL-08 (60) + FL-12 (63) + FL-13 (64/65) + FL-16 (67) |
 | `05-DATA.md` | marker + §2 (purge reveal 51; CHECK jam sesi 61; snaps misi riwayat 56) + §5 (backup manual 71) |
 | `06-ERRORS-AND-EDGE-CASES.md` | marker + §1 E17 (64) + §5 (52/55; urutan gate 68; race copy 67; deactivated picker 57; SA inactive 53) |
 | `07-BEFORE-AFTER.md` | marker + **Change 19** |
-| `08-ACCEPTANCE-CRITERIA.md` | marker + baris tenant/reveal (51/53/54) + section "Audit-§4 closure" + gate oxlint (70) + catatan verifikasi terbuka (72) |
+| `08-ACCEPTANCE-CRITERIA.md` | marker + baris school/reveal (51/53/54) + section "Audit-§4 closure" + gate oxlint (70) + catatan verifikasi terbuka (72) |
 | `SPEC-INDEX.md` | section ini + self-row + baris 07 (Change 19) + decisions 51–72 + Unresolved (§4 tertutup) |
 
 ## User decisions locked (2026-10-08 post-audit)
@@ -131,8 +144,8 @@ Letak pembaruan di tiap berkas:
    "server uninvolved" contradiction)
 4. Transport: ALL `/api/*` + `/public/*` return HTTP 200 with
    `{data}` / `{error:{code}}`; only unhandled faults → HTTP 500
-   `INTERNAL`. No 4xx statuses. `TENANT_DISABLED` removed (single
-   `TENANT_INACTIVE`); `TENANT_MISMATCH` kept for stale-tab SA writes.
+   `INTERNAL`. No 4xx statuses. `SCHOOL_DISABLED` removed (single
+   `SCHOOL_INACTIVE`); `SCHOOL_MISMATCH` kept for stale-tab SA writes.
 
 ## User decisions locked (2026-10-08 re-audit round 2)
 
@@ -201,15 +214,16 @@ Letak pembaruan di tiap berkas:
     session, checked_at}}`; `connected` = session `ready`; unreachable →
     200 `{data:{connected:false}}`. `GET /api/wa/session` + `POST
     /api/wa/session/start` are SA-only and keep the API key server-side.
-    Dashboard `WaStatusBadge` is EVENT-DRIVEN round 7 (`wa.changed`, no
-    30 s poll). QR pairing remains the only manual step.
+    Dashboard `WaStatusBadge` is EVENT-DRIVEN round 7 (`wa.changed`,
+    seeded once on mount, no 30 s poll). QR pairing remains the only
+    manual step.
 20. Same child in 2 sessions of the same program: ALLOWED, fully
     independent snapshots (assessment/photo/consent/report per session;
     consent per session; reports duplicated). No cross-session block,
     no warning gate — plus an OPTIONAL copy-data offer (decision 21).
 21. Copy-data ("salin nilai dari Sesi X", ADMIN/SA only): offered in a
     modal when adding a child to a group if the child is a member of
-    other same-program sessions (same tenant); modal lists candidates
+    other same-program sessions (same school); modal lists candidates
     via `GET copy-candidates` with a dropdown (default = latest
     FINISHED, fallback latest date) + explicit Ya/Tidak per execution
     (re-runnable for other sources). Semantics: FILL-EMPTY ONLY;
@@ -240,7 +254,7 @@ Letak pembaruan di tiap berkas:
     server `<img>`. Orphans swept unannounced.
 24. Filter reuses REST scope functions (no duplicated auth logic);
     handshake = same guards as REST (failures = 200 envelope, no stream);
-    limiter-exempt streams with connection caps (100/replica + 6/IP + 20/tenant);
+    limiter-exempt streams with connection caps (100/replica + 6/IP + 20/school);
     4 full-value exceptions ONLY (`readiness/pending/wa/consent-ack`);
     hub in-memory single-replica for MVP (no Redis); opened via `fetch`
     + reader in `lib/stream.ts` (zero new deps).
@@ -262,7 +276,7 @@ Letak pembaruan di tiap berkas:
     integration tests NEVER use a real database; no dockertest, no CI
     pipeline: CI is out of MVP scope). Coverage ≥90%
     business logic, 100% critical paths (auth, validation, idempotency,
-    tenant isolation, envelope transport, SSE). Structure:
+    school isolation, envelope transport, SSE). Structure:
     `internal/<domain>_test.go` (co-located). Commands: `go test ./internal/... -v -cover`
     (unit), `go test ./internal/integration/... -v -tags=integration` (integration).
     Pass criteria: all pass + coverage + `go vet` + `gofmt`.
@@ -288,21 +302,21 @@ Letak pembaruan di tiap berkas:
 
 ## User decisions locked (2026-10-11 — spec-code sync remediation round 10)
 
-29. SA cross-tenant summary = PER-TENANT COUNTS (user-confirmed 2026-10-11,
-    audit remediation K7): `GET /api/dashboard/tenant-summary` [SA-only]
-    returns `{data:{tenants:[{tenant_id,name,type,is_active,children,sessions_open,sessions_finished,reports_issued}]}}`
-    ordered `id ASC`; every number belongs to ONE tenant row — NO
-    cross-tenant mixed aggregate anywhere; `reports_issued` = narratives +
-    public_links kind=REPORT (08 definition); FE renders a per-tenant
+29. SA cross-school summary = PER-SCHOOL COUNTS (user-confirmed 2026-10-11,
+    audit remediation K7): `GET /api/dashboard/school-summary` [SA-only]
+    returns `{data:{schools:[{school_id,school_name,is_active,children,sessions_open,sessions_finished,reports_issued}]}}`
+    ordered `id ASC`; every number belongs to ONE school row — NO
+    cross-school mixed aggregate anywhere; `reports_issued` = narratives +
+    public_links kind=REPORT (08 definition); FE renders a per-school
     summary table on the SA dashboard, refetched on `stats.changed` (no
     new SSE event).
 30. AI narrative output stored AS-IS (user-confirmed 2026-10-11): the ≤50-word
     ID paragraph is guaranteed via prompt instruction only
     (`prompts/system.md`); NO programmatic word-truncation or language check
     on the Gemini response; regenerate replaces only on success.
-31. `GET /api/tenants` accepts optional `?is_active=true|false`
+31. `GET /api/schools` accepts optional `?is_active=true|false`
     (user-confirmed 2026-10-11): invalid value → 200 VALIDATION; complements
-    the existing `?q` filter (FE TenantsPage already sends it).
+    the existing `?q` filter (FE SchoolsPage already sends it).
 
 ## User decisions locked (2026-10-11 — ketentuan upload, decision 32)
 
@@ -320,14 +334,14 @@ Letak pembaruan di tiap berkas:
 
 ## User decisions locked (2026-10-11 — project structure, folder & file layout)
 
-33. Badge/frame upload path = **tenant-di-luar** (user-confirmed 2026-10-11):
-    `badges/<tenant_id>/<rand32hex>.<ext>` and
-    `frames/<tenant_id>/<rand32hex>.<ext>`; photos stay
-    `<tenant_id>/<session_id>/<stid>/<child_id>/<rand32hex>.<ext>`.
-    Canonical in `05§8`; supersedes the tenant-di-dalam wording in
+33. Badge/frame upload path = **school-di-luar** (user-confirmed 2026-10-11):
+    `badges/<school_id>/<rand32hex>.<ext>` and
+    `frames/<school_id>/<rand32hex>.<ext>`; photos stay
+    `<school_id>/<session_id>/<stid>/<child_id>/<rand32hex>.<ext>`.
+    Canonical in `05§8`; supersedes the school-di-dalam wording in
     `04-FL-04`/`04-FL-05` and the former code
-    (`<tenant_id>/badges|frames/…`) — reconciled via `07` Change 16;
-    the code now writes the tenant-di-luar layout (implemented in
+    (`<school_id>/badges|frames/…`) — reconciled via `07` Change 16;
+    the code now writes the school-di-luar layout (implemented in
     audit round 11, `07` Change 17 — new writes only; existing data
     stays per decision 45).
 34. Runtime file storage = `data/uploads/` (host bindmount) ←
@@ -383,11 +397,11 @@ Letak pembaruan di tiap berkas:
     `status`); the contracts doc adds `status` (keeps `own:false`
     semantics); both note the derivation.
 45. Badge/frame migration stance (D-4, user-confirmed 2026-10-11): NEW
-    writes go to the tenant-di-luar layout (`badges/<tenant_id>/`,
-    `frames/<tenant_id>/`, decision 33); EXISTING data stays untouched
-    (reads are path-agnostic — old tenant-di-dalam files keep serving);
-    tenant hard-delete wipe ALSO removes `<uploads>/badges/<tenant_id>`
-    and `<uploads>/frames/<tenant_id>` (all three dirs, `03 F-02` /
+    writes go to the school-di-luar layout (`badges/<school_id>/`,
+    `frames/<school_id>/`, decision 33); EXISTING data stays untouched
+    (reads are path-agnostic — old school-di-dalam files keep serving);
+    school hard-delete wipe ALSO removes `<uploads>/badges/<school_id>`
+    and `<uploads>/frames/<school_id>` (all three dirs, `03 F-02` /
     `02§4`; migration note in `05§8`).
 
 ## User decisions locked (2026-10-12 — consistency audit round 12 + antd notification)
@@ -437,21 +451,21 @@ Letak pembaruan di tiap berkas:
     cookie even when the access token is expired/absent → revoke jti +
     clear cookie → 200. Locations: `02§2b`, `03 F-01`, `06§5`, `08`.
     Code task.
-53. SA READ of inactive tenants ALLOWED (item 4, direction confirmed:
-    "perbaiki kode"): member calls → 200 `TENANT_INACTIVE`; SA READ
-    allowed / SA WRITE → `TENANT_INACTIVE`; deleted tenant →
-    `TENANT_INACTIVE` for all. `02§2` wording amended; upholds the
+53. SA READ of inactive schools ALLOWED (item 4, direction confirmed:
+    "perbaiki kode"): member calls → 200 `SCHOOL_INACTIVE`; SA READ
+    allowed / SA WRITE → `SCHOOL_INACTIVE`; deleted school →
+    `SCHOOL_INACTIVE` for all. `02§2` wording amended; upholds the
     `02§4`/`03 F-02`/`08` "SA read-only retained" claims. Code task
-    (tenant guard bypass for SA reads only).
-54. SA stream auto-pick (item 5a): StreamGate with SA `tenant:null`
-    auto-selects the latest ACTIVE tenant via `POST switch-tenant` at
-    mount (mirrors the SA first-login default); no active tenant →
+    (school guard bypass for SA reads only).
+54. SA stream auto-pick (item 5a): StreamGate with SA `school:null`
+    auto-selects the latest ACTIVE school via `POST switch-school` at
+    mount (mirrors the SA first-login default); no active school →
     stream stays closed (graceful degradation). Locations: `02§3`,
     `08`. Code task.
 55. Session hardening (item 5b): (1) second consecutive INVALID_TOKEN
     during refresh-retry forces logout (clear session → login);
-    (2) refresh rotation validates the target tenant's active state —
-    inactive → revoke jti + clear cookie + 200 `TENANT_INACTIVE`
+    (2) refresh rotation validates the target school's active state —
+    inactive → revoke jti + clear cookie + 200 `SCHOOL_INACTIVE`
     (fail-closed). Locations: `03 F-01`, `06§5`, `08`. Code task.
 56. Mission text LIVE (item 6): the report renders the mission
     name/body LIVE from the bank at open time; `report_missions`
@@ -466,7 +480,7 @@ Letak pembaruan di tiap berkas:
     Locations: `03 F-04`, `04 FL-04/FL-06`, `06§5`, `08`. Code task
     (Eligible flag).
 58. `GET /api/missions` readable by FAS (item 8): read-only,
-    own-tenant (required by the F-12 mission picker); other master
+    own-school (required by the F-12 mission picker); other master
     routes stay ADMIN/SA. Location: `02§2b`, `08`. Code task.
 59. Badge files ALWAYS deleted with their master (item 9): the code's
     share-check is REMOVED; deleting a program/topic already used by
@@ -501,11 +515,11 @@ Letak pembaruan di tiap berkas:
     an incomplete report can never have a public link; `GET P/report` +
     admin/FAS/SA previews + public render stay NEVER gated. Locations:
     `02§2b`, `03 F-12`, `04 FL-13`, `06 E17`, `08`. Code task.
-65. Revoke/regenerate tenant-scoped (item 15): the ADMIN caller must
-    belong to the link's tenant (SA any tenant); cross-tenant →
+65. Revoke/regenerate school-scoped (item 15): the ADMIN caller must
+    belong to the link's school (SA any school); cross-school →
     200 `NOT_FOUND` (no-leak). Locations: `02§2b`, `03 F-12`,
     `04 FL-13`, `08`. Code task.
-66. Star distribution granularity (item 16): per-tenant global
+66. Star distribution granularity (item 16): per-school global
     BB/MB/BSH/BSB distribution + per-topic aggregate; per-activity
     histogram OUT of MVP (contracts shape stays). Locations: `00§3`,
     `03 F-13`.
@@ -544,9 +558,9 @@ Letak pembaruan di tiap berkas:
 
 - Read `01-TECHSTACK.md` first for verbatim API names; `02§2b` for the
   canonical route table; `06§1` for the single code taxonomy.
-- DB: zero FK, every domain/link/snapshot row carries `tenant_id`;
+- DB: zero FK, every domain/link/snapshot row carries `school_id`;
   snapshot ids (`stid/said/gid`) in URLs inside sessions.
-- Headers: `Authorization: Bearer`, `X-Tenant-ID` (required on every
+- Headers: `Authorization: Bearer`, `X-School-ID` (required on every
   authenticated call; SA may differ per switcher semantics),
   `X-Idempotency-Key` (mutating POSTs, 24 h replay).
 - Report UI split (decision 38): interior of `#report-a4` plain CSS,

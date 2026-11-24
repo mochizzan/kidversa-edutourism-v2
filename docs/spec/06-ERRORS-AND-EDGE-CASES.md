@@ -62,9 +62,9 @@ All rows: HTTP 200 (except INTERNAL → 500).
 | E3 | INVALID_CREDENTIALS | wrong email/password | generic "wrong email or password" | retry (limiter counts, `Retry-After`) |
 | E4 | INVALID_TOKEN | bad/expired access JWT | re-login silently via refresh once | refresh-once then re-login |
 | E5 | ACCOUNT_INACTIVE | pending/rejected/deactivated | "waiting approval / deactivated" | contact admin; client clears session |
-| E6 | TENANT_INACTIVE | tenant nonaktif (register/login/any member call); tenant deleted | "tenant disabled" | SA only; client blocks writes |
-| E7 | TENANT_MISMATCH | `X-Tenant-ID` ≠ JWT claim for a NON-SA member (tampered/forged header) or a malformed header; SA with a valid tenant header is always accepted (switcher semantics) — SA to an inactive/deleted tenant → 200 TENANT_INACTIVE | "tenant changed, reloading" | SA: client reloads context + re-switch; non-SA: client clears to own tenant from JWT claim; both logged as auth-anomaly |
-| E8 | FORBIDDEN_ROLE | wrong role for endpoint (incl. FAS consent-send, FAS children mutate, non-SA tenant admin) | "no access" | switch account / hide button |
+| E6 | SCHOOL_INACTIVE | school nonaktif (register/login/any member call); school deleted | "school disabled" | SA only; client blocks writes |
+| E7 | SCHOOL_MISMATCH | `X-School-ID` ≠ JWT claim for a NON-SA member (tampered/forged header) or a malformed header; SA with a valid school header is always accepted (switcher semantics) — SA to an inactive/deleted school → 200 SCHOOL_INACTIVE | "school changed, reloading" | SA: client reloads context + re-switch; non-SA: client clears to own school from JWT claim; both logged as auth-anomaly |
+| E8 | FORBIDDEN_ROLE | wrong role for endpoint (incl. FAS consent-send, FAS children mutate, non-SA school admin) | "no access" | switch account / hide button |
 | E9 | NOT_OWNER | facilitator touches foreign group/child | thumbnail only | open own group |
 | E10 | SESSION_LOCKED | wrong-STATE call by a single writer (stars/notes write on Draft or Finished; snapshot/program/groups/members write on Finished; DELETE on Opened; finish-on-Draft / open-on-Finished / reopen-on-non-Finished) — decided by a status RE-READ after the guarded UPDATE hits 0 (expected≠current and no rival transition: current state itself forbids the op) | read-only notice | open/reopen/finish first |
 | E11 | STATE_CONFLICT | concurrent status transition lost (guarded `UPDATE…WHERE status` hit 0 AND re-read shows status already moved to the wanted-or-beyond state by a rival) — decided by the same re-read (rival won the race) | "changed elsewhere, reloaded" | reload session |
@@ -79,20 +79,20 @@ All rows: HTTP 200 (except INTERNAL → 500).
 | E20 | AI_FAILED | Gemini error/timeout/limit | "AI failed" + Retry, old kept | retry later |
 | E21 | WA_FAILED | OpenWA error/down (per item) | per-item error + retry + copy URLs | retry/manual |
 | E22 | MAIL_FAILED | SMTP down (forgot still 200 `sent:true`) — MAIL_FAILED surfaces ONLY as the `mail_failed:true` field on the reset-dashboard item (200 `{data}` row), NEVER as a top-level wire error code on any route | "email failed, ask admin for code" | dashboard reveal + manual relay |
-| E23 | RATE_LIMITED | limiter excess on any route of the binding `01§limiter-policy` set (register/login/forgot/reset/refresh, tenants list, public GETs, consent respond, send-report, batch-send, send-consent, copy-candidates, copy) + stream connection caps (§4; HTTP 200 + `Retry-After`) | "too many, wait Xs" | wait, respect header |
+| E23 | RATE_LIMITED | limiter excess on any route of the binding `01§limiter-policy` set (register/login/forgot/reset/refresh, schools list, public GETs, consent respond, send-report, batch-send, send-consent, copy-candidates, copy) + stream connection caps (§4; HTTP 200 + `Retry-After`) | "too many, wait Xs" | wait, respect header |
 | E24 | TOKEN_INVALID | bad/revoked/expired public/consent token (identical shape, no oracle) | public "link invalid" | request new link |
 | E25 | RESET_EXPIRED | code past `expires_at` | "code expired" | request again |
 | E26 | RESET_USED | code already used/revoked | "code used" | request again |
 | E27 | DB_UNAVAILABLE | pool down / Tx timeout | "service busy" + Retry | retry; `/readyz` false |
 | E28 | CAMERA_DENIED | getUserMedia refused (client-side, no HTTP) | "allow camera or upload" | upload fallback |
 | E29 | PHOTO_MISSING | photo row present but file gone on disk — an ITEM-level flag (`{missing:true}` on the gallery item; report exports skip it), never a top-level `{error}` envelope | item hidden with notice | re-upload / delete row |
-| E30 | NOT_FOUND | unknown id or cross-tenant id (no leak; same shape); non-member child on any per-child-per-topic `P` op or consent-send (round 5 membership gate) | "not found" | back to list |
+| E30 | NOT_FOUND | unknown id or cross-school id (no leak; same shape); non-member child on any per-child-per-topic `P` op or consent-send (round 5 membership gate) | "not found" | back to list |
 | E31 | HAS_OPEN_GROUPS | delete user owning OPENED groups | "reassign groups first" + list | reassign then delete |
 | E32 | CHILD_INACTIVE | any inactive-child gate of §5: session-create `groups[].child_ids`, member add, send-consent, assessment/photo/narrative/mission ops, send-report/batch items | "child inactive" | reactivate |
 | EX | INTERNAL | unhandled panic/DB-boot fail (HTTP 500 only) | "unexpected error" | retry; check logs |
 
-Removed codes (do not implement): `TENANT_DISABLED` (folded into
-`TENANT_INACTIVE`) and `CONSENT_FINAL` (dead — no endpoint returns it;
+Removed codes (do not implement): `SCHOOL_DISABLED` (folded into
+`SCHOOL_INACTIVE`) and `CONSENT_FINAL` (dead — no endpoint returns it;
 repeat submit = 200 success `already:true`). Also removed ENUM values
 (NOT error codes): `CANCELED` (session status — the enum is exactly
 DRAFT/OPENED/FINISHED) and `QUEUED` (`wa_outbox.status` — exactly
@@ -113,7 +113,7 @@ SMTP down → 200 {sent:true} + masked dashboard row → ADMIN reveals +
   relays manually (MAIL_FAILED shown only on relay-diagnostic path)
 Camera denied → E28 client state → gallery-upload button
 Token miss/revoked → 200 TOKEN_INVALID identical shape (no oracle)
-Stale SA tab → 200 TENANT_MISMATCH → client reloads tenant context
+Stale SA tab → 200 SCHOOL_MISMATCH → client reloads school context
 Concurrent open/finish/reopen → loser 200 STATE_CONFLICT → reload
 SSE stream (round 7): publish is best-effort — hub-full/DB-down at
   publish time → drop + `slog`, mutation already committed (client learns
@@ -123,8 +123,8 @@ SSE stream (round 7): publish is best-effort — hub-full/DB-down at
   `Last-Event-ID` (replay from ring; unclosable gap → full-refetch active
   page). NO error code exists for stream transport itself (frames carry no
   `{error}`); handshake failures use the normal 200 codes
-  (`INVALID_TOKEN` / `FORBIDDEN_ROLE` / `TENANT_MISMATCH` /
-  `TENANT_INACTIVE` / `TOKEN_INVALID` / `ACCOUNT_INACTIVE` /
+  (`INVALID_TOKEN` / `FORBIDDEN_ROLE` / `SCHOOL_MISMATCH` /
+  `SCHOOL_INACTIVE` / `TOKEN_INVALID` / `ACCOUNT_INACTIVE` /
   `DB_UNAVAILABLE` — the last two possible on `GET /api/stream` via the
   `sessionAlive` live-refresh-session probe and its DB hit) and never
   open a stream (all 200 envelopes).
@@ -226,7 +226,7 @@ never emit `WA_FAILED`: the connection state is reported inside `data`.
   (`readiness/pending/wa/consent-ack`) carry only small derived non-PII
   per decision 24 / `02§2c`).
 - Stream caps: max 100 concurrent streams per `api` replica + max 6 per
-  IP + max 20 per tenant (single table — same in 01/02§2c); excess handshake → 200 `RATE_LIMITED` + `Retry-After` (no stream).
+  IP + max 20 per school (single table — same in 01/02§2c); excess handshake → 200 `RATE_LIMITED` + `Retry-After` (no stream).
   Stream routes are otherwise limiter-exempt.
 - Batch send is allowed on OPENED and FINISHED sessions (F-12: report delivery outlives the assessment freeze); a session DELETED mid-batch → per-item 200 NOT_FOUND; OpenWA failure → per-item WA_FAILED.
 
@@ -258,9 +258,9 @@ never emit `WA_FAILED`: the connection state is reported inside `data`.
 - Facilitator deleted while owning OPENED groups → blocked (`HAS_OPEN_GROUPS`);
   after reassign+delete, groups show snapped name; assessment blocked only
   while owner missing; old artefacts stay.
-- Tenant inactive → member calls 200 `TENANT_INACTIVE`; SA READ allowed /
-  SA WRITE → `TENANT_INACTIVE` (decision 53).
-- Tenant hard-deleted (typed) → tenant rows + disk gone; `wa_outbox` 90 d;
+- School inactive → member calls 200 `SCHOOL_INACTIVE`; SA READ allowed /
+  SA WRITE → `SCHOOL_INACTIVE` (decision 53).
+- School hard-deleted (typed) → school rows + disk gone; `wa_outbox` 90 d;
   OpenWA untouched. Partial wipe → restore from host backup, re-delete.
 - Finished deleted (typed) → session scope wiped; masters/children kept.
 - Age: 1–10 ok; 11–15 needs modal (`age_confirmed=true`); else `VALIDATION`.
@@ -272,8 +272,8 @@ never emit `WA_FAILED`: the connection state is reported inside `data`.
   refresh cookie (access expired/absent) → revoke jti + clear cookie →
   200. Hardening (decision 55): second consecutive INVALID_TOKEN during
   refresh-retry → client forces logout; refresh rotation validates the
-  tenant's active state — inactive → revoke jti + clear cookie →
-  200 `TENANT_INACTIVE` (fail-closed).
+  school's active state — inactive → revoke jti + clear cookie →
+  200 `SCHOOL_INACTIVE` (fail-closed).
 - Gate order (binding, decision 68): per-child P ops check MEMBERSHIP
   first (non-member → 200 `NOT_FOUND` regardless of payload validity —
   uniform no-leak), then body VALIDATION (invalid → 200 `VALIDATION`),
@@ -304,7 +304,7 @@ never emit `WA_FAILED`: the connection state is reported inside `data`.
   (no modal); later DITOLAK on target → ALL photo rows + files for that
   child+session deleted (original + copied), non-photo copies stay.
 - SSE stream (round 7): disconnect mid-batch → reconnect + `Last-Event-ID`
-  replays missed signals from the ring (100 events / 5 min / tenant);
+  replays missed signals from the ring (100 events / 5 min / school);
   replay applies the connection's scope filter FIRST, then the gap check
   (a filtered-out `rev` jump is not a gap — no leak, no false full-refetch);
   ring overflow or server restart → unclosable gap → client full-refetches
@@ -312,10 +312,10 @@ never emit `WA_FAILED`: the connection state is reported inside `data`.
   overlap) → ignored via `rev <= last_seen_rev` + idempotent GET refetch
   (no double-write — SSE never mutates). `auth.expiring` missed (tab
   asleep) → next write/refetch gets 200 `INVALID_TOKEN` → refresh-once →
-  reconnect (max 1 retry, then re-login). SA switches tenant in another
-  tab → old-tab stream keeps OLD tenant scope until its next signal;
-  tenant-switch ALWAYS closes + reopens the stream (no cross-tenant
-  frame can land — filter checks tenant first). Two tabs same tenant =
+  reconnect (max 1 retry, then re-login). SA switches school in another
+  tab → old-tab stream keeps OLD school scope until its next signal;
+  school-switch ALWAYS closes + reopens the stream (no cross-school
+  frame can land — filter checks school first). Two tabs same school =
   two connections, both receive; coalesce is per-tab. Browser kills tab →
   server notices on next flush error (`stream.Done()`) and drops the
   subscription (no leak). Public token revoked while page open →

@@ -18,11 +18,11 @@ Status: DRAFT (2026-10-12; audit spek 5 dimensi selesai; pembaruan konsistensi +
 > Penanda pembaruan: 22 butir
 > `docs/audit/2026-10-11-spec-codebase-sync-audit.md` §4 dijawab user
 > (2026-10-12) dan dikunci sebagai keputusan 51–72 (lihat `SPEC-INDEX`).
-> Relevan berkas ini: SA READ tenant nonaktif (53); logout cookie-only
-> (52); SA auto-pick tenant aktif untuk stream (54); reveal
+> Relevan berkas ini: SA READ school nonaktif (53); logout cookie-only
+> (52); SA auto-pick school aktif untuk stream (54); reveal
 > self-destruct (51); teks misi live (56); `GET /missions` untuk FAS
 > (58); gate pembuatan link saat incomplete (64); revoke/regenerate
-> tenant-scope (65). Rincian: `07` Change 19 + section indeks pembaruan
+> school-scope (65). Rincian: `07` Change 19 + section indeks pembaruan
 > di `SPEC-INDEX.md`.
 
 ## [PEMBARUAN 2026-10-11] Ketentuan Upload Baru
@@ -78,7 +78,15 @@ api (Go 1.26.6 + Fiber v3, :3000)
   `WORKDIR /app`, `HOME=/app/data`, healthcheck
   `curl -f http://localhost:2785/api/health/ready`; user-locked round 5),
   `env_file:[.env]`, `ports:["8003:2785"]` (dashboard QR + key minting,
-  once), bindmount `./data/openwa:/app/data`.
+  once), bindmount `./data/openwa:/app/data`, plus
+  `./ops/openwa/wa-ua.cjs:/opt/wa-ua.cjs:ro` with
+  `NODE_OPTIONS=--require=/opt/wa-ua.cjs` and
+  `WWEBJS_AUTH_TIMEOUT_MS=120000`. The preload replaces whatsapp-web.js's
+  Chrome/101 default user agent, which WhatsApp Web now answers with its
+  "update Chrome" gate (server renders no QR, so start ends in
+  `engine_init_timeout`); the timeout raises OpenWA's engine-init budget
+  (`max(60 s, value + 30 s)`) because a cold first boot needs ~55–80 s
+  before the `qr` event fires.
 
 ## 2. Backend — vertical slices, no layers
 
@@ -89,14 +97,14 @@ One Go module, stdlib + 4 packages (`fiber/v3`, `go-sql-driver/mysql`,
 
 Files: `cmd/api/main.go` (env → db → migrate → seed → routes → listen);
 `internal/config.go db.go auth.go validate.go files.go wa.go mail.go ai.go
-tenants.go users.go programs.go topics.go activities.go missions.go
+schools.go users.go programs.go topics.go activities.go missions.go
 frames.go children.go sessions.go assessments.go photos.go reports.go
 `consents.go public.go dashboard.go stream.go`; plus cross-domain infra
 modules `envelope.go` (HTTP-200 `{data}`/`{error:{code,message}}`
 envelope writer), `pscope.go` (per-connection SSE scope), and
 `idempotency.go` (`X-Idempotency-Key` replay store) (`stream.go` = SSE hub ONLY:
 `Publish`, `Subscribe`, `Replay` on an in-memory fan-out per
-`(tenant, scope)` + ring 100 events / 5 min per tenant; single `api`
+`(school, scope)` + ring 100 events / 5 min per school; single `api`
 replica for MVP — multi-replica fan-out via Redis is out of scope and
 would be a new Change, not a silent upgrade); `migrations/NNNN_*.sql`;
 `prompts/system.md user.md`; `templates/wa_report.md wa_consent.md`.
@@ -107,8 +115,8 @@ Pipeline per protected route (binding order):
 recover → requestid → logger → cors → limiter (sensitive routes only)
 → keyauth(access FromAuthHeader Bearer; refresh FromCookie on /refresh only)
 → `RequireRole` (SA passes ALL role checks — superset of ADMIN/FAS in any
-  active tenant; ADMIN passes facilitator-level checks in own tenant) →
-  tenant guard (`X-Tenant-ID` vs JWT claim)
+  active school; ADMIN passes facilitator-level checks in own school) →
+  school guard (`X-School-ID` vs JWT claim)
 → `c.Bind().Body/Query/URI/Header/Cookie` (Bind-first, see 01§2) → validate.go
 → store(`c.Context()`+timeout)
 → c.Status(200).JSON envelope
@@ -121,22 +129,22 @@ recover → requestid → logger → cors → limiter (sensitive routes only)
   unhandled faults → HTTP 500 `{error:{code:"INTERNAL"}}` via
   `recover`/custom `ErrorHandler`. Rate limiting also returns 200 +
   `Retry-After` header (never 429). Client branches on envelope only.
-- `X-Tenant-ID` REQUIRED on every authenticated call. Non-SA: must equal
-  JWT `tenant` claim or `TENANT_MISMATCH`. SA: any active tenant
-  (switcher sets it); deleted → `TENANT_INACTIVE`; inactive → member
-  calls → `TENANT_INACTIVE`, SA READ allowed / SA WRITE →
-  `TENANT_INACTIVE` (decision 53). Clarifier
-  (2026-10-11): SA may OMIT `X-Tenant-ID` — cross-tenant READS on the
-  per-route basis (routes that support tenant-0 unscoped reads, e.g.
+- `X-School-ID` REQUIRED on every authenticated call. Non-SA: must equal
+  JWT `school` claim or `SCHOOL_MISMATCH`. SA: any active school
+  (switcher sets it); deleted → `SCHOOL_INACTIVE`; inactive → member
+  calls → `SCHOOL_INACTIVE`, SA READ allowed / SA WRITE →
+  `SCHOOL_INACTIVE` (decision 53). Clarifier
+  (2026-10-11): SA may OMIT `X-School-ID` — cross-school READS on the
+  per-route basis (routes that support school-0 unscoped reads, e.g.
   session list / reset list / report+assessment reads); every WRITE goes
-  through `requireTenant` → tenant 0 → 200 `VALIDATION` before any gate
+  through `requireSchool` → school 0 → 200 `VALIDATION` before any gate
   (pipeline order above).
 - `X-Idempotency-Key` (UUID/`crypto/rand` hex, client-generated) REQUIRED
   on: `POST /api/auth/register`, `POST /api/sessions`, `POST /api/users`,
   WA single/batch, consent send, public-link create/regenerate, photo
   upload, narrative generate (POST), public consent respond, copy-data
   execute (12 routes). Server stores
-  `(tenant, key, route, result)` 24 h (tenant-scoped — cross-tenant same
+  `(school, key, route, result)` 24 h (school-scoped — cross-school same
   key never replays); replay returns the original envelope
   without a second side-effect. Replay after 24 h purge = fresh execution
   (new row, side-effects re-run). Same-key photo replay after row deleted
@@ -158,27 +166,29 @@ ALL paged list GETs, INCLUDING consents + reset-tokens — decision 43,
 `per_page` 20/50/100/1000; invalid values → 200 `VALIDATION`.
 
 Auth (`/api/auth/*`): `POST register|login|forgot|reset` (public+limiter;
-register needs `X-Idempotency-Key`), `GET /api/auth/tenants` (public, no auth,
-limiter — active tenants `{id,name,type}` only for the register picker),
+register needs `X-Idempotency-Key`), `GET /api/auth/schools` (public, no auth,
+limiter - active schools `{id,school_name}` only for the register picker),
 `POST refresh` (cookie only), `POST logout`, `GET me`,
 `PATCH profile`, `POST change-password` (revokes ALL refresh rows, like
-reset — other sessions re-login), `POST switch-tenant {tenant_id}`
-(SA-ONLY; ADMIN/FAS calling returns 200 `FORBIDDEN_ROLE` — their tenant
-is fixed to the JWT claim. SA validates target active + returns tenant;
-client persists `kv-tenant`). Logout (`POST logout`) revokes jti AND
+reset — other sessions re-login), `POST switch-school {school_id}`
+(SA-ONLY; ADMIN/FAS calling returns 200 `FORBIDDEN_ROLE` — their school
+is fixed to the JWT claim. SA validates target active + returns school;
+client persists `kv-school`). Logout (`POST logout`) revokes jti AND
 clears the cookie via `ClearCookie`; cookie-only logout (decision 52):
 the route accepts the refresh cookie even when the access token is
 expired/absent (revoke jti + clear cookie → 200).
 
-Tenants [SA]: `GET /api/tenants` (all incl. inactive; optional
+Schools [SA]: `GET /api/schools` (all incl. inactive; optional
 `?is_active=true|false` filter — invalid value → 200 `VALIDATION`),
-`POST /api/tenants`
-(name globally UNIQUE → 200 `VALIDATION` on duplicate),
-`GET|PATCH|DELETE /api/tenants/:id`,
-`POST /api/tenants/:id/activate|deactivate` (typed confirm on DELETE).
+`POST /api/schools`
+(`school_name` trim, non-empty, ≤200 — NOT unique, duplicates allowed;
+`country` trim, empty → `Indonesia`, ≤100; `city` trim, empty → `NULL`,
+≤100; no `type` field),
+`GET|PATCH|DELETE /api/schools/:id`,
+`POST /api/schools/:id/activate|deactivate` (typed confirm on DELETE).
 
 Users: `GET /api/users?role=&decision=&is_active=&q=` (SA all / ADMIN
-own-tenant FACILITATORS ONLY — ADMIN requesting `role=ADMIN`/`role=SA`
+own-school FACILITATORS ONLY — ADMIN requesting `role=ADMIN`/`role=SA`
 or omitting role gets facilitator rows only, never admin rows
 (binding — the route scope is facilitator-list for ADMIN, full-list
 for SA); `GET /api/users/:id`, `PATCH /api/users/:id`,
@@ -192,15 +202,15 @@ SA + ADMIN only; FAS → 200 `FORBIDDEN_ROLE`. The created row is
 APPROVED + `is_active=true`, i.e. the account can log in immediately —
 no register + approval flow. `role` accepts ADMIN or FASILITATOR ONLY —
 a request with `role=SA` → 200 `FORBIDDEN_ROLE`. ADMIN may create only
-in its own tenant. Email stays globally UNIQUE → duplicate → 200
-`EMAIL_TAKEN`. The target tenant must be active (inactive → 200
-`TENANT_INACTIVE`). `X-Idempotency-Key` is REQUIRED — replay returns the
+in its own school. Email stays globally UNIQUE → duplicate → 200
+`EMAIL_TAKEN`. The target school must be active (inactive → 200
+`SCHOOL_INACTIVE`). `X-Idempotency-Key` is REQUIRED — replay returns the
 original envelope).
 Pending list = `GET /api/users?decision=PENDING`.
 Pending badge = `GET /api/users/pending-count {data:{pending:number}}`
 (same scope as list).
 
-Reset dashboard: `GET /api/reset-tokens` (SA all / ADMIN own-tenant;
+Reset dashboard: `GET /api/reset-tokens` (SA all / ADMIN own-school;
 item = `{id, code_masked:"***AB", expires_at, seconds_left, revoked,
 mail_failed, user:{id,name,email}}` — unified field set matching the
 contracts doc + `05§2` `mail_failed`; `?reveal=1`
@@ -209,8 +219,8 @@ self-destruct (decision 51; subsequent reveal → 200 `VALIDATION`, masked
 only), `POST /api/reset-tokens/:id/revoke`,
 `POST /api/reset-tokens/:id/reveal` (audited; same self-destruct).
 
-Masters (tenant-scoped, [SA/ADMIN]; `GET /api/missions` ALSO readable
-by FAS — read-only own-tenant, required by the F-12 mission picker,
+Masters (school-scoped, [SA/ADMIN]; `GET /api/missions` ALSO readable
+by FAS — read-only own-school, required by the F-12 mission picker,
 decision 58): `GET|POST /api/programs`,
 `GET|PATCH|DELETE /api/programs/:id`; same shape for
 `/api/topics?program_id=`, `/api/activities?topic_id=&program_id=`,
@@ -226,7 +236,7 @@ Children [ADMIN/SA mutate; FAS read-only list/detail — user-confirmed
 
 Sessions [ADMIN/SA mutate; FAS scoped read + own-group ops]:
 `GET /api/sessions?status=&q=` (FAS sees only sessions where they own ≥1
-group; ADMIN own-tenant all; SA active-tenant all),
+group; ADMIN own-school all; SA active-school all),
 `POST /api/sessions` (ADMIN/SA only, FAS → 200 `FORBIDDEN_ROLE`;
 Idempotency-Key; user decision round 5: `groups[]` OPTIONAL — missing or
 empty allowed → Draft with zero groups, groups added later via
@@ -250,7 +260,7 @@ groups: `GET|POST /api/sessions/:id/groups` (mutate ADMIN/SA; Draft/Opened;
 Finished → 200 `SESSION_LOCKED`),
 `PATCH /api/sessions/:id/groups/:gid {name?, facilitator_id?}` (ADMIN/SA;
 Draft/Opened only, Finished → 200 `SESSION_LOCKED`; new owner must be an
-active `FASILITATOR` of the same tenant else 200 `VALIDATION`),
+active `FASILITATOR` of the same school else 200 `VALIDATION`),
 `DELETE /api/sessions/:id/groups/:gid` (ADMIN/SA; Draft/Opened only,
 Finished → 200 `SESSION_LOCKED`; user decision 2026-10-08 option B cascade
 wipe: deletes the group + removes ALL its members from the session + wipes
@@ -264,7 +274,7 @@ as group delete, silently — no trash for MVP).
 
 Copy-data [ADMIN/SA] (user decision round 6): `GET
 /api/sessions/:sid/children/:cid/copy-candidates` → other same-program
-sessions (same tenant) containing the child
+sessions (same school) containing the child
 `[{session_id, session_name, session_date, status, counts}]`; `POST
 /api/sessions/:sid/children/:cid/copy {source_session_id}` (Idempotency-Key;
 fill-empty only: unmatched target topics/activities stay empty; copies
@@ -318,7 +328,7 @@ incomplete topic → 200 `REPORT_INCOMPLETE`, decision 64;
 copy/revoke convenience)),
 `POST /api/public-links/:token/revoke|regenerate` (regenerate revokes old,
 one Tx; revoked/unknown → 200 `TOKEN_INVALID`; ADMIN caller must belong
-to the link's tenant — SA any tenant, cross-tenant → 200 `NOT_FOUND`
+to the link's school — SA any school, cross-school → 200 `NOT_FOUND`
 no-leak, decision 65),
 `POST P/send-report {to?}` (default mother's WA; if supplied must match
 one of the child's registered numbers else 200 `VALIDATION`; gated per
@@ -342,21 +352,21 @@ responded_at, consent_url?}]` (URL included while PENDING for copy/resend),
 
 Dashboard: `GET /api/dashboard/overview`,
 `GET /api/dashboard/analytics?period=7d|30d|all`
-(tenant from `X-Tenant-ID`; SA `?tenant=` override).
+(school from `X-School-ID`; SA `?school=` override).
 `reports_issued` INTENTIONAL SPLIT (two definitions, both deliberate):
 the OVERVIEW counts ACTIVE REPORT links only (`public_links kind=REPORT
-AND revoked_at IS NULL`) + narratives; the SA tenant-summary below counts
+AND revoked_at IS NULL`) + narratives; the SA school-summary below counts
 ALL kind=REPORT links (revoked included) + narratives (matches decision
 29) — the overview is a live activity metric, the summary is a
-lifetime per-tenant ledger.
-`GET /api/dashboard/tenant-summary` (SA-ONLY — non-SA → 200
+lifetime per-school ledger.
+`GET /api/dashboard/school-summary` (SA-ONLY — non-SA → 200
 `FORBIDDEN_ROLE`; no limiter; 200 always) →
-`{data:{tenants:[{tenant_id,name,type,is_active,children,sessions_open,
+`{data:{schools:[{school_id,school_name,is_active,children,sessions_open,
 sessions_finished,reports_issued}]}}`, ordered `id ASC`: `children` = all
 children rows (active+inactive); `sessions_open`/`sessions_finished` =
 per-status counts; `reports_issued` = narratives count + ALL public_links
-kind=REPORT count (regardless of revoked_at; definition 08). NO mixed cross-tenant aggregates
-(user decision #29, 2026-10-11, superseding the "cross-tenant summary"
+kind=REPORT count (regardless of revoked_at; definition 08). NO mixed cross-school aggregates
+(user decision #29, 2026-10-11, superseding the "cross-school summary"
 wording).
 
 WA status [SA/ADMIN] (user decision round 6; connect flow updated
@@ -369,8 +379,9 @@ OpenWA's session status is `ready`. OpenWA unreachable → 200
 proxy the session state + QR → 200 `{data:{connected, status, session,
 phone, qr_code, last_error, checked_at}}` so an SA can pair in-app; the
 OpenWA API key never leaves the server. Dashboard `WaStatusBadge`
-(event-driven round 7: renders `wa.changed` `{connected}`, detail via
-`GET /api/wa/status` on demand; SA click opens the connect modal — Open
+(event-driven round 7: renders `wa.changed` `{connected}`, seeded once on
+mount and refined by `GET /api/wa/status` on demand; SA click opens the
+connect modal — Open
 OpenWA opens `http://<host>:8003` in a new tab, Connect Directly starts
 the session and shows the QR; ADMIN click is inert).
 
@@ -385,7 +396,7 @@ Infra: `GET /livez|/readyz|/startupz` (healthcheck; readiness probes DB),
 
 Realtime stream (round 7, binding — 1 endpoint + 1 thin public endpoint,
 signal-only): `GET /api/stream` (auth pages; handshake = `keyauth` Bearer
-+ `RequireRole` + `X-Tenant-ID` guard, same as REST, PLUS the
++ `RequireRole` + `X-School-ID` guard, same as REST, PLUS the
 `sessionAlive` live-refresh-session probe — the token owner must still
 hold ≥1 live `refresh_tokens` row (audit K3: logout/password-reset/admin
 revoke kills the stream for old Bears); failures return a normal 200
@@ -394,7 +405,7 @@ handshake can answer `ACCOUNT_INACTIVE` (pending/rejected/deactivated
 user) and `DB_UNAVAILABLE` (the probe's DB hit fails), both 200
 envelopes, stream never opens; limiter-exempt;
 concurrent-connection caps (binding triple — same in 01 limiter-policy
-+ 06§2: max 100 per `api` replica + max 6 per IP + max 20 per tenant;
++ 06§2: max 100 per `api` replica + max 6 per IP + max 20 per school;
 enforced at handshake, excess → 200 `RATE_LIMITED` + `Retry-After`) and
 `GET /public/stream?token=` (parent pages; scope locked to that token's
 child+session[+topic]; revoked/unknown → 200 `TOKEN_INVALID`, no stream).
@@ -405,13 +416,13 @@ notes, photos, tokens, codes, or bytes. Full event catalogue + filter
 predicate + refetch table: see §2c. Publish points: every mutating
 handler posts to the hub AFTER Tx commit (best-effort — publish failure
 never fails the mutation); hub = `internal/stream.go` in-memory fan-out
-per `(tenant, scope)` + ring 100 events / 5 min per tenant for
+per `(school, scope)` + ring 100 events / 5 min per school for
 `Last-Event-ID` replay (single `api` replica for MVP).
 
 ## 2c. Realtime — 1 SSE endpoint, signal + refetch (round 7, binding)
 
 One stream per tab maximum (opened on page mount, closed on unmount/
-tenant-switch/logout). Client routing table (binding — event → refetch,
+school-switch/logout). Client routing table (binding — event → refetch,
 debounced/coalesced 300 ms per table; signals for pages not currently
 open are ignored; signals with `rev <= last_seen_rev` for that table are
 ignored without request):
@@ -440,9 +451,9 @@ ignored without request):
 | `user.changed` | register / approve / reject / activate / deactivate / delete | `GET /api/users?…` |
 | `pending.changed` `{pending}` | any decision transition | pending badge (ONLY full-value exception #2: a count, safe to render) |
 | `reset.changed` | forgot row / reveal / revoke / use / expiry sweep | `GET /api/reset-tokens` (masked + countdown — replaces 5 s poll) |
-| `tenant.changed` | tenant CRUD / activate / deactivate / wipe | tenant list + (if own tenant affected) context reload |
+| `school.changed` | school CRUD / activate / deactivate / wipe | school list + (if own school affected) context reload |
 | `stats.changed` | dashboard aggregator tick (5–10 s server tick, not per-mutation) | `GET /api/dashboard/overview\|analytics` (replaces client memo/poll — refetch on SSE signal only) |
-| `wa.changed` `{connected}` | server polls the configured OpenWA session every 5 s (replaces the old `/api/health/ready` probe and the 30 s client poll); `connected` = the session is `ready` (phone linked), and the frame is published on a LINK-STATE TRANSITION only (ready↔not-ready — not on every poll tick) | `GET /api/wa/status` only if badge needs detail; `{connected}` renders directly (ONLY full-value exception #3) |
+| `wa.changed` `{connected}` | server polls the configured OpenWA session every 5 s (replaces the old `/api/health/ready` probe and the 30 s client poll); `connected` = the session is `ready` (phone linked), and the frame is published on a LINK-STATE TRANSITION only (ready↔not-ready — not on every poll tick) | `GET /api/wa/status` once on mount to seed the badge, plus on demand for popover detail; `{connected}` renders directly (ONLY full-value exception #3) |
 | `auth.expiring` (directed, not broadcast; frame = `{exp: RFC3339}` only — no id, no rev) | T-60 s before access expiry on that connection | refresh-once → reconnect with new Bearer + last id |
 | Public: `report.changed` / `gallery.changed` | narrative/mission/photo/link change in that child+session[+topic] | `GET /public/report\|gallery?token=` |
 | Public: `consent.ack` `{decision}` | parent respond on that token | consent page shows recorded state (ONLY full-value exception #4, own decision only) |
@@ -451,13 +462,13 @@ ignored without request):
 Filter predicate (binding, T1 resolution — reuse, never duplicate):
 a frame is sent on connection C **iff** the corresponding REST `GET`
 would return that row to C. Implementation: handshake snapshots
-`(user_id, role, tenant_id, own_group_ids, owned_session_ids,
+`(user_id, role, school_id, own_group_ids, owned_session_ids,
 child_scope)` computed by CALLING the same scope functions used by
 `GET /api/sessions` / `GET /api/children` (imported, not copied);
-per-frame check = (tenant equal OR tenant_id=0 BROADCAST frame — the
+per-frame check = (school equal OR school_id=0 BROADCAST frame — the
 stats/wa/reset broadcasts per `05§6`, delivered to EVERY authenticated
-connection regardless of its tenant, never to public connections) AND
-(ADMIN/SA pass tenant scope;
+connection regardless of its school, never to public connections) AND
+(ADMIN/SA pass school scope;
 FAS passes only own-group/session/child scope; public passes only its
 token scope). Membership changes (member add/remove, owner reassign)
 recompute the affected connections' scope on the next publish (stale
@@ -465,7 +476,7 @@ scope window ≤ one publish). Tests MUST cover the matrix
 (SA/ADMIN/FAS-owner/FAS-foreign/public × each event → send/skip).
 
 Publish rule (binding): every mutating handler calls
-`stream.Publish(tenant_id, frame)` AFTER Tx commit + (for photos/copy:
+`stream.Publish(school_id, frame)` AFTER Tx commit + (for photos/copy:
 after files durable). Publish is best-effort (`slog` on drop) and NEVER
 fails the mutation. `session.status` publishes ONLY for the guarded-Tx
 winner (loser got `STATE_CONFLICT`, publishes nothing). Batch WA
@@ -474,7 +485,7 @@ publishes ONE `report-link.changed` per session after the batch
 
 Connection caps (binding; single table — same in 01 limiter-policy):
 max 100 concurrent streams per `api` replica + max 6 per IP (browser-norm)
-+ max 20 per tenant; enforced at handshake, excess handshake → 200
++ max 20 per school; enforced at handshake, excess handshake → 200
 `RATE_LIMITED` + `Retry-After`, stream never opened.
 `GET /api/stream` + `GET /public/stream` are limiter-exempt otherwise.
 
@@ -482,7 +493,7 @@ max 100 concurrent streams per `api` replica + max 6 per IP (browser-norm)
 
 ```text
 main.tsx → router.tsx (BrowserRouter + RequireRole canonical)
-lib/api.ts (relative /api + /public; Bearer; X-Tenant-ID; idem-key;
+lib/api.ts (relative /api + /public; Bearer; X-School-ID; idem-key;
   envelope branch; 200+error → throw code; refresh-once on
   INVALID_TOKEN then retry once; Retry-After respect)
 lib/stream.ts (round 7, binding; zero new npm deps): `openStream(path,
@@ -491,17 +502,17 @@ lib/stream.ts (round 7, binding; zero new npm deps): `openStream(path,
   backoff 1 s → 30 s max with `Last-Event-ID`; per-table routing +
   debounce/coalesce 300 ms → calls `lib/api.ts` refetch; ignores signals
   for closed pages and `rev <= last_seen_rev`; closes on unmount /
-  tenant-switch / logout; single active stream per tab.
-lib/auth.tsx (Context {user, tenant}; access memory-only;
-  tenant localStorage 'kv-tenant'; localStorage 'kv-session' =
+  school-switch / logout; single active stream per tab.
+lib/auth.tsx (Context {user, school}; access memory-only;
+  school localStorage 'kv-school'; localStorage 'kv-session' =
   boot-restore indicator only (access token stays memory-only);
   SA switcher default latest)
 lib/i18n.ts (lng:'id', fallbackLng:'id', localStorage 'kv-lang')
-components/: AppLayout (antd Layout.Header + Drawer; tenant-switcher SA-only),
+components/: AppLayout (antd Layout.Header + Drawer; school-switcher SA-only),
   Protected (thin renderer of RequireRole decision),
   SettingsModal (language selector with `country-flag-icons` flags —
   decision 40; profile edit), PageHeader,
-  ConfirmDialog (antd Modal with typed-text variant for tenant/finished/child wipes),
+  ConfirmDialog (antd Modal with typed-text variant for school/finished/child wipes),
   StatusChip (antd Tag for Draft/Opened/Finished only), StarInput,
   Pager (Pager.tsx — page-size selector 20/50/100/1000, used by every
   list page),
@@ -513,9 +524,9 @@ components/: AppLayout (antd Layout.Header + Drawer; tenant-switcher SA-only),
   only — gallery items render ONLY from server `/uploads/…` after
   200 `{data}` + `photo.changed` → refetch, per honest-file rule),
   StreamGate (round 7: owns the tab's single `lib/stream.ts` connection;
-  opens on authenticated layout mount, closes on unmount/tenant-switch/
-  logout; SA with `tenant:null` auto-selects the latest ACTIVE tenant
-  via `POST switch-tenant` at mount — no active tenant → stream stays
+  opens on authenticated layout mount, closes on unmount/school-switch/
+  logout; SA with `school:null` auto-selects the latest ACTIVE school
+  via `POST switch-school` at mount — no active school → stream stays
   closed, graceful degradation (decision 54); public `/view/*` pages do NOT use StreamGate — each open
   `/view/*` page owns its own page-level `openStream` to
   `GET /public/stream?token=` and closes it on unmount; an authenticated
@@ -525,13 +536,13 @@ components/: AppLayout (antd Layout.Header + Drawer; tenant-switcher SA-only),
   1 s tick-down from `expires_at` — no 5 s poll; forgot page is
   public and shows "check email / ask admin" with no countdown)
 pages/: auth, dashboard (SA/ADMIN only — FAS has NO dashboard route;
-FAS landing = own Sessions list + Profile), tenants(SA), users, programs, topics,
+FAS landing = own Sessions list + Profile), schools(SA), users, programs, topics,
   activities, missions, frames, children, sessions, gallery,
   assessment, reports, consent, profile, view/{Report,Gallery,Consent}
 report/ReportView.tsx + report.css (PLAIN CSS — the `#report-a4` interior per decision 38; chrome AROUND it is antd)
 ```
 
-- Menu matrix (binding): SA sees Tenants/Users/Dashboard/Sessions/
+- Menu matrix (binding): SA sees Schools/Users/Dashboard/Sessions/
   Masters/Children/Reports/Consent/Profile; ADMIN sees Dashboard/Users
   (facilitators)/Sessions/Masters/Children/Reports/Consent/Profile;
   FAS sees Sessions (own)/Children (read-only, own groups)/Reports
@@ -571,14 +582,14 @@ report/ReportView.tsx + report.css (PLAIN CSS — the `#report-a4` interior per 
 
 ## 4. Data ownership & isolation
 
-- Zero FK (binding). Every domain/link/snapshot row carries `tenant_id`
-  + index. Queries always filter by request tenant. Email globally unique.
-- SA switcher: `localStorage kv-tenant` + `X-Tenant-ID`; default latest
-  tenant on first login; `POST switch-tenant` validates.
-- Tenant `nonaktif`: any member call → 200 + `TENANT_INACTIVE`; SA
-  read-only retained. Hard-delete (typed confirm): wipes ALL tenant rows
-  + disk files in ALL three upload layouts — `uploads/<tenant_id>/`,
-  `uploads/badges/<tenant_id>/`, `uploads/frames/<tenant_id>/` (decision
+- Zero FK (binding). Every domain/link/snapshot row carries `school_id`
+  + index. Queries always filter by request school. Email globally unique.
+- SA switcher: `localStorage kv-school` + `X-School-ID`; default latest
+  school on first login; `POST switch-school` validates.
+- School `nonaktif`: any member call → 200 + `SCHOOL_INACTIVE`; SA
+  read-only retained. Hard-delete (typed confirm): wipes ALL school rows
+  + disk files in ALL three upload layouts — `uploads/<school_id>/`,
+  `uploads/badges/<school_id>/`, `uploads/frames/<school_id>/` (decision
   45 / D-4); `wa_outbox` retained 90 d; OpenWA untouched.
 - Snapshots: session create copies program/topics/activities/badges
   (+names) into `session_*`; master edits never touch sessions.
@@ -606,7 +617,7 @@ report/ReportView.tsx + report.css (PLAIN CSS — the `#report-a4` interior per 
 - Tooling: `go test` (stdlib) + `github.com/stretchr/testify` (assertion) + `net/http/httptest` (HTTP handler testing)
 - Scope: Business logic, validation, middleware, handlers, SQL queries
 - Structure: `internal/<domain>_test.go` (co-located with source)
-- Coverage: ≥90% business logic, 100% critical paths (auth, validation, idempotency, tenant isolation, envelope transport)
+- Coverage: ≥90% business logic, 100% critical paths (auth, validation, idempotency, school isolation, envelope transport)
 - Commands: `go test ./internal/... -v -cover`
 
 **Integration Test:**
@@ -617,7 +628,7 @@ report/ReportView.tsx + report.css (PLAIN CSS — the `#report-a4` interior per 
 
 **Critical Paths (100% coverage required):**
 - Authentication (login, refresh, logout, reset)
-- Authorization (role checks, tenant isolation, ownership)
+- Authorization (role checks, school isolation, ownership)
 - Validation (input validation, business rules)
 - Idempotency (X-Idempotency-Key replay)
 - Envelope transport (HTTP 200 + `{data}` / `{error:{code}}`)
@@ -645,7 +656,7 @@ report/ReportView.tsx + report.css (PLAIN CSS — the `#report-a4` interior per 
 - Commands: `vitest run --config vitest.integration.config.ts`
 
 **Critical Paths (100% coverage required):**
-- Auth context (login, refresh, logout, tenant switch)
+- Auth context (login, refresh, logout, school switch)
 - Forms (validation, submission, error handling)
 - Report export (PNG/PDF generation, A4 fixed layout)
 - SSE stream (connection, parsing, refetch, reconnect)
@@ -664,7 +675,7 @@ report/ReportView.tsx + report.css (PLAIN CSS — the `#report-a4` interior per 
 | Unit test | `go test` + `testify` + `httptest` | `vitest` + `@testing-library/react` |
 | Integration test | `go test` + `httptest` + `sqlmock` | `vitest` + `msw` + `@testing-library/react` |
 | Coverage target | ≥90% business logic, 100% critical | ≥90% components, 100% critical |
-| Critical paths | auth, validation, idempotency, tenant isolation, envelope, SSE | auth context, forms, report export, SSE, envelope |
+| Critical paths | auth, validation, idempotency, school isolation, envelope, SSE | auth context, forms, report export, SSE, envelope |
 | Structure | `internal/<domain>_test.go` | `src/**/*.test.ts(x)` |
 | Pass criteria | all pass + coverage + vet + gofmt | all pass + coverage + tsc + oxlint |
 
@@ -727,7 +738,7 @@ kidversa-edutourism-v2/
 │       ├── pages/<group>/         # route-level pages; each of the 17 groups MUST own routes.tsx:
 │       │                          #   activities, assessment, auth, children, consent, dashboard,
 │       │                          #   frames, gallery, missions, profile, programs, reports,
-│       │                          #   sessions, tenants, topics, users, view — spread into router.tsx (decision 36;
+│       │                          #   sessions, schools, topics, users, view — spread into router.tsx (decision 36;
 │       │                          #   the former admin/ + masters/ aggregate route files were dissolved into
 │       │                          #   their per-page groups — audit round 11)
 │       ├── report/                # ReportView.tsx report.css export.ts types.ts
@@ -736,7 +747,7 @@ kidversa-edutourism-v2/
 ├── data/                          # runtime data (bindmounts, gitignored except .gitkeep)
 │   ├── mariadb/                   # MariaDB datadir
 │   ├── openwa/                    # OpenWA /app/data
-│   └── uploads/                   # api UPLOAD_DIR: badges/<tenant_id>/, frames/<tenant_id>/, <tenant>/<sid>/<stid>/<cid>/ (05§8)
+│   └── uploads/                   # api UPLOAD_DIR: badges/<school_id>/, frames/<school_id>/, <school>/<sid>/<stid>/<cid>/ (05§8)
 └── docs/
     ├── spec/                      # 00–08 + SPEC-INDEX.md (10 spec docs) + DESIGN.md
     ├── superskill/task/
@@ -745,11 +756,11 @@ kidversa-edutourism-v2/
 ```
 
 Decisions (2026-10-11):
-- **33** — Upload path tenant-di-luar for badges/frames: `badges/<tenant_id>/…`,
-  `frames/<tenant_id>/…` (photos stay `<tenant_id>/<session_id>/<stid>/<child_id>/…`).
-  Canonical in `05§8`; supersedes the tenant-di-dalam wording in `04-FL-04/05`
-  and the former code (`<tenant_id>/badges|frames/…`) — reconciled via
-  Change 16; the code now writes tenant-di-luar (Change 17, decision 45).
+- **33** — Upload path school-di-luar for badges/frames: `badges/<school_id>/…`,
+  `frames/<school_id>/…` (photos stay `<school_id>/<session_id>/<stid>/<child_id>/…`).
+  Canonical in `05§8`; supersedes the school-di-dalam wording in `04-FL-04/05`
+  and the former code (`<school_id>/badges|frames/…`) — reconciled via
+  Change 16; the code now writes school-di-luar (Change 17, decision 45).
 - **34** — Runtime file storage is `data/uploads/` (host) ← `UPLOAD_DIR`
   `/data/uploads` (container). There is NO `backend/uploads/` dir.
 - **35** — `backend/internal/` ships three cross-domain infra modules beyond the

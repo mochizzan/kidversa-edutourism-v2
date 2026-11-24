@@ -39,10 +39,10 @@ Status: DRAFT (2026-10-12; audit spek 5 dimensi selesai; pembaruan konsistensi +
 - **Format yang diizinkan: jpg, jpeg, png, webp** (case-insensitive);
   format lain (termasuk ico) ditolak client sebelum pengiriman.
 
-Conventions: `[ROLE: SA/ADMIN/FAS]` = who may use. All tenant-scoped.
+Conventions: `[ROLE: SA/ADMIN/FAS]` = who may use. All school-scoped.
 `*` = required. All `/api/*` and `/public/*` return HTTP 200 with
 `{data}` or `{error:{code,message}}` (only unhandled faults → 500).
-`X-Tenant-ID` required on every authenticated call.
+`X-School-ID` required on every authenticated call.
 `X-Idempotency-Key` required on mutating POSTs listed in `02§2`.
 
 ## F-01 Authentication & session
@@ -50,23 +50,23 @@ Conventions: `[ROLE: SA/ADMIN/FAS]` = who may use. All tenant-scoped.
 - [SA/ADMIN/FAS] Login email + password → access JWT 15 min (memory,
   `Authorization: Bearer`) + refresh JWT 7 d (HttpOnly cookie `Path=/`,
   `SameSite=Lax` (+`Secure` prod) + DB whitelist, single-use jti rotate).
-  Claims: `sub, role, tenant` (+`jti` for refresh). Leeway 60 s.
+  Claims: `sub, role, school` (+`jti` for refresh). Leeway 60 s.
   Logout is cookie-only-capable (decision 52): `POST logout` accepts
   the refresh cookie even when the access token is expired/absent
   (revoke jti + clear cookie → 200). Hardening (decision 55): a second
   consecutive INVALID_TOKEN during refresh-retry forces logout (clear
-  session → login); refresh rotation validates the target tenant's
+  session → login); refresh rotation validates the target school's
   active state — inactive → revoke jti + clear cookie + 200
-  `TENANT_INACTIVE` (fail-closed).
+  `SCHOOL_INACTIVE` (fail-closed).
 - [—] Register: name*, email* (global UNIQUE, ≤320 chars, format-checked),
   WA*, password* (min 8, letters+numbers, MAX 72 bytes — bcrypt
   `GenerateFromPassword` truncates beyond 72, so longer → 200 `VALIDATION`),
   role* (ADMIN/FASILITATOR ONLY — `SA` rejected with 200
-  `FORBIDDEN_ROLE`; SA exists via seed only), tenant* (active only).
+  `FORBIDDEN_ROLE`; SA exists via seed only), school* (active only).
   New row `is_active=false` (pending). Replay with same
   `X-Idempotency-Key` returns original result (no double row).
-- [SA] Approve/reject ADMIN (any tenant); [ADMIN] approve/reject
-  FASILITATOR (own tenant). Reject sets (REJECTED,false) — row retained,
+- [SA] Approve/reject ADMIN (any school); [ADMIN] approve/reject
+  FASILITATOR (own school). Reject sets (REJECTED,false) — row retained,
   never pending. Pending list = `GET /api/users?decision=PENDING` +
   badge `GET /api/users/pending-count`.
 - [SA/ADMIN/FAS] Logout revokes refresh jti AND clears cookie; change own
@@ -80,7 +80,7 @@ Conventions: `[ROLE: SA/ADMIN/FAS]` = who may use. All tenant-scoped.
   + `expires_at` 15 min, single-use, purge on use/expiry (hourly job +
   on-access sweep). SMTP send attempted.
 - Reset dashboard: `GET /api/reset-tokens` lists unexpired rows for
-  SA (all) / ADMIN (own tenant) as `{id, code_masked, expires_at,
+  SA (all) / ADMIN (own school) as `{id, code_masked, expires_at,
   seconds_left, revoked, mail_failed, user:{id,name,email}}`
   (reset-dashboard is EVENT-DRIVEN round 7:
   `reset.changed` signals → refetch; `TokenCountdown` ticks down locally
@@ -93,28 +93,30 @@ Conventions: `[ROLE: SA/ADMIN/FAS]` = who may use. All tenant-scoped.
   `POST /api/auth/reset {email,code,new_password}` → constant-time hash
   compare → bcrypt new → revoke ALL user refresh rows → clear
   `code_plain`, set `used_at`.
-- [SA] Tenant switcher: `POST /api/auth/switch-tenant {tenant_id}`
-  validates active membership; client persists `kv-tenant` +
-  sends `X-Tenant-ID`. Default on first login = latest created tenant.
+- [SA] School switcher: `POST /api/auth/switch-school {school_id}`
+  validates active membership; client persists `kv-school` +
+  sends `X-School-ID`. Default on first login = latest created school.
 
-## F-02 Tenant management [SA]
+## F-02 School management [SA]
 
-- CRUD: name*, type* (KOTA/NEGARA/LAINNYA), `is_active`.
-  Inactive: every member call → 200 `{error:{code:TENANT_INACTIVE}}`;
-  SA read-only retained. No `TENANT_DISABLED` code exists.
-- Hard-delete only with typed confirmation: deletes ALL tenant rows +
-  disk files in ALL three upload layouts — `uploads/<tenant_id>/`,
-  `uploads/badges/<tenant_id>/`, `uploads/frames/<tenant_id>/` (decision
+- CRUD: `school_name*` (trim, non-empty, ≤200 — NOT unique, duplicate
+  names allowed), `country` (trim, empty → `Indonesia`, ≤100), `city`
+  (trim, empty → `NULL`, ≤100), `is_active`. No `type` field.
+  Inactive: every member call → 200 `{error:{code:SCHOOL_INACTIVE}}`;
+  SA read-only retained. No `SCHOOL_DISABLED` code exists.
+- Hard-delete only with typed confirmation: deletes ALL school rows +
+  disk files in ALL three upload layouts — `uploads/<school_id>/`,
+  `uploads/badges/<school_id>/`, `uploads/frames/<school_id>/` (decision
   45 / D-4); `wa_outbox` retained 90 d;
   OpenWA session/key untouched. Disk removal runs after DB commit;
   partial-wipe recovery = restore from host backup, then re-delete.
-  Badge/frame on-disk layout is tenant-di-luar per `05§8` (decision 33);
+  Badge/frame on-disk layout is school-di-luar per `05§8` (decision 33);
   the storage-root & data-dir layout is `02§7` / `05§8` (decisions 33–34).
 
 ## F-03 User management
 
-- [SA] CRUD admins (any tenant) + activate/deactivate.
-  [ADMIN] CRUD facilitators (own tenant) + activate/deactivate.
+- [SA] CRUD admins (any school) + activate/deactivate.
+  [ADMIN] CRUD facilitators (own school) + activate/deactivate.
 - Besides the register + approval flow, ADMIN/SA may create an account
   directly as APPROVED (immediately loginable) via `POST /api/users`
   (see 02§2b: SA+ADMIN callers, roles ADMIN/FASILITATOR only,
@@ -150,7 +152,7 @@ Conventions: `[ROLE: SA/ADMIN/FAS]` = who may use. All tenant-scoped.
 
 ## F-05 Bank Misi [SA/ADMIN]
 
-- Per-tenant bank: program*, name*, body*, `topic_ids[1+]` (same tenant,
+- Per-school bank: program*, name*, body*, `topic_ids[1+]` (same school,
   any program). Editable any time; reports resolve LIVE — the report
   renders the mission name/body LIVE from the bank at open time
   (decision 56: bank edits after pick change what links show; the
@@ -161,7 +163,7 @@ Conventions: `[ROLE: SA/ADMIN/FAS]` = who may use. All tenant-scoped.
 
 ## F-06 Frame [SA/ADMIN]
 
-- Per-tenant: image* JPG/JPEG/PNG/WebP ≤50 MB, client side validation
+- Per-school: image* JPG/JPEG/PNG/WebP ≤50 MB, client side validation
   only (Pembaruan 2026-10-11), name* (prefilled
   from filename, editable), `program_ids[1+]`.
 - At capture, facilitator picks 1 frame from frames linked to the
@@ -172,10 +174,13 @@ Conventions: `[ROLE: SA/ADMIN/FAS]` = who may use. All tenant-scoped.
 - Fields: name*, age* integer 1–10 direct (`age_confirmed` BOOL default
   false; age >10 (11–15) → warning modal; confirmed stores
   `age_confirmed=true`; age <1/non-integer/>15 → 200 `VALIDATION`;
-  user-confirmed 2026-10-08: keep 1–10 + modal above 10), school* free text,
+  user-confirmed 2026-10-08: keep 1-10 + modal above 10), `school` free text
+  (separate from the school entity's `school_name`): optional — prefilled
+  from the active school's `school_name` (editable) and defaulted by the
+  server on create when omitted/blank (`VALIDATION` if no active school),
   mother_name*, mother_wa* (digits → stored E.164 `+62…`, default country
   62; strict client + server re-check), father/guardian optional + WA
-  (same normalisation), `is_active`, tenant auto. FAS `POST|PATCH|DELETE`
+  (same normalisation), `is_active`, school auto. FAS `POST|PATCH|DELETE`
   on children → 200 `FORBIDDEN_ROLE` (no create/edit/deactivate/delete;
   wrong-number fixes go through ADMIN/SA).
 - No duplicate-name check (UI disambiguates via school/mother/age).
@@ -275,7 +280,7 @@ Conventions: `[ROLE: SA/ADMIN/FAS]` = who may use. All tenant-scoped.
   checks jpg/jpeg/png/webp ≤50 MB before send; the server does not
   validate mime/size. Server: consent check →
   write file durable FIRST (temp + `fsync` + atomic rename into
-  `<tenant_id>/<session_id>/<stid>/<child_id>/<rand32hex>.<ext>`) →
+  `<school_id>/<session_id>/<stid>/<child_id>/<rand32hex>.<ext>`) →
   ONE Tx (`SELECT COUNT(*) … FOR UPDATE` max 10 → 200 `PHOTO_LIMIT`,
   then INSERT row) → publish `photo.changed` → 200 `{data}` — a row
   without its file never becomes visible (upload path = file-before-row;
@@ -317,7 +322,7 @@ Conventions: `[ROLE: SA/ADMIN/FAS]` = who may use. All tenant-scoped.
   200 `AI_FAILED` (old kept) + Retry. Report works without narrative
   (section shows "—").
 
-## F-12 Report (Rapor) [FAS own-groups; ADMIN all-tenant; SA active-tenant]
+## F-12 Report (Rapor) [FAS own-groups; ADMIN all-school; SA active-school]
 
 - Enforcement point (clarified 2026-10-11; REVISED 2026-10-12,
   decision 64): the session-scoped SEND endpoints — `POST P/send-report`
@@ -354,7 +359,7 @@ Conventions: `[ROLE: SA/ADMIN/FAS]` = who may use. All tenant-scoped.
   (tokens NO EXPIRY — permanent by user decision 2026-10-08);
   revocable/regenerable (`POST /api/public-links/:token/revoke|
   regenerate`; regenerate revokes old in same Tx; ADMIN caller must
-  belong to the link's tenant — SA any, cross-tenant → 200 `NOT_FOUND`
+  belong to the link's school — SA any, cross-school → 200 `NOT_FOUND`
   no-leak, decision 65). Revoked/unknown → identical 200
   `TOKEN_INVALID` (no oracle).
 - WA single (`POST P/send-report {to}`) and batch
@@ -387,24 +392,25 @@ Conventions: `[ROLE: SA/ADMIN/FAS]` = who may use. All tenant-scoped.
 
 ## F-13 Dashboard & analytics
 
-- SA: switcher + tenant list + `GET /api/dashboard/tenant-summary`
-  (SA-only; per-tenant counts: children, sessions open/finished,
+- SA: switcher + school list + `GET /api/dashboard/school-summary`
+  (SA-only; per-school counts: children, sessions open/finished,
   reports issued = ALL kind=REPORT public links incl. revoked +
-  narratives — NO cross-tenant mixed aggregate; keputusan user
-  2026-10-11) + per-tenant overview/analytics when active. The SA
-  dashboard shows a per-tenant summary table (one row per tenant: name,
-  type, active, children, sessions open/finished, reports issued) fed
+  narratives — NO cross-school mixed aggregate; keputusan user
+  2026-10-11) + per-school overview/analytics when active. The SA
+  dashboard shows a per-school summary table (one row per school:
+  school_name, active, children, sessions open/finished, reports issued;
+  no Country/City columns — rename decision 8) fed
   by that endpoint; it refetches on the existing `stats.changed` signal
-  (no new SSE event). ADMIN: own-tenant. FAS: own sessions +
-  profile. Tenant from `X-Tenant-ID` (SA `?tenant=` override).
+  (no new SSE event). ADMIN: own-school. FAS: own sessions +
+  profile. School from `X-School-ID` (SA `?school=` override).
 - Overview: children, sessions open/finished, reports issued (= count of
   ACTIVE REPORT-kind public links — `revoked_at IS NULL` — + count of
   narratives; activity metric — one
   child+topic may count twice, drafted + shared; INTENTIONAL SPLIT vs
-  the SA tenant-summary below, which counts ALL kind=REPORT links — see
+  the SA school-summary below, which counts ALL kind=REPORT links — see
   02§2b), assessment
   progress/session, pending approvals. Analytics: totals per period (7d/30d/all), star
-  distribution (per-tenant global BB/MB/BSH/BSB + per-topic aggregate —
+  distribution (per-school global BB/MB/BSH/BSB + per-topic aggregate —
   per-activity histogram OUT of MVP, decision 66), per-session progress, facilitator
   activity. Plain SQL aggregates; EVENT-DRIVEN round 7:
   `stats.changed` (server aggregator tick 5–10 s, not per-mutation) →
@@ -416,8 +422,10 @@ Conventions: `[ROLE: SA/ADMIN/FAS]` = who may use. All tenant-scoped.
   checked_at}}`; `connected` is true only when the session status is
   `ready`; unreachable → 200 `{data:{connected:false}}` (status only,
   never `WA_FAILED`). Dashboard `WaStatusBadge` (green/red from
-  `wa.changed` `{connected}` event; `GET /api/wa/status` only for detail
-  on demand; NO 30 s poll round 7). SA click opens the connect modal:
+  `wa.changed` `{connected}` event, seeded once on mount by
+  `GET /api/wa/status` because the server only publishes link-state
+  transitions; the same endpoint also supplies the detail popover on
+  demand; NO 30 s poll round 7). SA click opens the connect modal:
   **Open OpenWA** opens the OpenWA dashboard `:8003` in a new tab;
   **Connect Directly** calls SA-only `POST /api/wa/session/start` and
   renders OpenWA's QR from SA-only `GET /api/wa/session` until the
@@ -437,7 +445,7 @@ Conventions: `[ROLE: SA/ADMIN/FAS]` = who may use. All tenant-scoped.
 - Trigger: adding a child to a group (`POST
   .../groups/:gid/members` or `POST /api/sessions` with `groups[]`) when
   the child is already a member of other same-program sessions (same
-  tenant). Client calls `GET
+  school). Client calls `GET
   /api/sessions/:sid/children/:cid/copy-candidates` → list ordered
   FINISHED-first then latest date; modal shows dropdown (default = latest
   FINISHED, fallback latest date) + explicit Ya/Tidak buttons.
@@ -453,7 +461,7 @@ Conventions: `[ROLE: SA/ADMIN/FAS]` = who may use. All tenant-scoped.
   mission picks per matched topic ONLY if target has 0 picks AND each
   mission still links the target topic (new `report_missions` rows).
 - Photos: physical file copy (`io.Copy` source disk → new target path
-  `<tenant_id>/<session_id>/<stid>/<child_id>/<rand32hex>.<ext>` + new
+  `<school_id>/<session_id>/<stid>/<child_id>/<rand32hex>.<ext>` + new
   rows inserted with `is_candidate=false` — the candidate PHOTO itself
   IS copied (as a normal photo); only the FLAG never transfers, matching
   05§2 "Copy-data NEVER copies `is_candidate`" (decision 67); the
@@ -471,7 +479,7 @@ Conventions: `[ROLE: SA/ADMIN/FAS]` = who may use. All tenant-scoped.
   stars/notes/narratives/missions REMAIN (facilitator data, not consent
   data).
 - Guards: ADMIN/SA only (FAS → 200 `FORBIDDEN_ROLE`); source unknown or
-  cross-tenant → 200 `NOT_FOUND` (no-leak, same shape); same tenant but
+  cross-school → 200 `NOT_FOUND` (no-leak, same shape); same school but
   different program → 200 `VALIDATION`; inactive
   child → 200 `CHILD_INACTIVE`; target FINISHED → 200 `SESSION_LOCKED`
   for the ENTIRE copy (stars/notes/narratives/missions AND photos all
@@ -504,12 +512,12 @@ Conventions: `[ROLE: SA/ADMIN/FAS]` = who may use. All tenant-scoped.
 - Behaviour: one stream per tab max (`StreamGate` owns the AUTH stream;
   public `/view/*` pages use page-level `openStream`, never `StreamGate` —
   see 02§3; closes on
-  unmount/tenant-switch/logout); handshake = same guards as REST
+  unmount/school-switch/logout); handshake = same guards as REST
   (failures = 200 envelope, no stream); per-connection send/skip filter
   REUSES the REST scope functions (T1 — no duplicated auth logic);
   per-table debounce/coalesce 300 ms; `rev`-gated refetch (stale/duplicate
   signals ignored); reconnect backoff 1 s → 30 s with `Last-Event-ID`,
-  ring 100 events / 5 min per tenant, unclosable gap → full-refetch.
+  ring 100 events / 5 min per school, unclosable gap → full-refetch.
   `auth.expiring` at T-60 s → refresh-once → reconnect. Full catalogue +
   filter + caps: `02§2c`. Publish points: every mutating handler,
   post-commit, best-effort (never fails the mutation).
