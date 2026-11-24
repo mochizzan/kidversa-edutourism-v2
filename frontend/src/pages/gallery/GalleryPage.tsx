@@ -3,8 +3,8 @@
  * Group → Child (prefillable from the detail page via ?gid=&cid=&stid=).
  *
  * Consent gate: member consent !== SETUJU → locked panel with the status and
- * (ADMIN/SA, Draft/Opened) Send/Resend → `POST …/send-consent` (FL-11 reply:
- * `resent` vs already-decided envelope handled).
+ * a link to `/consent/:sid` (the send/resend action lives on the consent
+ * page; FL-11's `resent` vs already-decided envelope is handled there).
  *
  * Upload/capture: `PhotoCapture` (camera or file fallback) → the ONE shared
  * client pre-check `isAcceptedImage` (jpg/jpeg/png ≤50 MB, spec 09
@@ -24,7 +24,6 @@ import PageSkeleton from '../../components/PageSkeleton'
 import PhotoCapture from '../../components/PhotoCapture'
 import FilterBar, { FilterField } from '../../components/FilterBar'
 import { api, errorCode } from '../../lib/api'
-import { useAuth } from '../../lib/auth'
 import { useCrumbName } from '../../lib/crumbs'
 import { useErrorToast } from '../../lib/errors'
 import { useEventRefetch, useListLoader } from '../../lib/list'
@@ -45,7 +44,6 @@ export default function GalleryPage() {
   const { t: tc } = useTranslation('common')
   const { message } = AntApp.useApp()
   const toast = useErrorToast()
-  const { user } = useAuth()
   const { sid } = useParams()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -120,7 +118,6 @@ export default function GalleryPage() {
   const member = members.find((entry) => entry.child_id === cid) ?? null
   const consent = member?.consent ?? 'PENDING'
   const unlocked = consent === 'SETUJU'
-  const canSend = (user?.role === 'SA' || user?.role === 'ADMIN') && detail?.session.status !== 'FINISHED'
 
   const onCapture = async (file: File) => {
     if (!prefix) return
@@ -165,23 +162,6 @@ export default function GalleryPage() {
       await api.del(`${prefix}/photos/${photoId}`)
       loadPhotos()
       message.success(t('gallery.deleted'))
-    } catch (failure: unknown) {
-      toast(failure)
-    }
-  }
-
-  const sendConsent = async () => {
-    if (!sid || cid === null) return
-    try {
-      const data = await api.post<{ token: string; decision: string; resent: boolean }>(
-        `/api/sessions/${sid}/children/${cid}/send-consent`,
-      )
-      if (data.resent) message.success(t('consent.sent'))
-      else
-        message.info(
-          t('consent.alreadyDecided', { status: consentStatusLabel(t, data.decision) }),
-        )
-      reloadDetail()
     } catch (failure: unknown) {
       toast(failure)
     }
@@ -275,16 +255,9 @@ export default function GalleryPage() {
           message={t('gallery.consentLocked')}
           description={t('gallery.consentLabel', { status: consentLabel })}
           action={
-            <Space direction="vertical">
-              {canSend ? (
-                <Button size="small" onClick={() => void sendConsent()}>
-                  {consent === 'PENDING' ? t('consent.send') : t('consent.resend')}
-                </Button>
-              ) : null}
-              <Button type="link" size="small" onClick={() => navigate(`/consent/${sid}`)}>
-                {tc('actions.view')}
-              </Button>
-            </Space>
+            <Button type="link" size="small" onClick={() => navigate(`/consent/${sid}`)}>
+              {tc('actions.view')}
+            </Button>
           }
         />
       ) : (

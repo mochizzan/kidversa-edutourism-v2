@@ -49,7 +49,7 @@ describe('form consent respond', () => {
     const user = userEvent.setup()
     renderApp(<ConsentPage />, { route: '/view/consent?token=tok-1' })
 
-    await screen.findByText('Apakah Anda mengizinkan foto anak ini digunakan pada rapor dan galeri?')
+    await screen.findByText('Apakah Anda memberikan izin agar anak Anda difoto atau didokumentasikan?')
     await user.click(screen.getByRole('button', { name: 'Setuju' }))
 
     await screen.findByText('Nama responden wajib diisi.')
@@ -92,7 +92,7 @@ describe('consent load states', () => {
     await screen.findByText('Layanan sedang sibuk. Coba lagi.')
     await user.click(screen.getByRole('button', { name: 'Coba lagi' }))
 
-    await screen.findByText('Apakah Anda mengizinkan foto anak ini digunakan pada rapor dan galeri?')
+    await screen.findByText('Apakah Anda memberikan izin agar anak Anda difoto atau didokumentasikan?')
     expect(calls).toBe(2)
   })
 
@@ -230,7 +230,7 @@ describe('consent realtime', () => {
     renderApp(<ConsentPage />, { route: '/view/consent?token=tok-1' })
 
     await until(() => channel.handshakes === 1)
-    await until(() => screen.queryByText('Apakah Anda mengizinkan foto anak ini digunakan pada rapor dan galeri?') !== null)
+    await until(() => screen.queryByText('Apakah Anda memberikan izin agar anak Anda difoto atau didokumentasikan?') !== null)
     const loads = calls
 
     // An unknown decision must not flip the rendered status.
@@ -261,7 +261,7 @@ describe('consent realtime', () => {
     // The slow response lands AFTER the revoke — it must not resurrect data.
     gate.resolve(ok(CONSENT))
     await advance(120_000)
-    expect(screen.queryByText('Apakah Anda mengizinkan foto anak ini digunakan pada rapor dan galeri?')).toBeNull()
+    expect(screen.queryByText('Apakah Anda memberikan izin agar anak Anda difoto atau didokumentasikan?')).toBeNull()
     expect(within(document.body).queryByText('Kelas Batik')).toBeNull()
   })
 })

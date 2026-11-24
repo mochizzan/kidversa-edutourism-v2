@@ -90,7 +90,7 @@
     "consentReject": "Tolak",
     "consentAlready": "Keputusan Anda sudah tercatat: {{decision}}.",
     "consentRecorded": "Terima kasih, keputusan Anda tercatat.",
-    "consentQuestion": "Apakah Anda mengizinkan foto anak ini digunakan pada rapor dan galeri?",
+    "consentQuestion": "Apakah Anda memberikan izin agar anak Anda difoto atau didokumentasikan?",
     "galleryLocked": "Galeri terkunci sampai persetujuan diberikan.",
     "galleryDenied": "Persetujuan ditolak — foto tidak ditampilkan.",
     "galleryEmpty": "Belum ada foto.",

@@ -90,7 +90,7 @@
     "consentReject": "Reject",
     "consentAlready": "Your decision is already recorded: {{decision}}.",
     "consentRecorded": "Thank you, your decision is recorded.",
-    "consentQuestion": "Do you allow this child's photos to be used in the report and gallery?",
+    "consentQuestion": "Do you grant permission for your child to be photographed or documented?",
     "galleryLocked": "The gallery is locked until consent is given.",
     "galleryDenied": "Consent declined — photos are not shown.",
     "galleryEmpty": "No photos yet.",

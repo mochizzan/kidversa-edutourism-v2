@@ -1,11 +1,12 @@
 /**
- * Admin gallery (F-10 / FL-10): the consent gate blocks uploads and gates the
- * send action per role, FL-11 resend envelopes, the honest-file upload flow
- * (multipart contract, transient preview only, item appears solely via
- * `photo.changed` → refetch), PHOTO_LIMIT inline, the client pre-check that
- * blocks oversize (>50 MB) and wrong-format photos before send,
- * candidate toggling and deletion, plus the `copy.completed` photo refetch
- * (the open gallery tab follows copy jobs like `photo.changed`).
+ * Admin gallery (F-10 / FL-10): the consent gate locks the gallery and the
+ * gallery offers no consent-sending action (the send/resend lives on the
+ * consent page), the honest-file upload flow (multipart contract, transient
+ * preview only, item appears solely via `photo.changed` → refetch),
+ * PHOTO_LIMIT inline, the client pre-check that blocks oversize (>50 MB) and
+ * wrong-format photos before send, candidate toggling and deletion, plus the
+ * `copy.completed` photo refetch (the open gallery tab follows copy jobs like
+ * `photo.changed`).
  */
 import { describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
@@ -79,18 +80,12 @@ async function switchToBudi(user: UserEvent): Promise<void> {
 }
 
 describe('admin gallery consent gate', () => {
-  it('PENDING consent locks the gallery; ADMIN can send the consent', async () => {
-    let sendCalls = 0
+  it('PENDING consent locks the gallery; the send action is gone', async () => {
     server.use(
       http.get('/api/sessions/1', () => ok(detailFixture({ status: 'OPENED' }))),
       framesHandler(),
       photosHandler('2', { photos: [] }),
-      http.post('/api/sessions/1/children/2/send-consent', () => {
-        sendCalls += 1
-        return ok({ token: 'tok', decision: 'PENDING', resent: true })
-      }),
     )
-    const user = userEvent.setup()
     renderGallery()
 
     await screen.findByText('Galeri terkunci sampai orang tua menyetujui.')
@@ -98,13 +93,13 @@ describe('admin gallery consent gate', () => {
     // No upload affordance while locked.
     expect(document.querySelector('input[type="file"]')).toBeNull()
     expect(screen.queryByRole('button', { name: /Ambil foto/ })).toBeNull()
-
-    await user.click(screen.getByRole('button', { name: /Kirim persetujuan/ }))
-    await screen.findByText('Persetujuan terkirim.')
-    await waitFor(() => expect(sendCalls).toBe(1))
+    // The gallery offers no consent sending; the view link stays.
+    expect(screen.queryByRole('button', { name: /Kirim persetujuan/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Kirim ulang/ })).toBeNull()
+    screen.getByRole('button', { name: /Lihat/ })
   })
 
-  it('DITOLAK shows the resend label and the already-decided envelope as info', async () => {
+  it('DITOLAK locks the gallery; no resend is offered', async () => {
     server.use(
       http.get('/api/sessions/1', () =>
         ok(
@@ -120,20 +115,12 @@ describe('admin gallery consent gate', () => {
       ),
       framesHandler(),
       photosHandler('2', { photos: [] }),
-      http.post('/api/sessions/1/children/2/send-consent', () =>
-        ok({ token: 'tok', decision: 'SETUJU', resent: false }),
-      ),
     )
-    const user = userEvent.setup()
     renderGallery()
 
     await screen.findByText('Galeri terkunci sampai orang tua menyetujui.')
     screen.getByText('Persetujuan: Ditolak')
-    await user.click(screen.getByRole('button', { name: /Kirim ulang/ }))
-
-    await screen.findByText(
-      'Sudah Disetujui — tautan tidak berubah dan WhatsApp tidak dikirim ulang.',
-    )
+    expect(screen.queryByRole('button', { name: /Kirim ulang/ })).toBeNull()
   })
 
   it('FAS never sees the consent send action', async () => {
