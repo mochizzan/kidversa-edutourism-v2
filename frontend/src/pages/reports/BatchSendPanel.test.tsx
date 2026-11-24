@@ -15,7 +15,7 @@ import { renderApp } from '../../test/render'
 import { server } from '../../test/setup'
 import { ok } from '../../test/handlers'
 import { expectNotification, findAlert } from '../../test/toast'
-import { reportsRow, stubClipboard } from '../../test/helpers.cov-session'
+import { chooseOption, detailFixture, openDropdown, reportsRow, stubClipboard } from '../../test/helpers.cov-session'
 import type { ReportsRow } from '../../lib/session-contracts'
 
 interface BatchCapture {
@@ -39,7 +39,11 @@ function newCapture(): BatchCapture {
 }
 
 function matrixHandler(rows: ReportsRow[]) {
-  return http.get('/api/sessions/1/reports', () => ok(rows))
+  // BatchSendPanel now loads the session detail for the group filter (REQ7).
+  return [
+    http.get('/api/sessions/1', () => ok(detailFixture())),
+    http.get('/api/sessions/1/reports', () => ok(rows)),
+  ]
 }
 
 function manyRows(count: number): ReportsRow[] {
@@ -68,8 +72,30 @@ describe('batch send panel', () => {
     sessionStorage.clear()
   })
 
+  it('the group filter narrows the matrix to the selected group’s members', async () => {
+    const detail = detailFixture()
+    detail.groups[0].members = [
+      { child_id: 2, name: 'Aisyah Putri', age: 8, school: 'SD Cendekia', consent: 'SETUJU' },
+    ]
+    server.use(
+      http.get('/api/sessions/1', () => ok(detail)),
+      http.get('/api/sessions/1/reports', () =>
+        ok([reportsRow(2, 'Aisyah Putri'), reportsRow(3, 'Budi Santoso')]),
+      ),
+    )
+    renderApp(<BatchSendPanel sid="1" />)
+
+    await screen.findByText('Aisyah Putri')
+    screen.getByText('Budi Santoso')
+
+    await openDropdown(screen.getByRole('combobox'))
+    await chooseOption('Kelompok Merah')
+    await waitFor(() => expect(screen.queryByText('Budi Santoso')).toBeNull())
+    screen.getByText('Aisyah Putri')
+  })
+
   it('renders the matrix rows and the empty selection hint', async () => {
-    server.use(matrixHandler([reportsRow(2, 'Aisyah Putri'), reportsRow(3, 'Budi Santoso')]))
+    server.use(...matrixHandler([reportsRow(2, 'Aisyah Putri'), reportsRow(3, 'Budi Santoso')]))
     renderApp(<BatchSendPanel sid="1" />)
 
     await screen.findByText('Aisyah Putri')
@@ -82,7 +108,7 @@ describe('batch send panel', () => {
   it('an empty matrix response renders the Ant Design empty state, never a stuck loading state', async () => {
     // Zero report records (e.g. a session with no members): the empty array
     // settles the panel into the Table's standard empty state.
-    server.use(matrixHandler([]))
+    server.use(...matrixHandler([]))
     renderApp(<BatchSendPanel sid="1" />)
 
     expect(await screen.findByText('Tidak ada data')).toBeInTheDocument()
@@ -93,6 +119,7 @@ describe('batch send panel', () => {
     // Defensive: a `{"data":null}` envelope (Go nil-slice serialization) must
     // not pin the Table in `loading` — normalize to [] and render empty.
     server.use(
+      http.get('/api/sessions/1', () => ok(detailFixture())),
       http.get('/api/sessions/1/reports', () => HttpResponse.json({ data: null })),
     )
     renderApp(<BatchSendPanel sid="1" />)
@@ -105,7 +132,7 @@ describe('batch send panel', () => {
     const capture = newCapture()
     const rows = manyRows(23)
     server.use(
-      matrixHandler(rows),
+      ...matrixHandler(rows),
       batchHandler(capture, alternatingRespond),
     )
     const user = userEvent.setup()
@@ -154,7 +181,7 @@ describe('batch send panel', () => {
     const capture = newCapture()
     const rows = manyRows(12)
     server.use(
-      matrixHandler(rows),
+      ...matrixHandler(rows),
       batchHandler(capture, (chunk, call) =>
         // Only the FIRST run's second chunk is refused; the same-key retry succeeds.
         call === 2
@@ -211,7 +238,7 @@ describe('batch send panel', () => {
       reportsRow(2, 'Aisyah Putri', 3, { complete: false, narrative: false, candidate_photo: null }),
       reportsRow(3, 'Budi Santoso', 3, { complete: true, narrative: true, candidate_photo: false }),
     ]
-    server.use(matrixHandler(rows))
+    server.use(...matrixHandler(rows))
     renderApp(<BatchSendPanel sid="1" />)
 
     await screen.findByText('Aisyah Putri')
@@ -228,7 +255,7 @@ describe('batch send panel', () => {
     const capture = newCapture()
     const rows = [reportsRow(2, 'Aisyah Putri'), reportsRow(3, 'Budi Santoso')]
     server.use(
-      matrixHandler(rows),
+      ...matrixHandler(rows),
       batchHandler(capture, (chunk) =>
         ok({
           items: chunk.map((item) => ({
@@ -257,7 +284,7 @@ describe('batch send panel', () => {
     const capture = newCapture()
     const rows = [reportsRow(2, 'Aisyah Putri')]
     server.use(
-      matrixHandler(rows),
+      ...matrixHandler(rows),
       batchHandler(capture, (chunk) =>
         ok({
           items: chunk.map((item) => ({
@@ -283,7 +310,7 @@ describe('batch send panel', () => {
   it('a denied clipboard copy toasts INTERNAL', async () => {
     const rows = [reportsRow(2, 'Aisyah Putri', 3, { report_url: '/view/report?token=rt' })]
     server.use(
-      matrixHandler(rows),
+      ...matrixHandler(rows),
       batchHandler(newCapture(), (chunk) =>
         ok({
           items: chunk.map((item) => ({
@@ -313,7 +340,7 @@ describe('batch send panel', () => {
     // the G button copies the gallery link (the report one is covered above).
     const rows = [reportsRow(2, 'Aisyah Putri', 3, { report_url: '/view/report?token=rt', gallery_url: '/view/gallery?token=gt' })]
     server.use(
-      matrixHandler(rows),
+      ...matrixHandler(rows),
       batchHandler(newCapture(), (chunk) =>
         ok({
           items: chunk.map((item) => ({
@@ -343,6 +370,7 @@ describe('batch send panel', () => {
   it('renders the matrix error translated with a retry', async () => {
     let calls = 0
     server.use(
+      http.get('/api/sessions/1', () => ok(detailFixture())),
       http.get('/api/sessions/1/reports', () => {
         calls += 1
         if (calls === 1) {

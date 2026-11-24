@@ -163,7 +163,8 @@ describe('reports page interactions', () => {
     act(() => emitSignal('report-link.changed', { rev: 1 })) // → loadLinks
     act(() => emitSignal('readiness.changed', { rev: 1, child_id: 2, stid: 3, complete: true }))
 
-    await waitFor(() => expect(detailCalls).toBe(1)) // no detail refetch either
+    // Two detail fetches mount (ReportsPage + BatchSendPanel); no refetch after the signals.
+    await waitFor(() => expect(detailCalls).toBe(2))
     expect(readyUrls).toHaveLength(0)
     expect(document.querySelector('.kv-page-skeleton')).not.toBeInTheDocument()
   })
@@ -221,10 +222,10 @@ describe('reports page interactions', () => {
     renderApp(null, { routes: ROUTES, route: '/sessions/1/reports', session: ADMIN_SESSION() })
 
     await screen.findByText('Pratinjau rapor')
-    expect(detailCalls).toBe(1)
+    expect(detailCalls).toBe(2) // ReportsPage + BatchSendPanel
 
     act(() => emitSignal('session.changed', { rev: 2 }))
-    await waitFor(() => expect(detailCalls).toBe(2))
+    await waitFor(() => expect(detailCalls).toBe(4)) // ReportsPage + BatchSendPanel refetch
 
     // The selection was already valid → kept, not reset to the defaults.
     await waitFor(() =>

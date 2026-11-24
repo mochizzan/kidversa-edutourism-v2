@@ -36,12 +36,12 @@ const EXPECTED_GROUPS = [
   'view',
 ] as const
 
-/** The 14 new F-F01 groups — auth/view/sessions predate this fix. */
+/** The 14 F-F01 groups (auth/view/sessions predate it; reports grew REQ9). */
 const NEW_GROUPS = EXPECTED_GROUPS.filter(
   (group) => group !== 'auth' && group !== 'view' && group !== 'sessions',
 )
 
-/** The 19 paths router.tsx spreads into the authenticated shell (set compare). */
+/** The 21 paths router.tsx spreads into the authenticated shell (set compare). */
 const SHELL_PATHS = [
   '/',
   '/schools',
@@ -58,6 +58,8 @@ const SHELL_PATHS = [
   '/sessions/:sid',
   '/sessions/:sid/gallery',
   '/sessions/:sid/reports',
+  '/sessions/:sid/reports/topics',
+  '/sessions/:sid/reports/topics/:stid',
   '/assessment/:sid/:cid/:stid',
   '/reports',
   '/consent',
@@ -128,7 +130,7 @@ describe('page-group route inventory (F-F01)', () => {
     expect(routerSource).not.toContain('./pages/masters/routes')
   })
 
-  it('authenticated group modules still declare the original 19 paths', () => {
+  it('authenticated group modules still declare the original 21 paths', () => {
     const collected = [...NEW_GROUPS, 'sessions'].flatMap((group) =>
       routesOf(group).map((route) => route.path),
     )

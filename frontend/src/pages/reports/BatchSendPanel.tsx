@@ -3,7 +3,9 @@
  *
  * Matrix: `GET /api/sessions/:sid/reports` (full array — the ops matrix is
  * not paged), refetched on every event that can change a cell
- * (`report-link/assessment/narrative/mission-pick/photo.changed`).
+ * (`report-link/assessment/narrative/mission-pick/photo.changed`). Group
+ * filter (REQ7): `useSessionDetail` powers the Select — choosing a group
+ * narrows the matrix to that group's members (`child_id` membership).
  *
  * Batch: pick rows → client chunks ≤10 per request → sequential `POST
  * /api/sessions/:sid/batch-send` (server jitters 3–10 s between sends); each
@@ -17,7 +19,7 @@
  * REPORT_INCOMPLETE arrives per item and never blocks the other items.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Alert, App as AntApp, Button, Card, Flex, Space, Table, Typography } from 'antd'
+import { Alert, App as AntApp, Button, Card, Flex, Select, Space, Table, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { CopyOutlined, SendOutlined } from '@ant-design/icons'
 import { useTranslation } from 'react-i18next'
@@ -26,6 +28,7 @@ import { useFeedback } from '../../lib/feedback'
 import { useEventRefetch } from '../../lib/list'
 import { RowAction, RowActions } from '../../components/RowActions'
 import StatusPill from '../../components/StatusPill'
+import { useSessionDetail } from '../sessions/shared'
 import { copyText, type ReportsRow } from '../../lib/session-contracts'
 
 const CHUNK_SIZE = 10
@@ -71,6 +74,9 @@ export default function BatchSendPanel({ sid }: { sid: string }) {
    */
   const [settled, setSettled] = useState(false)
   const [selectedKeys, setSelectedKeys] = useState<string[]>([])
+  /** REQ7: the group filter — `null` shows every row. */
+  const [groupId, setGroupId] = useState<number | null>(null)
+  const { detail } = useSessionDetail(sid)
   const [results, setResults] = useState<Record<string, ItemResult>>({})
   const [busy, setBusy] = useState(false)
   const [chunkError, setChunkError] = useState<unknown>(null)
@@ -115,6 +121,15 @@ export default function BatchSendPanel({ sid }: { sid: string }) {
   )
 
   const rowKey = (row: ReportsRow) => `${row.child_id}:${row.session_topic_id}`
+
+  const groups = detail?.groups ?? []
+  const selectedGroup = groups.find((group) => group.gid === groupId)
+  /** FAS reduced foreign groups expose no members, so selecting one keeps all rows. */
+  const memberIds = selectedGroup?.members
+    ? new Set(selectedGroup.members.map((member) => member.child_id))
+    : null
+  /** The matrix rows the panel operates on: group filter + raw matrix. */
+  const displayedRows = memberIds ? (rows ?? []).filter((row) => memberIds.has(row.child_id)) : (rows ?? [])
 
   const sendItems = async (items: BatchItem[]) => {
     setBusy(true)
@@ -186,11 +201,9 @@ export default function BatchSendPanel({ sid }: { sid: string }) {
     }
   }
 
-  const selectedRows = (rows ?? []).filter((row) => selectedKeys.includes(rowKey(row)))
-  const failedRows = (rows ?? []).filter(
-    (row) => results[rowKey(row)]?.status === 'FAILED',
-  )
-  const resultRows = (rows ?? []).filter((row) => results[rowKey(row)] !== undefined)
+  const selectedRows = displayedRows.filter((row) => selectedKeys.includes(rowKey(row)))
+  const failedRows = displayedRows.filter((row) => results[rowKey(row)]?.status === 'FAILED')
+  const resultRows = displayedRows.filter((row) => results[rowKey(row)] !== undefined)
   const sentCount = resultRows.filter((row) => results[rowKey(row)].status === 'SENT').length
   const failedCount = resultRows.length - sentCount
 
@@ -321,6 +334,13 @@ export default function BatchSendPanel({ sid }: { sid: string }) {
           >
             {t('reports.batchRetry')}
           </Button>
+          <Select
+            placeholder={t('reports.groupFilter')}
+            aria-label={t('reports.groupFilter')}
+            value={groupId ?? undefined}
+            onChange={(value) => setGroupId(value)}
+            options={groups.map((group) => ({ value: group.gid, label: group.name }))}
+          />
         </Space>
       </Flex>
 
@@ -329,11 +349,12 @@ export default function BatchSendPanel({ sid }: { sid: string }) {
         size="small"
         loading={!settled}
         columns={matrixColumns}
-        dataSource={rows ?? []}
+        dataSource={displayedRows}
         locale={{ emptyText: tc('empty') }}
         pagination={false}
         scroll={{ x: 720 }}
         rowSelection={{
+          type: 'checkbox',
           selectedRowKeys: selectedKeys,
           onChange: (keys) => setSelectedKeys(keys.map(String)),
           getCheckboxProps: () => ({ disabled: busy }),

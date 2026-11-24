@@ -8,7 +8,7 @@ export default function ReportsIndexPage() {
     <SessionPickTable
       title={t('reports.title')}
       description={t('reports.indexTitle')}
-      to={(sessionId) => `/sessions/${sessionId}/reports`}
+      to={(sessionId) => `/sessions/${sessionId}/reports/topics`}
     />
   )
 }
