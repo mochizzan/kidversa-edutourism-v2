@@ -86,10 +86,10 @@ func TestCaxSessionConsentsDefaultShapes(t *testing.T) {
 
 	mock.ExpectQuery(q("FROM sessions WHERE id = ? AND school_id = ?")).
 		WithArgs(int64(2), int64(1)).WillReturnRows(statusRows("OPENED"))
-	mock.ExpectQuery(q("SELECT COUNT(*) FROM consent_links cl")).
+	mock.ExpectQuery(q("SELECT COUNT(*) FROM session_members sm")).
 		WithArgs(int64(2), int64(1)).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(2))
-	mock.ExpectQuery(q("SELECT cl.child_id, c.name, g.name, cl.status, cl.respondent_name")).
+	mock.ExpectQuery(q("SELECT sm.child_id, c.name, g.name")).
 		WithArgs(int64(2), int64(1), 20, 0).
 		WillReturnRows(sqlmock.NewRows([]string{"child_id", "name", "group_name",
 			"status", "respondent_name", "responded_at", "token"}).
@@ -132,10 +132,10 @@ func TestCaxSessionConsentsStatusFilter(t *testing.T) {
 
 	mock.ExpectQuery(q("FROM sessions WHERE id = ? AND school_id = ?")).
 		WithArgs(int64(2), int64(1)).WillReturnRows(statusRows("OPENED"))
-	mock.ExpectQuery(q("SELECT COUNT(*) FROM consent_links cl")).
+	mock.ExpectQuery(q("SELECT COUNT(*) FROM session_members sm")).
 		WithArgs(int64(2), int64(1), "DITOLAK").
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
-	mock.ExpectQuery(q("SELECT cl.child_id, c.name, g.name, cl.status, cl.respondent_name")).
+	mock.ExpectQuery(q("SELECT sm.child_id, c.name, g.name")).
 		WithArgs(int64(2), int64(1), "DITOLAK", 20, 0).
 		WillReturnRows(sqlmock.NewRows([]string{"child_id", "name", "group_name",
 			"status", "respondent_name", "responded_at", "token"}).
@@ -214,10 +214,10 @@ func TestCaxSessionConsentsFASOwnGroupsScope(t *testing.T) {
 	mock.ExpectQuery(q("WHERE facilitator_id = ? AND school_id = ? ORDER BY id")).
 		WithArgs(int64(3), int64(1)).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "session_id"}).AddRow(10, 2))
-	mock.ExpectQuery(q("SELECT COUNT(*) FROM consent_links cl")).
+	mock.ExpectQuery(q("SELECT COUNT(*) FROM session_members sm")).
 		WithArgs(int64(2), int64(1), int64(10)).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
-	mock.ExpectQuery(q("SELECT cl.child_id, c.name, g.name, cl.status, cl.respondent_name")).
+	mock.ExpectQuery(q("SELECT sm.child_id, c.name, g.name")).
 		WithArgs(int64(2), int64(1), int64(10), 20, 0).
 		WillReturnRows(sqlmock.NewRows([]string{"child_id", "name", "group_name",
 			"status", "respondent_name", "responded_at", "token"}).
@@ -278,7 +278,7 @@ func TestCaxSessionConsentsListDBErrors(t *testing.T) {
 		s, mock := newTestServer(t)
 		app := newTestApp(t, s)
 		h := prefix(t, s, mock)
-		mock.ExpectQuery(q("SELECT COUNT(*) FROM consent_links cl")).
+		mock.ExpectQuery(q("SELECT COUNT(*) FROM session_members sm")).
 			WithArgs(int64(2), int64(1)).WillReturnError(errors.New("connection refused"))
 		res := doReq(t, app, "GET", caxSessionConsenPath, "", h)
 		requireErrEnvelope(t, res, CodeDBUnavailable)
@@ -287,10 +287,10 @@ func TestCaxSessionConsentsListDBErrors(t *testing.T) {
 		s, mock := newTestServer(t)
 		app := newTestApp(t, s)
 		h := prefix(t, s, mock)
-		mock.ExpectQuery(q("SELECT COUNT(*) FROM consent_links cl")).
+		mock.ExpectQuery(q("SELECT COUNT(*) FROM session_members sm")).
 			WithArgs(int64(2), int64(1)).
 			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
-		mock.ExpectQuery(q("SELECT cl.child_id, c.name, g.name, cl.status, cl.respondent_name")).
+		mock.ExpectQuery(q("SELECT sm.child_id, c.name, g.name")).
 			WithArgs(int64(2), int64(1), 20, 0).WillReturnError(errors.New("connection refused"))
 		res := doReq(t, app, "GET", caxSessionConsenPath, "", h)
 		requireErrEnvelope(t, res, CodeDBUnavailable)
@@ -299,10 +299,10 @@ func TestCaxSessionConsentsListDBErrors(t *testing.T) {
 		s, mock := newTestServer(t)
 		app := newTestApp(t, s)
 		h := prefix(t, s, mock)
-		mock.ExpectQuery(q("SELECT COUNT(*) FROM consent_links cl")).
+		mock.ExpectQuery(q("SELECT COUNT(*) FROM session_members sm")).
 			WithArgs(int64(2), int64(1)).
 			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
-		mock.ExpectQuery(q("SELECT cl.child_id, c.name, g.name, cl.status, cl.respondent_name")).
+		mock.ExpectQuery(q("SELECT sm.child_id, c.name, g.name")).
 			WithArgs(int64(2), int64(1), 20, 0).
 			WillReturnRows(sqlmock.NewRows([]string{"child_id", "name", "group_name",
 				"status", "respondent_name", "responded_at", "token"}).
@@ -333,7 +333,7 @@ func TestCaxSessionConsentsQFilter(t *testing.T) {
 	mock.ExpectQuery(likeFrag).
 		WithArgs(int64(2), int64(1), "%kel%", "%kel%", "%kel%").
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
-	mock.ExpectQuery(q("SELECT cl.child_id, c.name, g.name, cl.status, cl.respondent_name")).
+	mock.ExpectQuery(q("SELECT sm.child_id, c.name, g.name")).
 		WithArgs(int64(2), int64(1), "%kel%", "%kel%", "%kel%", 20, 0).
 		WillReturnRows(sqlmock.NewRows(listCols).
 			AddRow(30, "Ayu", "Kelompok Merah", "PENDING", nil, nil, "tok-cax-q1"))
@@ -349,7 +349,7 @@ func TestCaxSessionConsentsQFilter(t *testing.T) {
 	mock.ExpectQuery(likeFrag).
 		WithArgs(int64(2), int64(1), "%zzz%", "%zzz%", "%zzz%").
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
-	mock.ExpectQuery(q("SELECT cl.child_id, c.name, g.name, cl.status, cl.respondent_name")).
+	mock.ExpectQuery(q("SELECT sm.child_id, c.name, g.name")).
 		WithArgs(int64(2), int64(1), "%zzz%", "%zzz%", "%zzz%", 20, 0).
 		WillReturnRows(sqlmock.NewRows(listCols))
 	res = doReq(t, app, "GET", caxSessionConsenPath+"?q=zzz", "", h)
@@ -361,10 +361,10 @@ func TestCaxSessionConsentsQFilter(t *testing.T) {
 	// Empty q: no LIKE predicate, args unchanged.
 	expectAdminAuth(mock)
 	expectGate()
-	mock.ExpectQuery(q("SELECT COUNT(*) FROM consent_links cl")).
+	mock.ExpectQuery(q("SELECT COUNT(*) FROM session_members sm")).
 		WithArgs(int64(2), int64(1)).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
-	mock.ExpectQuery(q("SELECT cl.child_id, c.name, g.name, cl.status, cl.respondent_name")).
+	mock.ExpectQuery(q("SELECT sm.child_id, c.name, g.name")).
 		WithArgs(int64(2), int64(1), 20, 0).
 		WillReturnRows(sqlmock.NewRows(listCols).
 			AddRow(30, "Ayu", nil, "PENDING", nil, nil, "tok-cax-q2"))

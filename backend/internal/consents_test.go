@@ -35,6 +35,7 @@ func startWAStub(t *testing.T, status int) (*waStub, string) {
 }
 
 const consentSendPath = "/api/sessions/2/children/30/send-consent"
+const consentBatchPath = "/api/sessions/2/send-consent"
 
 // TestConsentRespondFirstWinsAlreadyDecided: a decision UPDATE hitting 0 rows
 // re-reads and answers {decision, already:true} — an idempotent SUCCESS.
@@ -165,6 +166,152 @@ func TestSendConsentDecidedSkipsWA(t *testing.T) {
 	require.Equal(t, "SETUJU", data["decision"])
 	require.Equal(t, false, data["resent"])
 	require.Zero(t, stub.calls.Load(), "a decided consent must never re-send WA")
+}
+
+// TestSessionConsentListIncludesNeverSent: the session list is driven by
+// membership, so a child with no consent_links row is a NOT_SENT row.
+func TestSessionConsentListIncludesNeverSent(t *testing.T) {
+	s, mock := newTestServer(t)
+	app := newTestApp(t, s)
+
+	h := bearer(mintAccess(t, s, adminUserRow()))
+	h["X-School-ID"] = "1"
+
+	mock.ExpectQuery(sqlUserByID).WithArgs(int64(2)).WillReturnRows(sqlAdminRow())
+	mock.ExpectQuery(q("FROM sessions WHERE id = ? AND school_id = ?")).
+		WithArgs(int64(2), int64(1)).WillReturnRows(statusRows("OPENED"))
+	mock.ExpectQuery(q("SELECT COUNT(*) FROM session_members sm")).
+		WithArgs(int64(2), int64(1)).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(2))
+	mock.ExpectQuery(q("SELECT sm.child_id, c.name, g.name")).
+		WithArgs(int64(2), int64(1), 20, 0).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"child_id", "name", "group_name", "status", "respondent_name", "responded_at", "token",
+		}).
+			AddRow(30, "zan", "Kelompok Jerapah", "NOT_SENT", nil, nil, nil).
+			AddRow(31, "Aisyah", "Kelompok Jerapah", "PENDING", nil, nil, "tok-31"))
+
+	res := doReq(t, app, "GET", "/api/sessions/2/consents", "", h)
+	data := requireDataEnvelope(t, res).([]any)
+	require.Len(t, data, 2)
+	first := data[0].(map[string]any)
+	require.Equal(t, "NOT_SENT", first["status"])
+	_, hasURL := first["consent_url"]
+	require.False(t, hasURL, "never-sent rows have no link to copy")
+	second := data[1].(map[string]any)
+	require.Equal(t, "PENDING", second["status"])
+	require.Contains(t, second["consent_url"], "tok-31")
+}
+
+// TestSessionConsentListFilters: the NOT_SENT and group_id predicates land in
+// BOTH the membership count and list queries (frontend filter options).
+func TestSessionConsentListFilters(t *testing.T) {
+	s, mock := newTestServer(t)
+	app := newTestApp(t, s)
+
+	h := bearer(mintAccess(t, s, adminUserRow()))
+	h["X-School-ID"] = "1"
+
+	mock.ExpectQuery(sqlUserByID).WithArgs(int64(2)).WillReturnRows(sqlAdminRow())
+	mock.ExpectQuery(q("FROM sessions WHERE id = ? AND school_id = ?")).
+		WithArgs(int64(2), int64(1)).WillReturnRows(statusRows("OPENED"))
+	mock.ExpectQuery(q("SELECT COUNT(*) FROM session_members sm")).
+		WithArgs(int64(2), int64(1), int64(10)).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+	mock.ExpectQuery(q("SELECT sm.child_id, c.name, g.name")).
+		WithArgs(int64(2), int64(1), int64(10), 20, 0).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"child_id", "name", "group_name", "status", "respondent_name", "responded_at", "token",
+		}).AddRow(30, "zan", "Kelompok Jerapah", "NOT_SENT", nil, nil, nil))
+
+	res := doReq(t, app, "GET",
+		"/api/sessions/2/consents?status=NOT_SENT&group_id=10", "", h)
+	data := requireDataEnvelope(t, res).([]any)
+	require.Len(t, data, 1)
+	require.Equal(t, "NOT_SENT", data[0].(map[string]any)["status"])
+}
+
+// TestSessionConsentListRejectsBadGroup: a non-numeric/zero group_id is
+// VALIDATION before any list query.
+func TestSessionConsentListRejectsBadGroup(t *testing.T) {
+	for _, query := range []string{"?group_id=abc", "?group_id=0"} {
+		t.Run(query, func(t *testing.T) {
+			s, mock := newTestServer(t)
+			app := newTestApp(t, s)
+			h := bearer(mintAccess(t, s, adminUserRow()))
+			h["X-School-ID"] = "1"
+			mock.ExpectQuery(sqlUserByID).WithArgs(int64(2)).WillReturnRows(sqlAdminRow())
+			res := doReq(t, app, "GET", "/api/sessions/2/consents"+query, "", h)
+			requireErrEnvelope(t, res, CodeValidation)
+		})
+	}
+}
+
+// TestSendConsentBatchPerItem: one request processes the selection, skips an
+// already-decided child, and dedupes repeated ids.
+func TestSendConsentBatchPerItem(t *testing.T) {
+	s, mock := newTestServer(t)
+	app := newTestApp(t, s)
+	stub, waURL := startWAStub(t, http.StatusOK)
+	s.cfg.OpenwaBaseURL = waURL
+
+	h := bearer(mintAccess(t, s, adminUserRow()))
+	h["X-School-ID"] = "1"
+	h["X-Idempotency-Key"] = "send-consent-batch-1"
+
+	mock.ExpectQuery(sqlUserByID).WithArgs(int64(2)).WillReturnRows(sqlAdminRow())
+	mock.ExpectExec(q("DELETE FROM idempotency_keys")).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec(q("INSERT INTO idempotency_keys")).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery(q("FROM sessions WHERE id = ? AND school_id = ?")).
+		WithArgs(int64(2), int64(1)).WillReturnRows(statusRows("OPENED"))
+
+	// Child 30: existing PENDING row → resend.
+	mock.ExpectQuery(q("SELECT EXISTS(SELECT 1 FROM session_members WHERE session_id = ? AND child_id = ?)")).
+		WithArgs(int64(2), int64(30)).
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(1))
+	mock.ExpectQuery(q("SELECT mother_wa, is_active FROM children")).
+		WithArgs(int64(30), int64(1)).
+		WillReturnRows(sqlmock.NewRows([]string{"mother_wa", "is_active"}).
+			AddRow("+628111111111", true))
+	mock.ExpectQuery(q("SELECT id, token, status FROM consent_links")).
+		WithArgs(int64(2), int64(30)).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "token", "status"}).
+			AddRow(7, "tok-30", "PENDING"))
+	mock.ExpectExec(q("INSERT INTO wa_outbox")).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	// Child 31: already decided → SKIPPED, no WA/outbox.
+	mock.ExpectQuery(q("SELECT EXISTS(SELECT 1 FROM session_members WHERE session_id = ? AND child_id = ?)")).
+		WithArgs(int64(2), int64(31)).
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(1))
+	mock.ExpectQuery(q("SELECT mother_wa, is_active FROM children")).
+		WithArgs(int64(31), int64(1)).
+		WillReturnRows(sqlmock.NewRows([]string{"mother_wa", "is_active"}).
+			AddRow("+628111111112", true))
+	mock.ExpectQuery(q("SELECT id, token, status FROM consent_links")).
+		WithArgs(int64(2), int64(31)).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "token", "status"}).
+			AddRow(8, "tok-31", "SETUJU"))
+
+	mock.ExpectExec(q("UPDATE idempotency_keys SET response = ?")).
+		WithArgs(sqlmock.AnyArg(), int64(1), "POST "+consentBatchPath, "send-consent-batch-1").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	res := jsonReq(t, app, "POST", consentBatchPath,
+		map[string]any{"child_ids": []int64{30, 31, 31}}, h)
+	data := requireDataEnvelope(t, res).(map[string]any)
+	items := data["items"].([]any)
+	require.Len(t, items, 2, "duplicate ids are processed once")
+	first := items[0].(map[string]any)
+	require.Equal(t, float64(30), first["child_id"])
+	require.Equal(t, "SENT", first["status"])
+	second := items[1].(map[string]any)
+	require.Equal(t, float64(31), second["child_id"])
+	require.Equal(t, "SKIPPED", second["status"])
+	require.Equal(t, "SETUJU", second["decision"])
+	require.EqualValues(t, 1, stub.calls.Load())
 }
 
 // TestSendConsentWAFailedEnvelope: an unreachable OpenWA maps to the 200
