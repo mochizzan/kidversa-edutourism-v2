@@ -31,6 +31,8 @@ function AuthProbe() {
       <span data-testid="school">{auth.school ? `${auth.school.id}/${auth.school.school_name}` : 'none'}</span>
       <span data-testid="ready">{String(auth.ready)}</span>
       <button onClick={() => auth.setSession(SESSION)}>login</button>
+      <button onClick={() => auth.setSession(SESSION, { remember: false })}>login-off</button>
+      <button onClick={() => auth.setSession(SESSION, { remember: true })}>login-on</button>
       <button onClick={() => void auth.logout()}>logout</button>
       <button onClick={() => void auth.switchSchool(2)}>switch</button>
     </div>
@@ -63,6 +65,29 @@ describe('auth context', () => {
     expect(screen.getByTestId('school').textContent).toBe('1/Bandung')
     expect(getAccessToken()).toBe(SESSION.access) // memory only
     expect(localStorage.getItem('kv-school')).toBe('1')
+    expect(localStorage.getItem('kv-session')).toBe('1')
+  })
+
+  it('setSession({ remember: false }) adopts the session but leaves no kv-session marker', async () => {
+    const user = userEvent.setup()
+    renderApp(<AuthProbe />)
+
+    await user.click(screen.getByRole('button', { name: 'login-off' }))
+
+    // The session is live in memory (user + access token), but the boot
+    // marker is gone: a reload boots anonymous instead of auto-restoring.
+    expect(screen.getByTestId('user').textContent).toBe('admin@kidversa.id/ADMIN')
+    expect(getAccessToken()).toBe(SESSION.access)
+    expect(localStorage.getItem('kv-session')).toBeNull()
+  })
+
+  it('setSession({ remember: true }) sets the kv-session boot-restore marker', async () => {
+    const user = userEvent.setup()
+    renderApp(<AuthProbe />)
+
+    await user.click(screen.getByRole('button', { name: 'login-on' }))
+
+    expect(screen.getByTestId('user').textContent).toBe('admin@kidversa.id/ADMIN')
     expect(localStorage.getItem('kv-session')).toBe('1')
   })
 

@@ -56,7 +56,7 @@ export default function LoginPage() {
         password: values.password,
       })
       rememberEmail(remember ? email : null)
-      setSession(data)
+      setSession(data, { remember })
       navigate(from, { replace: true })
     } catch (cause) {
       setError(errorCode(cause))

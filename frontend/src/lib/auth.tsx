@@ -6,7 +6,10 @@
  *   and mirrored in api.ts for SCHOOL_MISMATCH recovery (spec 06 E7).
  * - localStorage `kv-session` marks "this browser had a login" so a reload can
  *   restore via POST /api/auth/refresh (cookie) without a pointless refresh
- *   round-trip for anonymous visitors.
+ *   round-trip for anonymous visitors. It is written by `setSession` unless the
+ *   caller passes `remember: false` — the login form's Remember Me toggle:
+ *   off means the session lives in memory only, so a return visit is
+ *   anonymous again.
  * - SA default school = the latest created ACTIVE school chosen by the server
  *   and returned in the login/refresh payload; switching uses
  *   POST /api/auth/switch-school (same access token, new X-School-ID).
@@ -77,6 +80,15 @@ export interface LoginData {
   impersonation?: Impersonation
 }
 
+/**
+ * Options when adopting a session (spec F-01 / FL-02): the login form's
+ * Remember Me toggle gates persistence through this.
+ */
+export interface SessionOptions {
+  /** false → memory only: the kv-session boot-restore marker is not written. */
+  remember?: boolean
+}
+
 /** Decision data consumed by the router: RequireRole computes it, Protected renders it. */
 export type AuthDecision =
   | { status: 'allow' }
@@ -100,8 +112,8 @@ export interface AuthContextValue {
   impersonation: Impersonation | null
   /** false until the boot refresh restore has settled (prevents a premature /login redirect). */
   ready: boolean
-  /** Adopt a session: login response or boot refresh restore. */
-  setSession(data: LoginData): void
+  /** Adopt a session: login response or boot refresh restore. `remember: false` = memory only. */
+  setSession(data: LoginData, options?: SessionOptions): void
   /** Replace the cached user after a profile change. */
   setUser(user: User): void
   logout(): Promise<void>
@@ -140,10 +152,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    */
   const sessionEpoch = useRef(0)
 
-  const setSession = useCallback((data: LoginData) => {
+  const setSession = useCallback((data: LoginData, options?: SessionOptions) => {
     sessionEpoch.current += 1
     setAccessToken(data.access)
-    localStorage.setItem(KV_SESSION, '1')
+    // The kv-session marker is what the boot effect (below) restores on a
+    // reload. With Remember Me off the session lives in memory only — write no
+    // marker (and drop a stale one from an earlier remember-me login), so a
+    // return visit boots anonymous instead of auto-restoring.
+    if (options?.remember === false) localStorage.removeItem(KV_SESSION)
+    else localStorage.setItem(KV_SESSION, '1')
     if (data.school) {
       localStorage.setItem('kv-school', String(data.school.id))
       setSessionSchool(data.school.id)

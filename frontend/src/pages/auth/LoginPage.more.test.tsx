@@ -123,3 +123,37 @@ describe('login footer links', () => {
     expect(screen.queryByRole('button', { name: 'Masuk' })).toBeNull() // login form gone
   })
 })
+
+describe('remember-me and the boot-restore marker', () => {
+  async function submitLogin(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+    await user.type(await screen.findByLabelText('Email'), 'admin@kidversa.id')
+    await user.type(screen.getByLabelText('Kata sandi'), 'rahasia1')
+    await user.click(screen.getByRole('button', { name: 'Masuk' }))
+    await screen.findByText('panel-utama') // session adopted, logged in
+  }
+
+  it('login with the Remember toggle OFF sets no kv-session (return = anonymous)', async () => {
+    server.use(http.post('/api/auth/login', () => ok(makeLoginData())))
+    const user = userEvent.setup()
+    renderApp(null, { routes: DEEP_LINK_ROUTES, route: '/' })
+
+    await submitLogin(user)
+
+    expect(getAccessToken()).toBe(makeLoginData().access) // logged in now…
+    expect(localStorage.getItem('kv-session')).toBeNull() // …but the return does not auto-restore
+  })
+
+  it('login with the Remember toggle ON sets kv-session (auto-login on return)', async () => {
+    server.use(http.post('/api/auth/login', () => ok(makeLoginData())))
+    const user = userEvent.setup()
+    renderApp(null, { routes: DEEP_LINK_ROUTES, route: '/' })
+
+    await user.type(await screen.findByLabelText('Email'), 'admin@kidversa.id')
+    await user.type(screen.getByLabelText('Kata sandi'), 'rahasia1')
+    await user.click(screen.getByRole('switch', { name: 'Ingat saya' })) // toggle ON
+    await user.click(screen.getByRole('button', { name: 'Masuk' }))
+    await screen.findByText('panel-utama')
+
+    expect(localStorage.getItem('kv-session')).toBe('1')
+  })
+})
