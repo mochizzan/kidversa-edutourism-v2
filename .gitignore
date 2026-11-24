@@ -15,7 +15,9 @@ build/
 *.out
 
 # ── Runtime data & uploads ───────────────────────────────────
-data/
+data/**
+!data/**/
+!data/**/.gitkeep
 backend/uploads/
 *.db
 *.sqlite
@@ -63,3 +65,4 @@ tmp/
 # ── Tooling / agent caches ───────────────────────────────────
 .codegraph/
 .omp/
+.taste-skill/

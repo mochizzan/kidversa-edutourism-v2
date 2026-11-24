@@ -1,0 +1,66 @@
+services:
+  db:
+    image: mariadb:12.3
+    env_file: [.env]
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - ./data/mariadb:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  api:
+    build: ./backend
+    env_file: [.env]
+    depends_on:
+      db:
+        condition: service_healthy
+    expose:
+      - "3000"
+    volumes:
+      - ./data/uploads:/data/uploads
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:3000/livez && curl -fsS http://localhost:3000/readyz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  web:
+    build: ./frontend
+    ports:
+      - "8002:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  wa:
+    image: openwa-openwa:latest
+    env_file: [.env]
+    ports:
+      - "8003:2785"
+    # wa-ua.cjs rewrites whatsapp-web.js's Chrome/101 default UA, otherwise
+    # WhatsApp Web serves its "update Chrome" gate instead of a QR (see the
+    # file header). WWEBJS_AUTH_TIMEOUT_MS raises OpenWA's engine-init budget
+    # (max(60s, value + 30s)) because a cold first boot in-container needs
+    # ~55s before the QR event fires.
+    environment:
+      NODE_OPTIONS: --require=/opt/wa-ua.cjs
+      WWEBJS_AUTH_TIMEOUT_MS: "120000"
+    volumes:
+      - ./data/openwa:/app/data
+      - ./ops/openwa/wa-ua.cjs:/opt/wa-ua.cjs:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:2785/api/health/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
