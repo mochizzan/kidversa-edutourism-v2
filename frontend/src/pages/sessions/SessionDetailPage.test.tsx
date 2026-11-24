@@ -10,7 +10,7 @@
  * (registerSignal payload → queue) for member.changed / session.changed.
  */
 import { describe, expect, it } from 'vitest'
-import { act, fireEvent, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import type { RouteObject } from 'react-router'
@@ -82,7 +82,7 @@ describe('session detail lifecycle buttons', () => {
 
     await screen.findByText('Kelompok Merah')
     expect(screen.getByRole('button', { name: 'Mulai sesi' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Ubah' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Ubah sesi' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Hapus sesi' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Selesaikan sesi' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Buka kembali' })).toBeNull()
@@ -100,7 +100,7 @@ describe('session detail lifecycle buttons', () => {
     await screen.findByText('Kelompok Merah')
     expect(screen.getByRole('button', { name: 'Selesaikan sesi' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Hapus sesi' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Ubah' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Ubah sesi' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Mulai sesi' })).toBeNull()
   })
 
@@ -131,7 +131,7 @@ describe('session detail lifecycle buttons', () => {
 
     await screen.findByText('Kelompok Merah')
     expect(screen.queryByRole('button', { name: 'Mulai sesi' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Ubah' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Ubah sesi' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Hapus sesi' })).toBeNull()
   })
 })
@@ -414,7 +414,7 @@ describe('session detail meta editor', () => {
     })
 
     await screen.findByText('Kelompok Merah')
-    await user.click(screen.getByRole('button', { name: 'Ubah' }))
+    await user.click(screen.getByRole('button', { name: 'Ubah sesi' }))
     await screen.findByText('Ubah detail sesi')
 
     // Clear the required fields and make end <= start.
@@ -461,7 +461,7 @@ describe('session detail meta editor', () => {
     })
 
     await screen.findByText('Kelompok Merah')
-    await user.click(screen.getByRole('button', { name: 'Ubah' }))
+    await user.click(screen.getByRole('button', { name: 'Ubah sesi' }))
     await screen.findByText('Ubah detail sesi')
 
     const nameInput = screen.getByDisplayValue('Kelas Batik')
@@ -489,7 +489,7 @@ describe('session detail meta editor', () => {
     })
 
     await screen.findByText('Kelompok Merah')
-    await user.click(screen.getByRole('button', { name: 'Ubah' }))
+    await user.click(screen.getByRole('button', { name: 'Ubah sesi' }))
     await screen.findByText('Ubah detail sesi')
     await user.click(screen.getByRole('button', { name: 'Simpan' }))
 
@@ -519,7 +519,8 @@ describe('session detail delete dialog', () => {
     // Detail-derived line.
     screen.getByText('2 kelompok, 5 anggota, dan 3 topik penilaian ikut terhapus.')
     // Typed gate: disabled until the exact session name is typed.
-    const confirm = screen.getByRole('button', { name: 'Hapus' })
+    const dialog = screen.getByRole('dialog')
+    const confirm = within(dialog).getByRole('button', { name: 'Hapus sesi' })
     expect(confirm).toBeDisabled()
     const typed = screen.getByPlaceholderText('Kelas Batik')
     await user.type(typed, 'Salah')

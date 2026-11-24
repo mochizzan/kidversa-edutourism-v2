@@ -248,11 +248,11 @@ describe('groups panel mutations', () => {
       'Penilaian, foto, narasi, misi, dan persetujuan anak ini di sesi ini ikut terhapus.',
     )
     // antd keeps the loading icon in the OK button for a beat after a failed
-    // run — wait for the settled, enabled "Hapus" before re-confirming.
+    // run — wait for the settled, enabled "Keluarkan dari sesi" before re-confirming.
     const confirmInDialog = async (): Promise<HTMLElement> => {
       let button: HTMLElement | undefined
       await waitFor(() => {
-        button = within(dialog).getByRole('button', { name: 'Hapus' })
+        button = within(dialog).getByRole('button', { name: 'Keluarkan dari sesi' })
         expect(button).toBeEnabled()
       })
       return button as HTMLElement
@@ -361,7 +361,7 @@ describe('groups panel typed group wipe', () => {
       '5 penilaian, 2 link persetujuan, dan 1 link rapor/galeri milik anggota kelompok ini ikut mati.',
     )
 
-    const confirm = within(dialog).getByRole('button', { name: 'Hapus' })
+    const confirm = within(dialog).getByRole('button', { name: 'Hapus kelompok' })
     expect(confirm).toBeDisabled()
     await user.type(within(dialog).getByPlaceholderText('Kelompok Merah'), 'Kelompok Merah')
     expect(confirm).toBeEnabled()
@@ -395,7 +395,7 @@ describe('groups panel typed group wipe', () => {
     expect(
       within(dialog).queryByText(/penilaian, .* link persetujuan/),
     ).toBeNull()
-    expect(within(dialog).getByRole('button', { name: 'Hapus' })).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Hapus kelompok' })).toBeInTheDocument()
   })
 
   it('a DELETE failure renders the translated code inline and keeps the dialog open', async () => {
@@ -413,7 +413,7 @@ describe('groups panel typed group wipe', () => {
     await user.click(screen.getByRole('button', { name: /Hapus kelompok/ }))
     const dialog = await screen.findByRole('dialog')
     await user.type(within(dialog).getByPlaceholderText('Kelompok Merah'), 'Kelompok Merah')
-    await user.click(within(dialog).getByRole('button', { name: 'Hapus' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Hapus kelompok' }))
 
     // message === code → the TRANSLATED fallback renders, dialog stays open.
     await within(dialog).findByText('Data berubah di tempat lain. Muat ulang halaman.')
@@ -434,7 +434,7 @@ describe('groups panel member remove error fallback', () => {
 
     await user.click(screen.getAllByRole('button', { name: 'Keluarkan dari sesi' })[0])
     const dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: 'Hapus' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Keluarkan dari sesi' }))
 
     await within(dialog).findByText('Data berubah di tempat lain. Muat ulang halaman.')
     expect(screen.getByRole('dialog')).toBeInTheDocument()

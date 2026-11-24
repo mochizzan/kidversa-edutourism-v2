@@ -56,7 +56,7 @@ describe('delete session dialog', () => {
     const { onDeleted } = renderDialog({ withScope: true })
     const user = userEvent.setup()
 
-    const confirm = screen.getByRole('button', { name: 'Hapus' })
+    const confirm = screen.getByRole('button', { name: 'Hapus sesi' })
     expect(confirm).toBeDisabled()
 
     const typed = screen.getByPlaceholderText('Kelas Batik')
@@ -86,7 +86,7 @@ describe('delete session dialog', () => {
     const user = userEvent.setup()
 
     await user.type(screen.getByPlaceholderText('Kelas Batik'), 'Kelas Batik')
-    await user.click(screen.getByRole('button', { name: 'Hapus' }))
+    await user.click(screen.getByRole('button', { name: 'Hapus sesi' }))
 
     await screen.findByText('User masih memimpin kelompok aktif. Alihkan kelompok dulu.')
     expect(onDeleted).not.toHaveBeenCalled()

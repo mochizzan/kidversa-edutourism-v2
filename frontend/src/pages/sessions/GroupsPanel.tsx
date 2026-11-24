@@ -317,7 +317,7 @@ export default function GroupsPanel({
         title={t('group.removeTitle', { name: removeTarget?.member.name ?? '' })}
         danger
         loading={removeBusy}
-        confirmLabel={tc('actions.delete')}
+        confirmLabel={t('group.removeMember')}
         cancelLabel={tc('actions.cancel')}
         onCancel={() => setRemoveTarget(null)}
         onConfirm={removeMember}
@@ -581,7 +581,7 @@ function DeleteGroupDialog({
       typedText={group.name}
       danger
       loading={busy}
-      confirmLabel={tc('actions.delete')}
+      confirmLabel={t('group.delete')}
       onCancel={onCancel}
       onConfirm={confirm}
     >

@@ -266,7 +266,7 @@ export default function SessionDetailPage() {
                 {status === 'OPENED' ? actionButton('finish', t('detail.finish'), true) : null}
                 {status === 'FINISHED' ? actionButton('reopen', t('detail.reopen')) : null}
                 {status === 'DRAFT' ? (
-                  <Button onClick={() => setMetaOpen(true)}>{tc('actions.edit')}</Button>
+                  <Button onClick={() => setMetaOpen(true)}>{t('detail.edit')}</Button>
                 ) : null}
                 {status !== 'OPENED' ? (
                   <Button type="text" danger onClick={() => setDeleteOpen(true)}>

@@ -57,7 +57,7 @@ export default function DeleteSessionDialog({
       typedText={detail.session.name}
       danger
       loading={busy}
-      confirmLabel={tc('actions.delete')}
+      confirmLabel={t('detail.delete')}
       onCancel={onCancel}
       onConfirm={confirm}
     >
