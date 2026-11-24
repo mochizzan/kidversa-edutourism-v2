@@ -105,7 +105,7 @@ func newTestApp(t *testing.T, s *Server) *fiber.App {
 	s.RegisterAuth(api)
 	s.RegisterStream(api, pub)
 	s.RegisterWa(api)
-	s.RegisterTenants(api)
+	s.RegisterSchools(api)
 	s.RegisterUsers(api)
 	s.RegisterPrograms(api)
 	s.RegisterTopics(api)
@@ -133,11 +133,11 @@ type httpRes struct {
 	body   string
 }
 
-// mpWriteFile writes one multipart file part whose Content-Type declares what
-// a browser would send for these bytes (net/http sniffing on the CLIENT side).
-// Pembaruan 2026-10-11: the server stores under the declared type — no server
-// sniff — so honest declarations land as .jpg/.png/.webp and anything else
-// lands as .bin, never a rejection.
+// mpWriteFile writes one multipart file part with the given content. The
+// receiver decides validity: since Pembaruan 2026-11-10 (spec 09) storeImage
+// validates the bytes server-side (whitelist + declared-type cross-check) —
+// these bytes should be real decodable image bytes (realPNG/realJPEG) or the
+// upload is rejected.
 func mpWriteFile(t *testing.T, w *multipart.Writer, field, filename string, content []byte) {
 	t.Helper()
 	// net/textproto is off the spec's test-import allowlist (F-B08): pass the
@@ -232,13 +232,14 @@ var fixedTS = time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 
 var userRowCols = []string{
 	"id", "name", "email", "wa_number", "password_hash", "role",
-	"decision", "is_active", "tenant_id", "t_active", "created_at",
+	"decision", "is_active", "school_id", "t_active", "created_at", "photo_path",
 }
 
-// sqlUserRow builds one userSelect row; tenant/tActive are nil for SA (NULL).
-func sqlUserRow(id int64, name, email, wa, hash, role, decision string, active bool, tenant, tActive any) *sqlmock.Rows {
+// sqlUserRow builds one userSelect row; school/tActive are nil for SA (NULL).
+// photo_path is "" unless a test pins an avatar.
+func sqlUserRow(id int64, name, email, wa, hash, role, decision string, active bool, school, tActive any) *sqlmock.Rows {
 	return sqlmock.NewRows(userRowCols).
-		AddRow(id, name, email, wa, hash, role, decision, active, tenant, tActive, fixedTS)
+		AddRow(id, name, email, wa, hash, role, decision, active, school, tActive, fixedTS, "")
 }
 
 func sqlAdminRow() *sqlmock.Rows {
@@ -255,17 +256,17 @@ func sqlSARow() *sqlmock.Rows {
 
 func saUserRow() *userRow {
 	return &userRow{ID: 1, Name: "Super", Email: "sa@kidversa.id", Role: "SA",
-		Decision: "APPROVED", IsActive: true, TenantActive: true}
+		Decision: "APPROVED", IsActive: true, SchoolActive: true}
 }
 
 func adminUserRow() *userRow {
 	return &userRow{ID: 2, Name: "Admin", Email: "admin@school.id", Role: "ADMIN",
-		Decision: "APPROVED", IsActive: true, TenantID: 1, TenantActive: true}
+		Decision: "APPROVED", IsActive: true, SchoolID: 1, SchoolActive: true}
 }
 
 func fasUserRow() *userRow {
 	return &userRow{ID: 3, Name: "Fasil", Email: "fas@school.id", Role: "FASILITATOR",
-		Decision: "APPROVED", IsActive: true, TenantID: 1, TenantActive: true}
+		Decision: "APPROVED", IsActive: true, SchoolID: 1, SchoolActive: true}
 }
 
 // mintAccess signs a real HS256 access token for the given identity.
@@ -295,16 +296,16 @@ func q(fragment string) string { return regexp.QuoteMeta(fragment) }
 
 // Distinctive fragments for the shared user lookups.
 const (
-	sqlUserByID    = "FROM users u LEFT JOIN tenants t ON t.id = u.tenant_id WHERE u.id = ?"
-	sqlUserByEmail = "FROM users u LEFT JOIN tenants t ON t.id = u.tenant_id WHERE u.email = ?"
+	sqlUserByID    = "FROM users u LEFT JOIN schools sch ON sch.id = u.school_id WHERE u.id = ?"
+	sqlUserByEmail = "FROM users u LEFT JOIN schools sch ON sch.id = u.school_id WHERE u.email = ?"
 )
 
-func sqlTenantByID() string {
-	return q("SELECT id, name, type, is_active, created_at FROM tenants WHERE id = ?")
+func sqlSchoolByID() string {
+	return q("SELECT id, school_name, country, city, is_active, created_at FROM schools WHERE id = ?")
 }
 
-func sqlTenantLatestActive() string {
-	return q("SELECT id, name, type, is_active, created_at FROM tenants WHERE is_active = TRUE ORDER BY id DESC LIMIT 1")
+func sqlSchoolLatestActive() string {
+	return q("SELECT id, school_name, country, city, is_active, created_at FROM schools WHERE is_active = TRUE ORDER BY id DESC LIMIT 1")
 }
 
-func sqlTenantActive() string { return q("SELECT is_active FROM tenants WHERE id = ?") }
+func sqlSchoolActive() string { return q("SELECT is_active FROM schools WHERE id = ?") }

@@ -21,7 +21,7 @@ import (
 
 var userItemCols = []string{
 	"id", "name", "email", "role", "decision", "is_active",
-	"tenant_id", "wa_number", "created_at", "tenant_name",
+	"school_id", "wa_number", "created_at", "school_name",
 }
 
 func userItemRow(id int64, name, email, decision string, active bool) *sqlmock.Rows {
@@ -32,7 +32,7 @@ func userItemRow(id int64, name, email, decision string, active bool) *sqlmock.R
 func fasDBRow(id int64, email, decision string, active bool) *sqlmock.Rows {
 	return sqlmock.NewRows(userRowCols).
 		AddRow(id, "Fas Baru", email, "+628123456789", testPasswordHash,
-			"FASILITATOR", decision, active, int64(1), true, fixedTS)
+			"FASILITATOR", decision, active, int64(1), true, fixedTS, "")
 }
 
 // refreshCookieFrom extracts the refresh_token cookie value.
@@ -69,15 +69,15 @@ func TestIntegrationRegisterApproveLoginRefreshFlow(t *testing.T) {
 	const email = "fas@school.id"
 
 	// 1. Register: PENDING row behind the idempotency claim.
-	mock.ExpectQuery(q("SELECT is_active FROM tenants WHERE id = ?")).WithArgs(int64(1)).
+	mock.ExpectQuery(q("SELECT is_active FROM schools WHERE id = ?")).WithArgs(int64(1)).
 		WillReturnRows(sqlmock.NewRows([]string{"is_active"}).AddRow(true))
 	mock.ExpectExec(q("DELETE FROM idempotency_keys")).WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec(q("INSERT INTO idempotency_keys")).WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectQuery(q("SELECT EXISTS(SELECT 1 FROM users WHERE email = ?")).WithArgs(email).
 		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(0))
-	mock.ExpectExec(q("INSERT INTO users (tenant_id, name, email, wa_number, password_hash, role, decision, is_active)")).
+	mock.ExpectExec(q("INSERT INTO users (school_id, name, email, wa_number, password_hash, role, decision, is_active)")).
 		WillReturnResult(sqlmock.NewResult(7, 1))
-	mock.ExpectQuery(q("SELECT COUNT(*) FROM users WHERE tenant_id = ? AND decision = 'PENDING'")).WithArgs(int64(1)).
+	mock.ExpectQuery(q("SELECT COUNT(*) FROM users WHERE school_id = ? AND decision = 'PENDING'")).WithArgs(int64(1)).
 		WillReturnRows(sqlmock.NewRows([]string{"n"}).AddRow(1))
 	mock.ExpectExec(q("UPDATE idempotency_keys SET response = ?")).
 		WithArgs(sqlmock.AnyArg(), int64(1), "POST /api/auth/register", "flow-1").
@@ -85,7 +85,7 @@ func TestIntegrationRegisterApproveLoginRefreshFlow(t *testing.T) {
 
 	res := jsonReq(t, app, "POST", "/api/auth/register", map[string]any{
 		"name": "Fas Baru", "email": email, "wa_number": "081234567890",
-		"password": testPassword, "role": "FASILITATOR", "tenant_id": 1,
+		"password": testPassword, "role": "FASILITATOR", "school_id": 1,
 	}, map[string]string{"X-Idempotency-Key": "flow-1"})
 	data := requireDataEnvelope(t, res).(map[string]any)
 	require.Equal(t, float64(7), data["id"])
@@ -93,15 +93,15 @@ func TestIntegrationRegisterApproveLoginRefreshFlow(t *testing.T) {
 
 	// 2. Approve: the ADMIN decision transition reloads the User wire object.
 	adminH := bearer(mintAccess(t, 2, "ADMIN", 1))
-	adminH["X-Tenant-ID"] = "1"
+	adminH["X-School-ID"] = "1"
 	mock.ExpectQuery(q(sqlUserByID)).WithArgs(int64(2)).WillReturnRows(sqlAdminRow())
-	mock.ExpectQuery(q("SELECT id, COALESCE(tenant_id, 0), role, decision FROM users WHERE id = ?")).
+	mock.ExpectQuery(q("SELECT id, COALESCE(school_id, 0), role, decision FROM users WHERE id = ?")).
 		WithArgs(int64(7)).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "tenant_id", "role", "decision"}).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "school_id", "role", "decision"}).
 			AddRow(7, int64(1), "FASILITATOR", "PENDING"))
 	mock.ExpectExec(q("UPDATE users SET decision = ?, is_active = ? WHERE id = ?")).
 		WithArgs("APPROVED", true, int64(7)).WillReturnResult(sqlmock.NewResult(0, 1))
-	mock.ExpectQuery(q("AND tenant_id = ? AND role = 'FASILITATOR'")).
+	mock.ExpectQuery(q("AND school_id = ? AND role = 'FASILITATOR'")).
 		WithArgs(int64(1)).WillReturnRows(sqlmock.NewRows([]string{"n"}).AddRow(0))
 	mock.ExpectQuery(q(sqlUserByID)).WithArgs(int64(7)).
 		WillReturnRows(userItemRow(7, "Fas Baru", email, "APPROVED", true))
@@ -112,18 +112,18 @@ func TestIntegrationRegisterApproveLoginRefreshFlow(t *testing.T) {
 	require.Equal(t, true, userObj["is_active"])
 
 	// 3. Login: bcrypt verify + refresh whitelist insert + session envelope.
-	mock.ExpectQuery(q("FROM users u LEFT JOIN tenants t ON t.id = u.tenant_id WHERE u.email = ?")).
+	mock.ExpectQuery(q("FROM users u LEFT JOIN schools sch ON sch.id = u.school_id WHERE u.email = ?")).
 		WithArgs(email).WillReturnRows(fasDBRow(7, email, "APPROVED", true))
 	mock.ExpectExec(q("INSERT INTO refresh_tokens")).WillReturnResult(sqlmock.NewResult(1, 1))
-	mock.ExpectQuery(q("SELECT id, name, type, is_active, created_at FROM tenants WHERE id = ?")).
-		WithArgs(int64(1)).WillReturnRows(sqlTenantBandung())
+	mock.ExpectQuery(q("SELECT id, school_name, country, city, is_active, created_at FROM schools WHERE id = ?")).
+		WithArgs(int64(1)).WillReturnRows(sqlSchoolBandung())
 
 	res = jsonReq(t, app, "POST", "/api/auth/login",
 		map[string]any{"email": email, "password": testPassword}, nil)
 	login := requireDataEnvelope(t, res).(map[string]any)
 	access1, ok := login["access"].(string)
 	require.True(t, ok, "login must return an access token: %s", res.body)
-	require.Equal(t, "Bandung", login["tenant"].(map[string]any)["name"])
+	require.Equal(t, "Bandung", login["school"].(map[string]any)["school_name"])
 	cookie1 := refreshCookieFrom(t, res)
 	jti1 := refreshJTI(t, cookie1)
 	accessClaims := &jwt.RegisteredClaims{}
@@ -135,16 +135,16 @@ func TestIntegrationRegisterApproveLoginRefreshFlow(t *testing.T) {
 
 	// 4. Refresh: ONE Tx locks the old jti, revokes it and inserts the new one.
 	mock.ExpectBegin()
-	mock.ExpectQuery(q("SELECT revoked_at FROM refresh_tokens WHERE jti = ? FOR UPDATE")).
-		WithArgs(jti1).WillReturnRows(sqlmock.NewRows([]string{"revoked_at"}).AddRow(nil))
+	mock.ExpectQuery(q("SELECT revoked_at, impersonated_by, impersonation_root FROM refresh_tokens WHERE jti = ? FOR UPDATE")).
+		WithArgs(jti1).WillReturnRows(sqlmock.NewRows([]string{"revoked_at", "impersonated_by", "impersonation_root"}).AddRow(nil, nil, nil))
 	mock.ExpectQuery(q(sqlUserByID)).WithArgs(int64(7)).
 		WillReturnRows(fasDBRow(7, email, "APPROVED", true))
 	mock.ExpectExec(q("UPDATE refresh_tokens SET revoked_at = NOW() WHERE jti = ?")).
 		WithArgs(jti1).WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(q("INSERT INTO refresh_tokens")).WillReturnResult(sqlmock.NewResult(2, 1))
 	mock.ExpectCommit()
-	mock.ExpectQuery(q("SELECT id, name, type, is_active, created_at FROM tenants WHERE id = ?")).
-		WithArgs(int64(1)).WillReturnRows(sqlTenantBandung())
+	mock.ExpectQuery(q("SELECT id, school_name, country, city, is_active, created_at FROM schools WHERE id = ?")).
+		WithArgs(int64(1)).WillReturnRows(sqlSchoolBandung())
 
 	res = jsonReq(t, app, "POST", "/api/auth/refresh", nil,
 		map[string]string{"Cookie": "refresh_token=" + cookie1})
@@ -157,8 +157,8 @@ func TestIntegrationRegisterApproveLoginRefreshFlow(t *testing.T) {
 
 	// 5. The rotated-away cookie is dead: single-use rotation (06 §3).
 	mock.ExpectBegin()
-	mock.ExpectQuery(q("SELECT revoked_at FROM refresh_tokens WHERE jti = ? FOR UPDATE")).
-		WithArgs(jti1).WillReturnRows(sqlmock.NewRows([]string{"revoked_at"}).AddRow(time.Now()))
+	mock.ExpectQuery(q("SELECT revoked_at, impersonated_by, impersonation_root FROM refresh_tokens WHERE jti = ? FOR UPDATE")).
+		WithArgs(jti1).WillReturnRows(sqlmock.NewRows([]string{"revoked_at", "impersonated_by", "impersonation_root"}).AddRow(time.Now(), nil, nil))
 	mock.ExpectRollback()
 	res = jsonReq(t, app, "POST", "/api/auth/refresh", nil,
 		map[string]string{"Cookie": "refresh_token=" + cookie1})
@@ -173,19 +173,19 @@ func TestIntegrationIdempotencyReplayEndToEnd(t *testing.T) {
 	h := map[string]string{"X-Idempotency-Key": "e2e-idem-1"}
 	body := map[string]any{
 		"name": "Anak", "email": "a@school.id", "wa_number": "081234567890",
-		"password": testPassword, "role": "FASILITATOR", "tenant_id": 1,
+		"password": testPassword, "role": "FASILITATOR", "school_id": 1,
 	}
 
 	expectFresh := func() {
-		mock.ExpectQuery(q("SELECT is_active FROM tenants WHERE id = ?")).WithArgs(int64(1)).
+		mock.ExpectQuery(q("SELECT is_active FROM schools WHERE id = ?")).WithArgs(int64(1)).
 			WillReturnRows(sqlmock.NewRows([]string{"is_active"}).AddRow(true))
 		mock.ExpectExec(q("DELETE FROM idempotency_keys")).WillReturnResult(sqlmock.NewResult(0, 0))
 		mock.ExpectExec(q("INSERT INTO idempotency_keys")).WillReturnResult(sqlmock.NewResult(0, 1))
 		mock.ExpectQuery(q("SELECT EXISTS(SELECT 1 FROM users WHERE email = ?")).WithArgs("a@school.id").
 			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(0))
-		mock.ExpectExec(q("INSERT INTO users (tenant_id, name, email, wa_number, password_hash, role, decision, is_active)")).
+		mock.ExpectExec(q("INSERT INTO users (school_id, name, email, wa_number, password_hash, role, decision, is_active)")).
 			WillReturnResult(sqlmock.NewResult(9, 1))
-		mock.ExpectQuery(q("SELECT COUNT(*) FROM users WHERE tenant_id = ? AND decision = 'PENDING'")).WithArgs(int64(1)).
+		mock.ExpectQuery(q("SELECT COUNT(*) FROM users WHERE school_id = ? AND decision = 'PENDING'")).WithArgs(int64(1)).
 			WillReturnRows(sqlmock.NewRows([]string{"n"}).AddRow(1))
 		mock.ExpectExec(q("UPDATE idempotency_keys SET response = ?")).
 			WithArgs(sqlmock.AnyArg(), int64(1), route, "e2e-idem-1").
@@ -197,7 +197,7 @@ func TestIntegrationIdempotencyReplayEndToEnd(t *testing.T) {
 	requireDataEnvelope(t, res1)
 
 	// Replay: duplicate claim → the stored envelope, no second execution.
-	mock.ExpectQuery(q("SELECT is_active FROM tenants WHERE id = ?")).WithArgs(int64(1)).
+	mock.ExpectQuery(q("SELECT is_active FROM schools WHERE id = ?")).WithArgs(int64(1)).
 		WillReturnRows(sqlmock.NewRows([]string{"is_active"}).AddRow(true))
 	mock.ExpectExec(q("DELETE FROM idempotency_keys")).WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec(q("INSERT INTO idempotency_keys")).
@@ -215,10 +215,10 @@ func TestIntegrationIdempotencyReplayEndToEnd(t *testing.T) {
 func TestIntegrationDBErrorMapsToDBUnavailable(t *testing.T) {
 	app, mock, _ := newApp(t, testConfig(t, "http://127.0.0.1:1"))
 
-	mock.ExpectQuery(q("SELECT id, name, type FROM tenants WHERE is_active = TRUE ORDER BY name")).
+	mock.ExpectQuery(q("SELECT id, school_name FROM schools WHERE is_active = TRUE ORDER BY school_name")).
 		WillReturnError(errors.New("dial tcp 10.0.0.5:3306: connect: connection refused"))
 
-	res := doReq(t, app, "GET", "/api/auth/tenants", "", nil)
+	res := doReq(t, app, "GET", "/api/auth/schools", "", nil)
 	requireErrEnvelope(t, res, internal.CodeDBUnavailable)
 }
 
@@ -260,7 +260,7 @@ func TestIntegrationWAStatusReachable(t *testing.T) {
 
 	mock.ExpectQuery(q(sqlUserByID)).WithArgs(int64(2)).WillReturnRows(sqlAdminRow())
 	h := bearer(mintAccess(t, 2, "ADMIN", 1))
-	h["X-Tenant-ID"] = "1"
+	h["X-School-ID"] = "1"
 	res := doReq(t, app, "GET", "/api/wa/status", "", h)
 	data := requireDataEnvelope(t, res).(map[string]any)
 	require.Equal(t, true, data["connected"])
@@ -275,7 +275,7 @@ func TestIntegrationWAStatusDownStays200(t *testing.T) {
 
 	mock.ExpectQuery(q(sqlUserByID)).WithArgs(int64(2)).WillReturnRows(sqlAdminRow())
 	h := bearer(mintAccess(t, 2, "ADMIN", 1))
-	h["X-Tenant-ID"] = "1"
+	h["X-School-ID"] = "1"
 	res := doReq(t, app, "GET", "/api/wa/status", "", h)
 	data := requireDataEnvelope(t, res).(map[string]any)
 	require.Equal(t, false, data["connected"])
@@ -289,13 +289,13 @@ func TestIntegrationSendConsentWAFailed(t *testing.T) {
 	app, mock, _ := newApp(t, testConfig(t, waURL))
 
 	h := bearer(mintAccess(t, 2, "ADMIN", 1))
-	h["X-Tenant-ID"] = "1"
+	h["X-School-ID"] = "1"
 	h["X-Idempotency-Key"] = "wa-down-1"
 
 	mock.ExpectQuery(q(sqlUserByID)).WithArgs(int64(2)).WillReturnRows(sqlAdminRow())
 	mock.ExpectExec(q("DELETE FROM idempotency_keys")).WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec(q("INSERT INTO idempotency_keys")).WillReturnResult(sqlmock.NewResult(0, 1))
-	mock.ExpectQuery(q("FROM sessions WHERE id = ? AND tenant_id = ?")).
+	mock.ExpectQuery(q("FROM sessions WHERE id = ? AND school_id = ?")).
 		WithArgs(int64(2), int64(1)).
 		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("OPENED"))
 	mock.ExpectQuery(q("SELECT EXISTS(SELECT 1 FROM session_members WHERE session_id = ? AND child_id = ?)")).

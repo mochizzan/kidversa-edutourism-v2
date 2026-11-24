@@ -107,13 +107,16 @@ func (s *Server) invalidateWaID() {
 	s.waMu.Unlock()
 }
 
-// waSessionState reads GET /api/sessions/{id}; 404 is errWaMissing.
+// waSessionState reads GET /api/sessions/{id}; 404 is errWaMissing. OpenWA's
+// path validation also answers 400 before lookup when the id is not a UUID,
+// which is how a name-based OPENWA_SESSION with no matching session reports
+// itself — that is a configuration error too, not an outage.
 func (s *Server) waSessionState(ctx context.Context, id string) (waSession, error) {
 	code, body, err := s.waDo(ctx, http.MethodGet, "/api/sessions/"+url.PathEscape(id))
 	if err != nil {
 		return waSession{}, err
 	}
-	if code == http.StatusNotFound {
+	if code == http.StatusNotFound || code == http.StatusBadRequest {
 		return waSession{}, errWaMissing
 	}
 	if code < 200 || code >= 300 {

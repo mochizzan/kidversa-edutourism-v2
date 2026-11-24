@@ -142,6 +142,14 @@ func TestInxMigrateAppliesPendingMigrationAndRecordsVersion(t *testing.T) {
 		InxMySQLStep{Match: "SELECT version FROM migrations", Resp: InxMyTable([]string{"version"})},
 		InxMySQLStep{Match: "CREATE TABLE IF NOT EXISTS tenants"},
 		InxMySQLStep{Match: "INSERT INTO migrations"},
+		// 0002_users_photo_path, 0003_admin_controls and 0004_school_rename
+		// are also pending (the real migrations dir).
+		InxMySQLStep{Match: "ADD COLUMN photo_path"},
+		InxMySQLStep{Match: "INSERT INTO migrations"},
+		InxMySQLStep{Match: "ADD COLUMN impersonated_by"},
+		InxMySQLStep{Match: "INSERT INTO migrations"},
+		InxMySQLStep{Match: "RENAME TABLE tenants TO schools"},
+		InxMySQLStep{Match: "INSERT INTO migrations"},
 		InxMySQLStep{Match: "RELEASE_LOCK", Resp: InxMyTable([]string{"r"}, []*string{new("1")})},
 	)
 
@@ -163,6 +171,14 @@ func TestInxMigrateSkipsAlreadyAppliedVersion(t *testing.T) {
 		InxMySQLStep{Match: "CREATE TABLE IF NOT EXISTS migrations"},
 		InxMySQLStep{Match: "SELECT version FROM migrations",
 			Resp: InxMyTable([]string{"version"}, []*string{new("1")})},
+		// 0002_users_photo_path, 0003_admin_controls and 0004_school_rename
+		// are still pending over the applied 0001.
+		InxMySQLStep{Match: "ADD COLUMN photo_path"},
+		InxMySQLStep{Match: "INSERT INTO migrations"},
+		InxMySQLStep{Match: "ADD COLUMN impersonated_by"},
+		InxMySQLStep{Match: "INSERT INTO migrations"},
+		InxMySQLStep{Match: "RENAME TABLE tenants TO schools"},
+		InxMySQLStep{Match: "INSERT INTO migrations"},
 		InxMySQLStep{Match: "RELEASE_LOCK", Resp: InxMyTable([]string{"r"}, []*string{new("1")})},
 	)
 
@@ -170,8 +186,8 @@ func TestInxMigrateSkipsAlreadyAppliedVersion(t *testing.T) {
 	srv.RequireDone(t)
 	require.NotContains(t, srv.Log(), "CREATE TABLE IF NOT EXISTS tenants",
 		"an applied version must never be re-executed")
-	require.NotContains(t, srv.Log(), "INSERT INTO migrations",
-		"an applied version must not be recorded twice")
+	require.Equal(t, 3, strings.Count(strings.Join(srv.Log(), "\n"), "INSERT INTO migrations"),
+		"each pending migration (0002, 0003, 0004) records its version exactly once")
 }
 
 func TestInxMigrateLockFailures(t *testing.T) {
@@ -406,6 +422,14 @@ func TestInxMigrateReleaseLockFailureOnlyLogs(t *testing.T) {
 		InxMySQLStep{Match: "CREATE TABLE IF NOT EXISTS migrations"},
 		InxMySQLStep{Match: "SELECT version FROM migrations",
 			Resp: InxMyTable([]string{"version"}, []*string{new("1")})},
+		// 0002_users_photo_path, 0003_admin_controls and 0004_school_rename
+		// apply over the applied 0001.
+		InxMySQLStep{Match: "ADD COLUMN photo_path"},
+		InxMySQLStep{Match: "INSERT INTO migrations"},
+		InxMySQLStep{Match: "ADD COLUMN impersonated_by"},
+		InxMySQLStep{Match: "INSERT INTO migrations"},
+		InxMySQLStep{Match: "RENAME TABLE tenants TO schools"},
+		InxMySQLStep{Match: "INSERT INTO migrations"},
 		InxMySQLStep{Match: "RELEASE_LOCK", Resp: InxMyErr(1105, "release died")},
 	)
 	out := captureInxLog(t, func() {
@@ -1357,7 +1381,7 @@ func TestInxStartWaWatcherPollsPublishesAndStops(t *testing.T) {
 	require.Equal(t, "tick", f.Action)
 	require.NotNil(t, f.Connected, "the transition frame must carry the connection state")
 	require.Equal(t, true, *f.Connected, "down→up must publish connected=true")
-	require.Equal(t, int64(0), f.TenantID, "wa.changed broadcasts at tenant 0")
+	require.Equal(t, int64(0), f.SchoolID, "wa.changed broadcasts at school 0")
 
 	s.Stop()
 	srv.Close()
@@ -1393,18 +1417,18 @@ func inxAllStacks() string {
 // inxPScopeApp mounts a probe route that sets the auth Locals the middleware
 // would set and then runs the real pScope prologue, reporting whether it
 // passed (and with which ids).
-func inxPScopeApp(t *testing.T, s *Server, u *userRow, tenant int64) *fiber.App {
+func inxPScopeApp(t *testing.T, s *Server, u *userRow, school int64) *fiber.App {
 	t.Helper()
 	app := fiber.New(fiber.Config{ErrorHandler: ErrorHandler})
 	app.Get("/inx/pscope/:sid/:stid/:cid", func(c fiber.Ctx) error {
 		c.Locals(kvUser, u)
-		c.Locals(kvTenant, tenant)
+		c.Locals(kvSchool, school)
 		_, cancel, sid, stid, cid, tn, _, okP := s.pScope(c)
 		if !okP {
 			return nil // envelope already written by pScope
 		}
 		defer cancel()
-		return ok(c, fiber.Map{"sid": sid, "stid": stid, "cid": cid, "tenant": tn})
+		return ok(c, fiber.Map{"sid": sid, "stid": stid, "cid": cid, "school": tn})
 	})
 	return app
 }
@@ -1542,7 +1566,7 @@ func TestInxPScope(t *testing.T) {
 	})
 
 	// --- pass-through ---
-	t.Run("FAS owner with valid stid passes with tenant scope", func(t *testing.T) {
+	t.Run("FAS owner with valid stid passes with school scope", func(t *testing.T) {
 		s, mock := newTestServer(t)
 		mock.ExpectQuery(q(inxSQLExists)).WithArgs(int64(7), int64(3)).
 			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(1))
@@ -1554,22 +1578,22 @@ func TestInxPScope(t *testing.T) {
 		res := doReq(t, app, "GET", "/inx/pscope/7/9/3", "", nil)
 		data := requireDataEnvelope(t, res).(map[string]any)
 		require.Equal(t, map[string]any{
-			"sid": float64(7), "stid": float64(9), "cid": float64(3), "tenant": float64(1),
+			"sid": float64(7), "stid": float64(9), "cid": float64(3), "school": float64(1),
 		}, data)
 	})
 
-	t.Run("ADMIN skips the ownership query; SA tenant 0 drops the tenant cond", func(t *testing.T) {
+	t.Run("ADMIN skips the ownership query; SA school 0 drops the school cond", func(t *testing.T) {
 		s, mock := newTestServer(t)
 		mock.ExpectQuery(q(inxSQLExists)).WithArgs(int64(7), int64(3)).
 			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(1))
-		// tenant 0 → photoScope runs WITHOUT the tenant_id argument.
+		// school 0 → photoScope runs WITHOUT the school_id argument.
 		mock.ExpectQuery(q(inxSQLPhoto)).WithArgs(int64(9), int64(7)).
 			WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
 		app := inxPScopeApp(t, s, adminUserRow(), int64(0))
 		res := doReq(t, app, "GET", "/inx/pscope/7/9/3", "", nil)
 		data := requireDataEnvelope(t, res).(map[string]any)
 		require.Equal(t, map[string]any{
-			"sid": float64(7), "stid": float64(9), "cid": float64(3), "tenant": float64(0),
+			"sid": float64(7), "stid": float64(9), "cid": float64(3), "school": float64(0),
 		}, data)
 		require.NoError(t, mock.ExpectationsWereMet(),
 			"non-FAS roles must never run the facilitator ownership query")

@@ -74,7 +74,7 @@ func main() {
 		AllowOrigins:     cfg.CorsOrigins,
 		AllowCredentials: true,
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Authorization", "Content-Type", "X-Tenant-ID", "X-Idempotency-Key"},
+		AllowHeaders:     []string{"Authorization", "Content-Type", "X-School-ID", "X-Idempotency-Key"},
 		ExposeHeaders:    []string{"Retry-After"},
 		MaxAge:           600,
 	}))
@@ -108,7 +108,7 @@ func main() {
 
 	// Domain registrars (I1 integration): each attaches its own
 	// s.authed(...) + per-route limiters; api = /api group, pub = /public.
-	s.RegisterTenants(api)
+	s.RegisterSchools(api)
 	s.RegisterUsers(api)
 	s.RegisterPrograms(api)
 	s.RegisterTopics(api)

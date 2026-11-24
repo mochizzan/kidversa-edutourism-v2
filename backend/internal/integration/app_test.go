@@ -98,7 +98,7 @@ func newApp(t *testing.T, cfg internal.Config) (*fiber.App, sqlmock.Sqlmock, *in
 	s.RegisterAuth(api)
 	s.RegisterStream(api, pub)
 	s.RegisterWa(api)
-	s.RegisterTenants(api)
+	s.RegisterSchools(api)
 	s.RegisterUsers(api)
 	s.RegisterPrograms(api)
 	s.RegisterTopics(api)
@@ -190,13 +190,13 @@ func requireDataEnvelope(t *testing.T, res httpRes) any {
 // Tokens + SQL fixtures
 // ---------------------------------------------------------------------------
 
-// mintAccess issues a real HS256 access token for one subject/role/tenant.
-func mintAccess(t *testing.T, sub int64, role string, tenant int64) string {
+// mintAccess issues a real HS256 access token for one subject/role/school.
+func mintAccess(t *testing.T, sub int64, role string, school int64) string {
 	t.Helper()
 	claims := jwt.MapClaims{
 		"sub":    strconv.FormatInt(sub, 10),
 		"role":   role,
-		"tenant": tenant,
+		"school": school,
 		"iat":    time.Now().Unix(),
 		"exp":    time.Now().Add(15 * time.Minute).Unix(),
 	}
@@ -209,17 +209,17 @@ func q(fragment string) string { return regexp.QuoteMeta(fragment) }
 
 var userRowCols = []string{
 	"id", "name", "email", "wa_number", "password_hash", "role",
-	"decision", "is_active", "tenant_id", "t_active", "created_at",
+	"decision", "is_active", "school_id", "t_active", "created_at", "photo_path",
 }
 
 func sqlAdminRow() *sqlmock.Rows {
 	return sqlmock.NewRows(userRowCols).
-		AddRow(2, "Admin", "admin@school.id", "", testPasswordHash, "ADMIN", "APPROVED", true, int64(1), true, fixedTS)
+		AddRow(2, "Admin", "admin@school.id", "", testPasswordHash, "ADMIN", "APPROVED", true, int64(1), true, fixedTS, "")
 }
 
-func sqlTenantBandung() *sqlmock.Rows {
-	return sqlmock.NewRows([]string{"id", "name", "type", "is_active", "created_at"}).
-		AddRow(1, "Bandung", "KOTA", true, fixedTS)
+func sqlSchoolBandung() *sqlmock.Rows {
+	return sqlmock.NewRows([]string{"id", "school_name", "country", "city", "is_active", "created_at"}).
+		AddRow(1, "Bandung", "Indonesia", nil, true, fixedTS)
 }
 
-const sqlUserByID = "FROM users u LEFT JOIN tenants t ON t.id = u.tenant_id WHERE u.id = ?"
+const sqlUserByID = "FROM users u LEFT JOIN schools sch ON sch.id = u.school_id WHERE u.id = ?"

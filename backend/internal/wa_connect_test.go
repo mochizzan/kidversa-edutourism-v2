@@ -208,6 +208,49 @@ func TestWaSessionMissing(t *testing.T) {
 	require.Equal(t, "missing", data["status"])
 }
 
+// OpenWA's path validation rejects a non-UUID id with 400 before it ever
+// looks the session up. A name-based OPENWA_SESSION with no matching session
+// therefore reports 400, not 404 — it is still a configuration error
+// ("missing"), never an outage.
+func TestWaSessionStateBadRequestIsMissing(t *testing.T) {
+	s, _ := newTestServer(t)
+	waOpenWAStub(t, s, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		io.WriteString(w, `{"message":"Validation failed (uuid is expected)","error":"Bad Request","statusCode":400}`)
+	})
+
+	_, err := s.waSessionState(context.Background(), "not-a-uuid")
+	require.ErrorIs(t, err, errWaMissing)
+}
+
+func TestWaSessionMissingWhenIdIsNotAUUID(t *testing.T) {
+	s, mock := newTestServer(t)
+	var listHits atomic.Int32
+	waOpenWAStub(t, s, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/sessions":
+			listHits.Add(1)
+			io.WriteString(w, `[]`)
+		case "/api/sessions/kidversa-test":
+			w.WriteHeader(http.StatusBadRequest)
+			io.WriteString(w, `{"message":"Validation failed (uuid is expected)","error":"Bad Request","statusCode":400}`)
+		default:
+			t.Errorf("unexpected path %q", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	})
+	app := waConnectApp(t, s)
+	h := hSABare(t, s)
+
+	expectSAAuth(mock, 0)
+	res := doReq(t, app, "GET", "/api/wa/session", "", h)
+	data := requireDataEnvelope(t, res).(map[string]any)
+	require.Equal(t, false, data["connected"])
+	require.Equal(t, "missing", data["status"])
+	require.Equal(t, int32(2), listHits.Load(),
+		"a non-UUID id must invalidate the cached id and re-resolve once")
+}
+
 func TestWaSessionStartCreated(t *testing.T) {
 	s, mock := newTestServer(t)
 	var stateHits, startHits atomic.Int32

@@ -54,27 +54,27 @@
 //	                                  (ACCOUNT_INACTIVE) → role (SA passes all
 //	                                  role checks; ADMIN passes facilitator-level
 //	                                  checks; empty roles = any authenticated
-//	                                  role) → tenant guard (X-Tenant-ID: non-SA
-//	                                  must equal its tenant else TENANT_MISMATCH;
-//	                                  inactive tenant → TENANT_INACTIVE; SA may
-//	                                  target any active tenant, header optional).
+//	                                  role) → school guard (X-School-ID: non-SA
+//	                                  must equal its school else SCHOOL_MISMATCH;
+//	                                  inactive school → SCHOOL_INACTIVE; SA may
+//	                                  target any active school, header optional).
 //	                                  On success Locals kvUser (*userRow) and
-//	                                  kvTenant (int64; 0 = SA without header).
+//	                                  kvSchool (int64; 0 = SA without header).
 //	                                  DB failure → DB_UNAVAILABLE.
 //
 // # Idempotency (idempotency.go)
 //
 //	s.idempotent(c, route string, fn func() error) error
 //	                                  X-Idempotency-Key required (else VALIDATION).
-//	                                  Claims (tenant, route, key) at REQUEST time,
+//	                                  Claims (school, route, key) at REQUEST time,
 //	                                  runs fn once, stores fn's written envelope for
 //	                                  24 h replay; concurrent duplicate → 200
 //	                                  {data:{status:"IN_PROGRESS"}}. fn must write
 //	                                  its own envelope (ok/fail/failDB) and return
 //	                                  nil; a non-nil error aborts and releases the
-//	                                  claim. Tenant comes from Locals kvTenant
+//	                                  claim. School comes from Locals kvSchool
 //	                                  (authed sets it; public handlers must set
-//	                                  c.Locals(kvTenant, tid) before calling).
+//	                                  c.Locals(kvSchool, tid) before calling).
 //	                                  A TOP-level DB_UNAVAILABLE (failDB or a
 //	                                  direct top-level write that sets
 //	                                  Locals kvDBFail) releases the claim so a
@@ -83,14 +83,14 @@
 //
 // # Realtime (stream.go)
 //
-//	s.publish(tenantID int64, frame Frame)
-//	                                  hub assigns rev + ts, appends to the per-tenant
+//	s.publish(schoolID int64, frame Frame)
+//	                                  hub assigns rev + ts, appends to the per-school
 //	                                  ring (100 events / 5 min), fans out best-effort
-//	                                  (slog on drop). tenantID 0 = broadcast to SA/ADMIN
+//	                                  (slog on drop). schoolID 0 = broadcast to SA/ADMIN
 //	                                  connections (stats.changed, wa.changed).
 //	                                  Call ONLY after Tx commit (+ file durability for
 //	                                  photo/copy paths) — never on rollback.
-//	s.publishPublic(f Frame)          public fan-out; set TenantID, SessionID, ChildID,
+//	s.publishPublic(f Frame)          public fan-out; set SchoolID, SessionID, ChildID,
 //	                                  Stid, Entity, Action (+ Decision for consent.ack).
 //	                                  Entity "link.revoked" is terminal: matching
 //	                                  connections close right after delivery. Set
@@ -104,11 +104,11 @@
 //	                                  the SAME scope helpers used by GET /api/sessions
 //	                                  and GET /api/children (reuse, never duplicate
 //	                                  auth logic). Without a provider, FAS connections
-//	                                  receive only tenant-matching frames that need no
+//	                                  receive only school-matching frames that need no
 //	                                  scope (fail-closed for session/child frames).
 //	                                  Signature: ScopeProvider.
 //
-// Wire format: id:<rev> event:<Entity> data:{entity, entity_id, rev, tenant_id,
+// Wire format: id:<rev> event:<Entity> data:{entity, entity_id, rev, school_id,
 // session_id, action, ts [, child_id, stid, pending, connected, complete,
 // decision]}; heartbeat SSE comment ": ping" every 15 s; auth.expiring directed
 // at T-60 s (no id). Handshake failures are ordinary 200 JSON envelopes — no
@@ -127,15 +127,19 @@
 // # Uploads (validate.go + files.go)
 //
 //	s.storeImage(dir string, src io.Reader, declaredType string) (string, error)
-//	                                  names the extension from the CLIENT-
-//	                                  DECLARED part content type (no sniff, no
-//	                                  size/format check — Pembaruan 2026-10-11:
-//	                                  validation is client-side only; anything
-//	                                  outside image/jpeg|png|webp stores as .bin);
-//	                                  writes UPLOAD_DIR/<dir>/<rand32hex>.<ext>
-//	                                  via temp+fsync+atomic rename; returns the
-//	                                  DB-relative path. Only a full disk wraps
-//	                                  errRejected → failStore → 200 VALIDATION.
+//	                                  validates the bytes server-side before any
+//	                                  write — image.DecodeConfig + declared-type
+//	                                  cross-check, whitelist image/jpeg|png
+//	                                  (Pembaruan 2026-11-10 spec 09: validation
+//	                                  is server-side; anything non-whitelisted,
+//	                                  grayloop-oversize or disk-full wraps
+//	                                  errRejected → failStore → 200 VALIDATION);
+//	                                  the stored extension is recomputed from
+//	                                  the VERIFIED bytes (extForFormat), not the
+//	                                  filename or declared type; writes
+//	                                  UPLOAD_DIR/<dir>/<rand32hex>.<ext> via
+//	                                  temp+fsync+atomic rename; returns the
+//	                                  DB-relative path.
 //	randHex() (string, error)         crypto/rand 16-byte hex (filenames, jtis, codes)
 //	randTokenHex() (string, error)    crypto/rand 32-byte hex (consent/public link
 //	                                  tokens, 05 §2 CHAR(64))
@@ -164,8 +168,9 @@
 //
 //	validEmail, validPassword, normalizeWA, validAge, validStars, validNote,
 //	validBadgePair, validTimeRange — pure predicates per 05 §4 / 06 §1; all
-//	map to 200 VALIDATION at the handler. extFromDeclaredType (files naming)
-//	never rejects — upload rules are client-side only (Pembaruan 2026-10-11).
+//	map to 200 VALIDATION at the handler. extFromDeclaredType is retired from
+//	the upload path (Pembaruan 2026-11-10 spec 09: storeImage names extensions
+//	from verified bytes) and kept only for legacy references.
 package internal
 
 import (
@@ -193,8 +198,8 @@ const (
 	CodeInvalidCredentials = "INVALID_CREDENTIALS"       // E3
 	CodeInvalidToken       = "INVALID_TOKEN"             // E4
 	CodeAccountInactive    = "ACCOUNT_INACTIVE"          // E5
-	CodeTenantInactive     = "TENANT_INACTIVE"           // E6
-	CodeTenantMismatch     = "TENANT_MISMATCH"           // E7
+	CodeSchoolInactive     = "SCHOOL_INACTIVE"           // E6
+	CodeSchoolMismatch     = "SCHOOL_MISMATCH"           // E7
 	CodeForbiddenRole      = "FORBIDDEN_ROLE"            // E8
 	CodeNotOwner           = "NOT_OWNER"                 // E9
 	CodeSessionLocked      = "SESSION_LOCKED"            // E10
@@ -230,8 +235,8 @@ const (
 	MsgInvalidCredentials = "wrong email or password"
 	MsgInvalidToken       = "invalid or expired token"
 	MsgAccountInactive    = "account pending approval or deactivated"
-	MsgTenantInactive     = "tenant disabled"
-	MsgTenantMismatch     = "tenant changed, reloading"
+	MsgSchoolInactive     = "school disabled"
+	MsgSchoolMismatch     = "school changed, reloading"
 	MsgForbiddenRole      = "no access"
 	MsgNotOwner           = "not your group"
 	MsgSessionLocked      = "session is locked"
@@ -264,7 +269,7 @@ const (
 const (
 	kvUser   = "kv.user"   // *userRow after authed
 	kvClaims = "kv.claims" // *accessClaims after keyauth
-	kvTenant = "kv.tenant" // int64 active tenant for this call (0 = SA, no header)
+	kvSchool = "kv.school" // int64 active school for this call (0 = SA, no header)
 	kvScope  = "kv.scope"  // *ScopeSnapshot for the stream handshake
 	kvDBFail = "kv.dbfail" // bool: a TOP-level DB_UNAVAILABLE envelope was written
 )
@@ -292,7 +297,11 @@ type Server struct {
 	waID   string
 	waIDAt time.Time
 
-	// SSE hub (stream.go): ring 100 events / 5 min per tenant, fan-out subs.
+	// image.go: cap-5 compression semaphore (spec 09 decision 4) — buffered
+	// channel, NOT a mutex; every stored image >10 MB takes one slot.
+	compressGate chan struct{}
+
+	// SSE hub (stream.go): ring 100 events / 5 min per school, fan-out subs.
 	hubMu         sync.Mutex
 	subs          []*subscription
 	rings         map[int64][]Frame
@@ -337,6 +346,8 @@ func NewServer(db *sql.DB, cfg Config) (*Server, error) {
 		tplConsent: string(tplConsent),
 		rings:      make(map[int64][]Frame),
 		revs:       make(map[int64]int64),
+
+		compressGate: make(chan struct{}, compressSemaphoreCap),
 	}, nil
 }
 
