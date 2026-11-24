@@ -166,6 +166,107 @@ describe('consent list filter and errors', () => {
     })
   })
 
+  it('the group filter narrows the server query', async () => {
+    const calls = newCalls()
+    server.use(
+      http.get('/api/sessions/1', () =>
+        ok(
+          detailFixture({
+            status: 'OPENED',
+            groups: [
+              { gid: 5, name: 'Kelompok Merah', own: true, member_count: 1 },
+              {
+                gid: 6,
+                name: 'Kelompok Biru',
+                own: false,
+                member_count: 1,
+                status: 'OPENED',
+              },
+            ],
+          }),
+        ),
+      ),
+      ...consentHandlers(calls, () => [consentItem(2, 'Aisyah Putri')]),
+    )
+    const user = userEvent.setup()
+    renderApp(null, { routes: ROUTES, route: '/consent/1', session: ADMIN_SESSION() })
+
+    await screen.findByText('Aisyah Putri')
+    expect(calls.listUrls[0].searchParams.get('group_id')).toBeNull()
+
+    // Combobox 0 is the status filter, 1 is the group filter.
+    await user.click(screen.getAllByRole('combobox')[1])
+    await user.click(await screen.findByText('Kelompok Biru'))
+
+    await waitFor(() => {
+      expect(calls.listUrls.at(-1)?.searchParams.get('group_id')).toBe('6')
+    })
+  })
+
+  it('NOT_SENT is a selectable filter option', async () => {
+    const calls = newCalls()
+    server.use(...consentHandlers(calls, () => [consentItem(2, 'Aisyah Putri')]))
+    const user = userEvent.setup()
+    renderApp(null, { routes: ROUTES, route: '/consent/1', session: ADMIN_SESSION() })
+
+    await screen.findByText('Aisyah Putri')
+    await user.click(screen.getAllByRole('combobox')[0])
+    await user.click(await screen.findByText('Belum diserahkan'))
+
+    await waitFor(() => {
+      expect(calls.listUrls.at(-1)?.searchParams.get('status')).toBe('NOT_SENT')
+    })
+  })
+
+  it('bulk send posts the checked child ids and reports per-item outcomes', async () => {
+    const calls = newCalls()
+    const bulkBodies: Array<{ child_ids: number[] }> = []
+    server.use(
+      http.post('/api/sessions/1/send-consent', async ({ request }) => {
+        bulkBodies.push((await request.json()) as { child_ids: number[] })
+        return ok({
+          items: [
+            { child_id: 2, status: 'SENT' },
+            { child_id: 3, status: 'SKIPPED', decision: 'SETUJU' },
+          ],
+        })
+      }),
+      ...consentHandlers(calls, () => [
+        consentItem(2, 'Aisyah Putri', { status: 'PENDING', consent_url: null }),
+        consentItem(3, 'Budi Santoso', { status: 'PENDING' }),
+        consentItem(4, 'Citra Dewi', {
+          status: 'SETUJU',
+          respondent_name: 'Ibu Sari',
+          consent_url: null,
+        }),
+      ]),
+    )
+    const user = userEvent.setup()
+    renderApp(null, { routes: ROUTES, route: '/consent/1', session: ADMIN_SESSION() })
+
+    await screen.findByText('Aisyah Putri')
+    screen.getByText('Pilih anak yang masih memerlukan permintaan persetujuan.')
+
+    // Row checkboxes only; index 0 is the select-all header.
+    const boxes = screen.getAllByRole('checkbox')
+    expect(boxes).toHaveLength(4)
+    expect(boxes[3]).toBeDisabled() // already decided
+    await user.click(boxes[1])
+    await user.click(boxes[2])
+    screen.getByText('2 dipilih')
+
+    await user.click(screen.getByRole('button', { name: /Kirim yang dipilih/ }))
+    const dialog = await screen.findByRole('dialog')
+    expect(
+      within(dialog).getByText('Kirim permintaan persetujuan ke 2 anak?'),
+    ).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: /Kirim yang dipilih/ }))
+
+    await screen.findByText('1 terkirim, 0 gagal, 1 sudah memutuskan.')
+    expect(bulkBodies).toEqual([{ child_ids: [2, 3] }])
+    await waitFor(() => expect(calls.listUrls.length).toBeGreaterThan(1))
+  })
+
   it('passes the send-error server message through inline', async () => {
     const calls = newCalls()
     server.use(

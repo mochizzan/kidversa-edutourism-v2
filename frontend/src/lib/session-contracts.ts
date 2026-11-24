@@ -144,8 +144,9 @@ export interface CopyResult {
 export interface ConsentItem {
   child_id: number
   child_name: string
-  group_name: string
-  status: ConsentStatus
+  group_name: string | null
+  /** NOT_SENT is synthetic: the child is in the session but has no consent row. */
+  status: ConsentStatus | 'NOT_SENT'
   respondent_name: string | null
   responded_at: string | null
   consent_url?: string | null

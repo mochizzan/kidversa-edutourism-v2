@@ -259,7 +259,7 @@ export default function GroupsPanel({
                           {member.age} · {member.school}
                         </span>
                       </div>
-                      <ConsentTag status={member.consent} />
+                      <ConsentTag status={member.consent ?? ''} />
                       <div className="kv-member__actions">{actions}</div>
                     </li>
                   )
