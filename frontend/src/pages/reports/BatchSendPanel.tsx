@@ -3,9 +3,11 @@
  *
  * Matrix: `GET /api/sessions/:sid/reports` (full array — the ops matrix is
  * not paged), refetched on every event that can change a cell
- * (`report-link/assessment/narrative/mission-pick/photo.changed`). Group
- * filter (REQ7): `useSessionDetail` powers the Select — choosing a group
- * narrows the matrix to that group's members (`child_id` membership).
+ * (`report-link/assessment/narrative/mission-pick/photo.changed`). Passing
+ * `stid` scopes the matrix to one topic (the participant table); the row
+ * action opens the focused single-child report page. Group filter (REQ7):
+ * `useSessionDetail` powers the Select — choosing a group narrows the matrix
+ * to that group's members (`child_id` membership).
  *
  * Batch: pick rows → client chunks ≤10 per request → sequential `POST
  * /api/sessions/:sid/batch-send` (server jitters 3–10 s between sends); each
@@ -21,7 +23,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Alert, App as AntApp, Button, Card, Flex, Select, Space, Table, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import { CopyOutlined, SendOutlined } from '@ant-design/icons'
+import { CopyOutlined, FileTextOutlined, SendOutlined } from '@ant-design/icons'
+import { useNavigate } from 'react-router'
 import { useTranslation } from 'react-i18next'
 import { api, errorCode } from '../../lib/api'
 import { useFeedback } from '../../lib/feedback'
@@ -59,11 +62,12 @@ function persistIdemMap(sid: string, map: Map<string, string>): void {
   }
 }
 
-export default function BatchSendPanel({ sid }: { sid: string }) {
+export default function BatchSendPanel({ sid, stid }: { sid: string; stid?: number }) {
   const { t } = useTranslation('session')
   const { t: tc } = useTranslation('common')
   const { message } = AntApp.useApp()
   const feedback = useFeedback()
+  const navigate = useNavigate()
   const [rows, setRows] = useState<ReportsRow[] | null>(null)
   const [error, setError] = useState<unknown>(null)
   /**
@@ -128,8 +132,11 @@ export default function BatchSendPanel({ sid }: { sid: string }) {
   const memberIds = selectedGroup?.members
     ? new Set(selectedGroup.members.map((member) => member.child_id))
     : null
-  /** The matrix rows the panel operates on: group filter + raw matrix. */
-  const displayedRows = memberIds ? (rows ?? []).filter((row) => memberIds.has(row.child_id)) : (rows ?? [])
+  /** One topic (participant page) narrows the matrix before the group filter. */
+  const topicRows =
+    stid === undefined ? (rows ?? []) : (rows ?? []).filter((row) => row.session_topic_id === stid)
+  /** The matrix rows the panel operates on: topic + group filter + raw matrix. */
+  const displayedRows = memberIds ? topicRows.filter((row) => memberIds.has(row.child_id)) : topicRows
 
   const sendItems = async (items: BatchItem[]) => {
     setBusy(true)
@@ -213,9 +220,14 @@ export default function BatchSendPanel({ sid }: { sid: string }) {
     )
   }
 
+  const topicColumn: ColumnsType<ReportsRow>[number] = {
+    title: t('reports.colTopic'),
+    dataIndex: 'topic_name',
+  }
+
   const matrixColumns: ColumnsType<ReportsRow> = [
     { title: t('reports.colChild'), dataIndex: 'child_name' },
-    { title: t('reports.colTopic'), dataIndex: 'topic_name' },
+    ...(stid === undefined ? [topicColumn] : []),
     {
       title: t('reports.colComplete'),
       dataIndex: 'complete',
@@ -252,11 +264,30 @@ export default function BatchSendPanel({ sid }: { sid: string }) {
         </Space>
       ),
     },
+    {
+      title: tc('columns.actions'),
+      key: 'actions',
+      width: 64,
+      fixed: 'right',
+      render: (_, row) => (
+        <RowActions>
+          <RowAction
+            label={t('reports.openReport')}
+            icon={<FileTextOutlined />}
+            onClick={() =>
+              navigate(
+                `/sessions/${sid}/reports/topics/${row.session_topic_id}/children/${row.child_id}`,
+              )
+            }
+          />
+        </RowActions>
+      ),
+    },
   ]
 
   const resultColumns: ColumnsType<ReportsRow> = [
     { title: t('reports.colChild'), dataIndex: 'child_name' },
-    { title: t('reports.colTopic'), dataIndex: 'topic_name' },
+    ...(stid === undefined ? [topicColumn] : []),
     {
       title: t('list.status'),
       key: 'status',

@@ -1,8 +1,10 @@
 /**
- * Reports page (F-12 / FL-13): the readiness gate hides compose (preview /
- * links / send) until complete, `readiness.changed` flips the gate in place,
- * child switching re-scopes the P prefix, readiness errors retry, and export
- * routes through the client-only exportReport module.
+ * Focused single-child report page (F-12 / FL-13): the readiness gate hides
+ * compose (preview / links) until complete, `readiness.changed` flips the gate
+ * in place, the header carries the child/topic context and an explicit back
+ * action, readiness errors retry, and export routes through the client-only
+ * exportReport module. Submission lives on the participant table, so this
+ * page has no send panel.
  */
 import { describe, expect, it, vi } from 'vitest'
 import { act, screen, waitFor, within } from '@testing-library/react'
@@ -21,8 +23,12 @@ import type { RouteObject } from 'react-router'
 const mocks = vi.hoisted(() => ({ exportReport: vi.fn(async () => undefined) }))
 vi.mock('../../report/export', () => ({ exportReport: mocks.exportReport }))
 
+const ROUTE = '/sessions/1/reports/topics/3/children/2'
+
 const ROUTES: RouteObject[] = [
-  { path: '/sessions/:sid/reports', element: <ReportsPage /> },
+  { path: '/sessions/:sid/reports/topics/:stid/children/:cid', element: <ReportsPage /> },
+  { path: '/sessions/:sid/reports/topics/:stid', element: <div>Peserta topik</div> },
+  { path: '/sessions/:sid/reports/topics', element: <div>Daftar topik</div> },
   { path: '/reports', element: <div>Daftar rapor</div> },
 ]
 
@@ -36,10 +42,6 @@ function baseHandlers(detail?: () => SessionDetail) {
     http.get(`${P2}/public-links`, () => ok([])),
     http.get(`${P2}/narrative`, () => ok(null)),
     http.get(`${P2}/missions`, () => ok([])),
-    http.get('/api/sessions/1/reports', () => ok([])),
-    http.get('/api/children/2', () =>
-      ok({ id: 2, name: 'Aisyah Putri', mother_wa: '+62811', father_wa: null }),
-    ),
   ]
 }
 
@@ -59,10 +61,8 @@ const ADMIN_SESSION = () => makeLoginData({ user: makeUser({ role: 'ADMIN' }) })
 describe('reports readiness gate', () => {
   it('blocks compose while incomplete and lists the missing outcomes', async () => {
     server.use(readinessHandler(false), ...baseHandlers())
-    renderApp(null, { routes: ROUTES, route: '/sessions/1/reports', session: ADMIN_SESSION() })
+    renderApp(null, { routes: ROUTES, route: ROUTE, session: ADMIN_SESSION() })
 
-    // The batch matrix mounts eagerly — use it as the settled-page anchor.
-    await screen.findByText('Pilih minimal satu baris.', {}, { timeout: 5000 })
     // Warning banner carries the count, the missing list and the jump link.
     await screen.findByText('1 kegiatan belum dinilai.', {}, { timeout: 5000 })
     screen.getByText('Mengamati motif')
@@ -72,23 +72,18 @@ describe('reports readiness gate', () => {
     // Compose surfaces stay hidden; the ungated editors stay visible.
     expect(screen.queryByText('Pratinjau rapor')).toBeNull()
     expect(screen.queryByText('Tautan publik')).toBeNull()
-    expect(screen.queryByText('Kirim WhatsApp')).toBeNull()
     screen.getByText('Narasi AI')
     screen.getByRole('heading', { name: 'Misi' })
-    // The ops matrix is never gated.
-    screen.getByText('Kirim massal')
   })
 
   it('renders compose surfaces when readiness is complete', async () => {
     server.use(readinessHandler(true), ...baseHandlers())
-    renderApp(null, { routes: ROUTES, route: '/sessions/1/reports', session: ADMIN_SESSION() })
+    renderApp(null, { routes: ROUTES, route: ROUTE, session: ADMIN_SESSION() })
 
     await screen.findByText('Pratinjau rapor', {}, { timeout: 5000 })
     screen.getByRole('button', { name: /Unduh PNG/ })
     screen.getByRole('button', { name: /Unduh PDF/ })
     screen.getByText('Tautan publik')
-    // The h2 title shares the send button's label.
-    expect(screen.getAllByText('Kirim WhatsApp').length).toBeGreaterThanOrEqual(2)
     screen.getByText('Belum ada tautan aktif.')
   })
 
@@ -99,7 +94,7 @@ describe('reports readiness gate', () => {
     renderApp(null, {
       routes: [
         {
-          path: '/sessions/:sid/reports',
+          path: '/sessions/:sid/reports/topics/:stid/children/:cid',
           element: (
             <>
               <StreamGate />
@@ -108,7 +103,7 @@ describe('reports readiness gate', () => {
           ),
         },
       ],
-      route: '/sessions/1/reports',
+      route: ROUTE,
       session: ADMIN_SESSION(),
     })
 
@@ -124,71 +119,33 @@ describe('reports readiness gate', () => {
 })
 
 describe('reports page interactions', () => {
-  it('without a topic/child scope the page renders an empty state and the matrix — nothing scoped is fetched', async () => {
-    // A session whose programme picked no topic yet (topics: []) and whose
-    // only group is a foreign FAS one (no members): stid/cid stay null, so
-    // the page has no P prefix. The refetch/signal callbacks must no-op.
-    const readyUrls: URL[] = []
-    const matrixUrls: URL[] = []
-    let detailCalls = 0
-    const detail = detailFixture({
-      status: 'OPENED',
-      groups: [{ gid: 6, name: 'Kelompok Luar', own: false, member_count: 0, status: 'OPENED' }],
-    })
-    detail.topics = []
-    server.use(
-      http.get('/api/sessions/1', () => {
-        detailCalls += 1
-        return ok(detail)
-      }),
-      readinessHandler(true, readyUrls),
-      http.get('/api/sessions/1/reports', ({ request }) => {
-        matrixUrls.push(new URL(request.url))
-        return ok([])
-      }),
-    )
-    renderApp(null, { routes: ROUTES, route: '/sessions/1/reports', session: ADMIN_SESSION() })
+  it('shows the focused child header and returns to the participant table', async () => {
+    server.use(readinessHandler(true), ...baseHandlers())
+    const user = userEvent.setup()
+    renderApp(null, { routes: ROUTES, route: ROUTE, session: ADMIN_SESSION() })
 
-    // No prefix → the page renders (header + empty compose state) instead of
-    // holding a permanent skeleton.
-    await screen.findByText('Belum ada anak di sesi ini')
-    expect(document.querySelector('.kv-page-skeleton')).not.toBeInTheDocument()
+    await screen.findByText('Pratinjau rapor')
+    const header = document.querySelector('.kv-page-header') as HTMLElement
+    within(header).getByRole('heading', { level: 1, name: 'Aisyah Putri' })
+    within(header).getByText('Kelas Batik')
+    within(header).getByText('Batik Nusantara')
 
-    // The ops matrix is never gated: it mounted, fetched and settled into
-    // the Ant Design empty state.
-    await screen.findByText('Tidak ada data')
-    expect(matrixUrls).toHaveLength(1)
-
-    act(() => emitSignal('assessment.changed', { rev: 1 })) // → loadReady + loadReport
-    act(() => emitSignal('report-link.changed', { rev: 1 })) // → loadLinks
-    act(() => emitSignal('readiness.changed', { rev: 1, child_id: 2, stid: 3, complete: true }))
-
-    // Two detail fetches mount (ReportsPage + BatchSendPanel); no refetch after the signals.
-    await waitFor(() => expect(detailCalls).toBe(2))
-    expect(readyUrls).toHaveLength(0)
-    expect(document.querySelector('.kv-page-skeleton')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Kembali ke peserta/ }))
+    expect(await screen.findByText('Peserta topik')).toBeInTheDocument()
   })
 
-  it('members without topics renders the no-topic empty state and keeps the matrix', async () => {
-    // Reachable children exist but the programme picked no topic yet:
-    // stid stays null → no P prefix → the compose stack shows the topic
-    // empty state; the batch matrix still renders with its own empty state.
-    const detail = detailFixture({ status: 'OPENED' })
-    detail.topics = []
-    server.use(
-      http.get('/api/sessions/1', () => ok(detail)),
-      http.get('/api/sessions/1/reports', () => ok([])),
-    )
-    renderApp(null, { routes: ROUTES, route: '/sessions/1/reports', session: ADMIN_SESSION() })
+  it('an unknown topic renders NOT_FOUND with a back-to-topics action', async () => {
+    server.use(...baseHandlers())
+    const user = userEvent.setup()
+    renderApp(null, {
+      routes: ROUTES,
+      route: '/sessions/1/reports/topics/99/children/2',
+      session: ADMIN_SESSION(),
+    })
 
-    await screen.findByText('Belum ada topik di sesi ini')
-    expect(document.querySelector('.kv-page-skeleton')).not.toBeInTheDocument()
-    // Compose surfaces stay hidden — there is nothing to compose against.
-    expect(screen.queryByText('Pratinjau rapor')).toBeNull()
-    expect(screen.queryByText('Narasi AI')).toBeNull()
-    // Batch matrix mounted and settled into the empty state.
-    expect(await screen.findByText('Tidak ada data')).toBeInTheDocument()
-    screen.getByText('Kirim massal')
+    await screen.findByText('Data tidak ditemukan.')
+    await user.click(screen.getByRole('button', { name: /Kembali ke topik/ }))
+    expect(await screen.findByText('Daftar topik')).toBeInTheDocument()
   })
 
   it('a readiness signal arriving before the first load cannot patch a null state', async () => {
@@ -200,10 +157,10 @@ describe('reports page interactions', () => {
       }),
       ...baseHandlers(),
     )
-    renderApp(null, { routes: ROUTES, route: '/sessions/1/reports', session: ADMIN_SESSION() })
+    renderApp(null, { routes: ROUTES, route: ROUTE, session: ADMIN_SESSION() })
 
-    // Settled page (child/topic resolved) while readiness is still pending.
-    await screen.findByText('Kirim massal')
+    // Settled page while readiness is still pending.
+    await screen.findByText('Narasi AI')
     act(() => emitSignal('readiness.changed', { rev: 1, child_id: 2, stid: 3, complete: true }))
     gate.resolve()
 
@@ -212,34 +169,28 @@ describe('reports page interactions', () => {
     expect(screen.queryByText('Pratinjau rapor')).toBeNull()
   })
 
-  it('session.changed refetches the detail and revalidates the selection in place', async () => {
+  it('session.changed refetches the detail and keeps the page scoped', async () => {
     let detailCalls = 0
     const detail = () => {
       detailCalls += 1
       return detailFixture({ status: 'OPENED' })
     }
     server.use(readinessHandler(true), ...baseHandlers(detail))
-    renderApp(null, { routes: ROUTES, route: '/sessions/1/reports', session: ADMIN_SESSION() })
+    renderApp(null, { routes: ROUTES, route: ROUTE, session: ADMIN_SESSION() })
 
     await screen.findByText('Pratinjau rapor')
-    expect(detailCalls).toBe(2) // ReportsPage + BatchSendPanel
+    expect(detailCalls).toBe(1)
 
     act(() => emitSignal('session.changed', { rev: 2 }))
-    await waitFor(() => expect(detailCalls).toBe(4)) // ReportsPage + BatchSendPanel refetch
+    await waitFor(() => expect(detailCalls).toBe(2))
 
-    // The selection was already valid → kept, not reset to the defaults.
-    await waitFor(() =>
-      expect(
-        document.querySelector('.ant-select-selection-item')?.getAttribute('title'),
-      ).toContain('Aisyah Putri'),
-    )
-    expect(screen.getByText('Topik: Batik Nusantara')).toBeInTheDocument()
+    screen.getByRole('heading', { level: 1, name: 'Aisyah Putri' })
     expect(screen.getByText('Pratinjau rapor')).toBeInTheDocument()
   })
 
   it('session.deleted redirects the open report to the list', async () => {
     server.use(readinessHandler(true), ...baseHandlers())
-    renderApp(null, { routes: ROUTES, route: '/sessions/1/reports', session: ADMIN_SESSION() })
+    renderApp(null, { routes: ROUTES, route: ROUTE, session: ADMIN_SESSION() })
 
     await screen.findByText('Pratinjau rapor')
     act(() => emitSignal('session.deleted', { rev: 3, entity_id: 1 }))
@@ -260,7 +211,7 @@ describe('reports page interactions', () => {
       ...baseHandlers(),
     )
     const user = userEvent.setup()
-    renderApp(null, { routes: ROUTES, route: '/sessions/1/reports', session: ADMIN_SESSION() })
+    renderApp(null, { routes: ROUTES, route: ROUTE, session: ADMIN_SESSION() })
 
     await screen.findByText('Layanan sedang sibuk. Coba lagi.')
     await user.click(screen.getByRole('button', { name: 'Coba lagi' }))
@@ -269,52 +220,10 @@ describe('reports page interactions', () => {
     expect(readyCalls).toBe(2)
   })
 
-  it('switching the child re-scopes the P prefix requests', async () => {
-    const child3Urls: URL[] = []
-    server.use(
-      readinessHandler(true),
-      http.get('/api/sessions/1', () =>
-        ok(
-          (() => {
-            const detail = detailFixture({ status: 'OPENED' })
-            detail.groups[0].members = [
-              { child_id: 2, name: 'Aisyah Putri', age: 8, school: 'SD Cendekia', consent: 'SETUJU' },
-              { child_id: 3, name: 'Budi Santoso', age: 9, school: 'SD Melati', consent: 'SETUJU' },
-            ]
-            return detail
-          })(),
-        ),
-      ),
-      ...baseHandlers(),
-      http.get('/api/sessions/1/topics/3/children/3/readiness', ({ request }) => {
-        child3Urls.push(new URL(request.url))
-        return ok({ complete: true, missing: [] })
-      }),
-      http.get('/api/sessions/1/topics/3/children/3/report', () => ok(reportData())),
-      http.get('/api/sessions/1/topics/3/children/3/public-links', () => ok([])),
-      http.get('/api/sessions/1/topics/3/children/3/narrative', () => ok(null)),
-      http.get('/api/sessions/1/topics/3/children/3/missions', () => ok([])),
-      http.get('/api/children/3', () =>
-        ok({ id: 3, name: 'Budi Santoso', mother_wa: null, father_wa: null }),
-      ),
-    )
-    const user = userEvent.setup()
-    renderApp(null, { routes: ROUTES, route: '/sessions/1/reports', session: ADMIN_SESSION() })
-
-    await screen.findByText('Pratinjau rapor', {}, { timeout: 5000 })
-    // Child Select (index 0; the send panel's target Select follows).
-    await user.click(screen.getAllByRole('combobox')[0])
-    await user.click(await screen.findByText('Budi Santoso · SD Melati'))
-
-    await waitFor(() => {
-      expect(child3Urls.length).toBeGreaterThan(0)
-    })
-  })
-
   it('runs the PNG export through the export module', async () => {
     server.use(readinessHandler(true), ...baseHandlers())
     const user = userEvent.setup()
-    renderApp(null, { routes: ROUTES, route: '/sessions/1/reports', session: ADMIN_SESSION() })
+    renderApp(null, { routes: ROUTES, route: ROUTE, session: ADMIN_SESSION() })
 
     await screen.findByText('Pratinjau rapor')
     await user.click(screen.getByRole('button', { name: /Unduh PNG/ }))
@@ -337,7 +246,7 @@ describe('reports page interactions', () => {
     })
     server.use(readinessHandler(true), ...baseHandlers())
     const user = userEvent.setup()
-    renderApp(null, { routes: ROUTES, route: '/sessions/1/reports', session: ADMIN_SESSION() })
+    renderApp(null, { routes: ROUTES, route: ROUTE, session: ADMIN_SESSION() })
 
     await screen.findByText('Pratinjau rapor')
     await user.click(screen.getByRole('button', { name: /Unduh PDF/ }))
@@ -363,12 +272,8 @@ describe('reports page interactions', () => {
       http.get('/api/sessions/1', () => ok(detailFixture({ status: 'OPENED' }))),
       http.get(`${P2}/narrative`, () => ok(null)),
       http.get(`${P2}/missions`, () => ok([])),
-      http.get('/api/sessions/1/reports', () => ok([])),
-      http.get('/api/children/2', () =>
-        ok({ id: 2, name: 'Aisyah Putri', mother_wa: null, father_wa: null }),
-      ),
     )
-    renderApp(null, { routes: ROUTES, route: '/sessions/1/reports', session: ADMIN_SESSION() })
+    renderApp(null, { routes: ROUTES, route: ROUTE, session: ADMIN_SESSION() })
 
     // Incomplete → the gate shows the missing list.
     await screen.findByText('1 kegiatan belum dinilai.')
@@ -390,7 +295,7 @@ describe('reports page interactions', () => {
         HttpResponse.json({ error: { code: 'NOT_FOUND', message: 'gone' } }),
       ),
     )
-    renderApp(null, { routes: ROUTES, route: '/sessions/1/reports', session: ADMIN_SESSION() })
+    renderApp(null, { routes: ROUTES, route: ROUTE, session: ADMIN_SESSION() })
 
     await screen.findByText('Data tidak ditemukan.')
     expect(screen.getByRole('link', { name: 'Kembali' })).toHaveAttribute('href', '/reports')
@@ -415,56 +320,27 @@ describe('reports page interactions', () => {
       http.get('/api/sessions/1', () => ok(detailFixture({ status: 'OPENED' }))),
       http.get(`${P2}/narrative`, () => ok(null)),
       http.get(`${P2}/missions`, () => ok([])),
-      http.get('/api/sessions/1/reports', () => ok([])),
-      http.get('/api/children/2', () =>
-        ok({ id: 2, name: 'Aisyah Putri', mother_wa: '+62811', father_wa: null }),
-      ),
     )
     const user = userEvent.setup()
-    renderApp(null, { routes: ROUTES, route: '/sessions/1/reports', session: ADMIN_SESSION() })
+    renderApp(null, { routes: ROUTES, route: ROUTE, session: ADMIN_SESSION() })
 
     // Both panels surface their failures with dedicated retry actions.
     const reportAlert = (await screen.findAllByText('Layanan sedang sibuk. Coba lagi.'))[0]
     screen.getByText('Terjadi kesalahan tak terduga. Coba lagi.')
-    await user.click(within(reportAlert.closest('.ant-alert') as HTMLElement).getByRole('button', { name: 'Coba lagi' }))
+    await user.click(
+      within(reportAlert.closest('.ant-alert') as HTMLElement).getByRole('button', {
+        name: 'Coba lagi',
+      }),
+    )
     await waitFor(() => expect(reportCalls).toBe(2))
 
     // The links alert retries through loadLinks.
     const linksAlert = (await screen.findAllByText('Terjadi kesalahan tak terduga. Coba lagi.')).at(-1)
-    await user.click(within(linksAlert?.closest('.ant-alert') as HTMLElement).getByRole('button', { name: 'Coba lagi' }))
-    await waitFor(() => expect(linksCalls).toBe(2))
-  })
-
-  it('multi-topic sessions render topic tabs which re-scope the prefix', async () => {
-    const topic4Urls: URL[] = []
-    const detail = detailFixture({ status: 'OPENED' })
-    detail.topics.push({
-      stid: 4,
-      topic_id: 10,
-      name: 'Tenun Nusantara',
-      sort_order: 2,
-      activities: [{ said: 20, activity_id: 110, name: 'Mengamati tenun', indicator: 'X', sort_order: 1 }],
-    })
-    server.use(
-      readinessHandler(true),
-      http.get('/api/sessions/1', () => ok(detail)),
-      ...baseHandlers(),
-      http.get('/api/sessions/1/topics/4/children/2/readiness', ({ request }) => {
-        topic4Urls.push(new URL(request.url))
-        return ok({ complete: true, missing: [] })
+    await user.click(
+      within(linksAlert?.closest('.ant-alert') as HTMLElement).getByRole('button', {
+        name: 'Coba lagi',
       }),
-      http.get('/api/sessions/1/topics/4/children/2/report', () => ok(reportData())),
-      http.get('/api/sessions/1/topics/4/children/2/public-links', () => ok([])),
-      http.get('/api/sessions/1/topics/4/children/2/narrative', () => ok(null)),
-      http.get('/api/sessions/1/topics/4/children/2/missions', () => ok([])),
     )
-    const user = userEvent.setup()
-    renderApp(null, { routes: ROUTES, route: '/sessions/1/reports', session: ADMIN_SESSION() })
-
-    await screen.findByText('Pratinjau rapor')
-    await user.click(screen.getByRole('tab', { name: 'Tenun Nusantara' }))
-
-    await waitFor(() => expect(topic4Urls.length).toBeGreaterThan(0))
-    expect(screen.getByText('Topik: Tenun Nusantara')).toBeInTheDocument()
+    await waitFor(() => expect(linksCalls).toBe(2))
   })
 })

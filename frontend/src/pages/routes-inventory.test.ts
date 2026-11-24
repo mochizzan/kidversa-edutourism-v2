@@ -41,7 +41,7 @@ const NEW_GROUPS = EXPECTED_GROUPS.filter(
   (group) => group !== 'auth' && group !== 'view' && group !== 'sessions',
 )
 
-/** The 21 paths router.tsx spreads into the authenticated shell (set compare). */
+/** The 22 paths router.tsx spreads into the authenticated shell (set compare). */
 const SHELL_PATHS = [
   '/',
   '/schools',
@@ -60,6 +60,7 @@ const SHELL_PATHS = [
   '/sessions/:sid/reports',
   '/sessions/:sid/reports/topics',
   '/sessions/:sid/reports/topics/:stid',
+  '/sessions/:sid/reports/topics/:stid/children/:cid',
   '/assessment/:sid/:cid/:stid',
   '/reports',
   '/consent',
@@ -130,7 +131,7 @@ describe('page-group route inventory (F-F01)', () => {
     expect(routerSource).not.toContain('./pages/masters/routes')
   })
 
-  it('authenticated group modules still declare the original 21 paths', () => {
+  it('authenticated group modules still declare the original 22 paths', () => {
     const collected = [...NEW_GROUPS, 'sessions'].flatMap((group) =>
       routesOf(group).map((route) => route.path),
     )

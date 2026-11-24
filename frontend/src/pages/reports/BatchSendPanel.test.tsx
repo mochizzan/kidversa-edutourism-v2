@@ -10,6 +10,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
+import { useLocation } from 'react-router'
 import BatchSendPanel from './BatchSendPanel'
 import { renderApp } from '../../test/render'
 import { server } from '../../test/setup'
@@ -66,10 +67,43 @@ function alternatingRespond(chunk: BatchCapture['bodies'][number]) {
   })
 }
 
+function LocationProbe() {
+  const location = useLocation()
+  return <div data-testid="location">{location.pathname}</div>
+}
+
 describe('batch send panel', () => {
   beforeEach(() => {
     // The pending per-chunk idem map persists per session (06§3) — start clean.
     sessionStorage.clear()
+  })
+
+  it('stid scopes the matrix to one topic; the row action opens that child report', async () => {
+    server.use(
+      http.get('/api/sessions/1', () => ok(detailFixture())),
+      http.get('/api/sessions/1/reports', () =>
+        ok([
+          reportsRow(2, 'Aisyah Putri', 3),
+          reportsRow(3, 'Budi Santoso', 4, { topic_name: 'Tenun Nusantara' }),
+        ]),
+      ),
+    )
+    const user = userEvent.setup()
+    renderApp(
+      <>
+        <BatchSendPanel sid="1" stid={3} />
+        <LocationProbe />
+      </>,
+    )
+
+    await screen.findByText('Aisyah Putri')
+    expect(screen.queryByText('Budi Santoso')).toBeNull()
+    expect(screen.queryByRole('columnheader', { name: 'Topik' })).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: 'Buka rapor' }))
+    expect(screen.getByTestId('location')).toHaveTextContent(
+      '/sessions/1/reports/topics/3/children/2',
+    )
   })
 
   it('the group filter narrows the matrix to the selected group’s members', async () => {

@@ -255,7 +255,7 @@ export default function SessionDetailPage() {
                 <PictureOutlined aria-hidden="true" />
                 <span>{t('reports.openGallery')}</span>
               </Link>
-              <Link className="kv-session-link" to={`/sessions/${sid}/reports`}>
+              <Link className="kv-session-link" to={`/sessions/${sid}/reports/topics`}>
                 <FileTextOutlined aria-hidden="true" />
                 <span>{t('reports.openReport')}</span>
               </Link>
