@@ -250,7 +250,7 @@
     "noChildrenTitle": "Belum ada anak di sesi ini",
     "noChildrenDesc": "Rapor disusun per anak. Tambahkan anak ke kelompok sesi ini dulu — matriks di bawah terisi setelah ada yang bisa dilaporkan.",
     "noTopicTitle": "Belum ada topik di sesi ini",
-    "noTopicDesc": "Rapor mengikuti topik. Setelah sesi ini punya topik, matriks di bawah terisi.",
+    "noTopicDesc": "Rapor mengikuti topik. Sesi ini belum memiliki topik.",
     "topicsTitle": "Topik sesi",
     "openTopic": "Buka topik",
     "participantsTitle": "Peserta",

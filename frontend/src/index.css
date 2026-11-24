@@ -884,6 +884,17 @@ body {
   letter-spacing: -0.01em;
 }
 
+/* Section labels inside cards use the card-title step from DESIGN §type
+   scale (11–13px), never antd's 24px h2 default — otherwise a card heading
+   outranks the page title above it. */
+.kv-card-title.ant-typography {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+  letter-spacing: -0.005em;
+}
+
 /* inline label + badge pairing (Users tabs) */
 .kv-nav-label {
   display: inline-flex;

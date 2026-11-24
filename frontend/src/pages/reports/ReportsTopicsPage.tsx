@@ -4,18 +4,23 @@
  * report page. The source is `useSessionDetail(sid)` → `detail.topics`; each
  * topic row opens its participant table.
  *
- * The header carries the session context as plain text plus an explicit back
- * action to the session picker (no bare title link).
+ * House list anatomy: the header carries the session context as plain text, a
+ * manual refresh and an explicit back action; the table is the shared
+ * DataTable (sticky header, house empty state) and the row action is the
+ * shared icon-only RowActions cluster.
  */
 import { useEffect } from 'react'
-import { Alert, Button, Space, Table } from 'antd'
+import { Alert, Button, Space } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import { ArrowLeftOutlined } from '@ant-design/icons'
-import { Link, useNavigate, useParams } from 'react-router'
+import { ArrowLeftOutlined, RightOutlined } from '@ant-design/icons'
+import { useNavigate, useParams } from 'react-router'
 import { useTranslation } from 'react-i18next'
+import DataTable from '../../components/DataTable'
+import EmptyState from '../../components/EmptyState'
 import PageHeader from '../../components/PageHeader'
 import PageSkeleton from '../../components/PageSkeleton'
-import EmptyState from '../../components/EmptyState'
+import RefreshButton from '../../components/RefreshButton'
+import { RowAction, RowActions } from '../../components/RowActions'
 import StatusChip from '../../components/StatusChip'
 import { errorCode } from '../../lib/api'
 import { useCrumbName } from '../../lib/crumbs'
@@ -27,7 +32,7 @@ export default function ReportsTopicsPage() {
   const { t: tc } = useTranslation('common')
   const { sid } = useParams()
   const navigate = useNavigate()
-  const { detail, error, deleted } = useSessionDetail(sid)
+  const { detail, error, deleted, reload } = useSessionDetail(sid)
 
   useCrumbName('sid', detail?.session.name)
 
@@ -43,7 +48,7 @@ export default function ReportsTopicsPage() {
           type="error"
           showIcon
           message={tc(`errors.${errorCode(error)}`)}
-          action={<Link to="/reports">{tc('actions.back')}</Link>}
+          action={<Button onClick={() => navigate('/reports')}>{tc('actions.back')}</Button>}
         />
       </>
     )
@@ -59,12 +64,13 @@ export default function ReportsTopicsPage() {
       width: 92,
       fixed: 'right',
       render: (_, topic) => (
-        <Button
-          type="link"
-          onClick={() => navigate(`/sessions/${sid}/reports/topics/${topic.stid}`)}
-        >
-          {t('reports.openTopic')}
-        </Button>
+        <RowActions>
+          <RowAction
+            label={t('reports.openTopic')}
+            icon={<RightOutlined />}
+            onClick={() => navigate(`/sessions/${sid}/reports/topics/${topic.stid}`)}
+          />
+        </RowActions>
       ),
     },
   ]
@@ -81,22 +87,26 @@ export default function ReportsTopicsPage() {
           </Space>
         }
         actions={
-          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/reports')}>
-            {tc('actions.back')}
-          </Button>
+          <Space>
+            <RefreshButton onRefresh={reload} />
+            <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/reports')}>
+              {tc('actions.back')}
+            </Button>
+          </Space>
         }
       />
-      {detail.topics.length === 0 ? (
-        <EmptyState variant="card" title={t('reports.noTopicTitle')} />
-      ) : (
-        <Table<SessionTopic>
-          rowKey="stid"
-          size="small"
-          columns={columns}
-          dataSource={detail.topics}
-          locale={{ emptyText: tc('empty') }}
-        />
-      )}
+      <DataTable<SessionTopic>
+        rowKey="stid"
+        columns={columns}
+        dataSource={detail.topics}
+        pagination={false}
+        empty={
+          <EmptyState
+            title={t('reports.noTopicTitle')}
+            description={t('reports.noTopicDesc')}
+          />
+        }
+      />
     </>
   )
 }

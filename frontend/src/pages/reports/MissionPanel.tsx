@@ -116,7 +116,7 @@ export default function MissionPanel({
   return (
     <Card style={{ marginBottom: 16 }}>
       <Flex justify="space-between" align="flex-start" gap="middle" wrap style={{ marginBottom: 8 }}>
-        <Typography.Title level={2} style={{ margin: 0 }}>
+        <Typography.Title level={2} className="kv-card-title">
           {t('reports.missions')}
         </Typography.Title>
         <Button size="small" onClick={openPicker}>

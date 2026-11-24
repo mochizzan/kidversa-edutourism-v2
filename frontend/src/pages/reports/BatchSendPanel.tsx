@@ -21,7 +21,7 @@
  * REPORT_INCOMPLETE arrives per item and never blocks the other items.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Alert, App as AntApp, Button, Card, Flex, Select, Space, Table, Typography } from 'antd'
+import { Alert, App as AntApp, Button, Card, Flex, Select, Space, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { CopyOutlined, FileTextOutlined, SendOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router'
@@ -29,6 +29,8 @@ import { useTranslation } from 'react-i18next'
 import { api, errorCode } from '../../lib/api'
 import { useFeedback } from '../../lib/feedback'
 import { useEventRefetch } from '../../lib/list'
+import DataTable from '../../components/DataTable'
+import EmptyState from '../../components/EmptyState'
 import { RowAction, RowActions } from '../../components/RowActions'
 import StatusPill from '../../components/StatusPill'
 import { useSessionDetail } from '../sessions/shared'
@@ -71,7 +73,7 @@ export default function BatchSendPanel({ sid, stid }: { sid: string; stid?: numb
   const [rows, setRows] = useState<ReportsRow[] | null>(null)
   const [error, setError] = useState<unknown>(null)
   /**
-   * Deterministic settle flag for the Table's `loading` prop: set exactly
+   * Deterministic settle flag for the DataTable's `loading` prop: set exactly
    * once the request completes (success OR failure), so the skeleton never
    * outlives the request. `rows === null` below stays the sentinel for "no
    * successful fetch yet" (it drives the pre-card error alert).
@@ -91,7 +93,7 @@ export default function BatchSendPanel({ sid, stid }: { sid: string; stid?: numb
     try {
       const data = await api.get<ReportsRow[]>(`/api/sessions/${sid}/reports`)
       // Normalize empty/`null` payloads to [] — the skeleton unmounts and the
-      // Table renders its standard empty state instead of loading forever.
+      // DataTable renders its empty state instead of loading forever.
       setRows(Array.isArray(data) ? data : [])
       setError(null)
     } catch (failure: unknown) {
@@ -267,7 +269,7 @@ export default function BatchSendPanel({ sid, stid }: { sid: string; stid?: numb
     {
       title: tc('columns.actions'),
       key: 'actions',
-      width: 64,
+      width: 92,
       fixed: 'right',
       render: (_, row) => (
         <RowActions>
@@ -338,7 +340,7 @@ export default function BatchSendPanel({ sid, stid }: { sid: string; stid?: numb
     <Card style={{ marginBottom: 16 }}>
       <Flex justify="space-between" align="flex-start" gap="middle" wrap style={{ marginBottom: 8 }}>
         <div>
-          <Typography.Title level={2} style={{ margin: 0 }}>
+          <Typography.Title level={2} className="kv-card-title">
             {t('reports.batchTitle')}
           </Typography.Title>
           <Typography.Text type="secondary">{t('reports.batchHint')}</Typography.Text>
@@ -375,13 +377,11 @@ export default function BatchSendPanel({ sid, stid }: { sid: string; stid?: numb
         </Space>
       </Flex>
 
-      <Table<ReportsRow>
+      <DataTable<ReportsRow>
         rowKey={rowKey}
-        size="small"
         loading={!settled}
         columns={matrixColumns}
         dataSource={displayedRows}
-        locale={{ emptyText: tc('empty') }}
         pagination={false}
         scroll={{ x: 720 }}
         rowSelection={{
@@ -390,6 +390,12 @@ export default function BatchSendPanel({ sid, stid }: { sid: string; stid?: numb
           onChange: (keys) => setSelectedKeys(keys.map(String)),
           getCheckboxProps: () => ({ disabled: busy }),
         }}
+        empty={
+          <EmptyState
+            title={t('reports.participantsEmpty')}
+            description={tc('emptyState.hint')}
+          />
+        }
       />
 
       {chunkError ? (
@@ -411,15 +417,15 @@ export default function BatchSendPanel({ sid, stid }: { sid: string; stid?: numb
             showIcon
             message={t('reports.batchDone', { sent: sentCount, failed: failedCount })}
           />
-          <Table<ReportsRow>
-            rowKey={rowKey}
-            size="small"
-            style={{ marginTop: 8 }}
-            columns={resultColumns}
-            dataSource={resultRows}
-            pagination={false}
-            scroll={{ x: 640 }}
-          />
+          <div style={{ marginTop: 8 }}>
+            <DataTable<ReportsRow>
+              rowKey={rowKey}
+              columns={resultColumns}
+              dataSource={resultRows}
+              pagination={false}
+              scroll={{ x: 640 }}
+            />
+          </div>
         </>
       ) : null}
     </Card>

@@ -33,16 +33,6 @@
   padding: 18px var(--kv-space-5);
 }
 
-/* The card heading must read as a section label (11–13px), not a page title.
-   `.kv-card-title.ant-typography` beats antd's `h2.ant-typography` default. */
-.kv-card-title.ant-typography {
-  margin: 0;
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 18px;
-  letter-spacing: -0.005em;
-}
-
 /* ---------- KPI row ---------- */
 
 .kv-dash__kpis {

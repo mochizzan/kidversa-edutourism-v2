@@ -29,8 +29,12 @@ describe('reports topics page', () => {
     // The session context is plain text now, not a bare title link.
     screen.getByText('Kelas Batik')
     expect(screen.queryByRole('link', { name: 'Kelas Batik' })).toBeNull()
+    // The row action is the shared icon cluster, not a text link.
+    const action = screen.getByRole('button', { name: 'Buka topik' })
+    expect(action).toHaveClass('kv-row-action')
+    expect(screen.queryByRole('link', { name: 'Buka topik' })).toBeNull()
     const user = userEvent.setup()
-    await user.click(screen.getByRole('button', { name: 'Buka topik' }))
+    await user.click(action)
     expect(await screen.findByText('Peserta dipilih')).toBeInTheDocument()
   })
 

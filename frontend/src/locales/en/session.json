@@ -250,7 +250,7 @@
     "noChildrenTitle": "No children in this session yet",
     "noChildrenDesc": "Reports are composed per child. Add children to this session's groups first — the batch matrix below fills in once there is anyone to report on.",
     "noTopicTitle": "No topic in this session yet",
-    "noTopicDesc": "Reports follow topics. Once this session has a topic, its batch matrix fills in below.",
+    "noTopicDesc": "Reports follow topics. This session does not have any topics yet.",
     "topicsTitle": "Session topics",
     "openTopic": "Open topic",
     "participantsTitle": "Participants",

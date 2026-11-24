@@ -139,13 +139,13 @@ describe('batch send panel', () => {
     expect(screen.getByRole('button', { name: /Kirim$/ })).toBeDisabled()
   })
 
-  it('an empty matrix response renders the Ant Design empty state, never a stuck loading state', async () => {
+  it('an empty matrix response renders the house empty state, never a stuck loading state', async () => {
     // Zero report records (e.g. a session with no members): the empty array
-    // settles the panel into the Table's standard empty state.
+    // settles the panel into the shared DataTable empty state.
     server.use(...matrixHandler([]))
     renderApp(<BatchSendPanel sid="1" />)
 
-    expect(await screen.findByText('Tidak ada data')).toBeInTheDocument()
+    expect(await screen.findByText('Belum ada peserta')).toBeInTheDocument()
     expect(screen.getByText('Kirim massal')).toBeInTheDocument()
   })
 
@@ -158,7 +158,7 @@ describe('batch send panel', () => {
     )
     renderApp(<BatchSendPanel sid="1" />)
 
-    expect(await screen.findByText('Tidak ada data')).toBeInTheDocument()
+    expect(await screen.findByText('Belum ada peserta')).toBeInTheDocument()
     expect(screen.getByText('Kirim massal')).toBeInTheDocument()
   })
 

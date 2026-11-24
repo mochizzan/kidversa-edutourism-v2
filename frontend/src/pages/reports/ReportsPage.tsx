@@ -266,7 +266,7 @@ export default function ReportsPage() {
               wrap
               style={{ marginBottom: 8 }}
             >
-              <Typography.Title level={2} style={{ margin: 0 }}>
+              <Typography.Title level={2} className="kv-card-title">
                 {t('reports.preview')}
               </Typography.Title>
               <Space wrap>
