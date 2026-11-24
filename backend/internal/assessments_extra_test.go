@@ -17,6 +17,7 @@ func caxExpectPutGates(mock sqlmock.Sqlmock) {
 	mock.ExpectQuery(q("SELECT EXISTS(SELECT 1 FROM session_members WHERE session_id = ? AND child_id = ?)")).
 		WithArgs(int64(2), int64(30)).
 		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(1))
+	caxExpectFASOwner(mock)
 	mock.ExpectQuery(q("FROM sessions WHERE id = ? AND school_id = ?")).
 		WithArgs(int64(2), int64(1)).WillReturnRows(statusRows("OPENED"))
 	mock.ExpectQuery(q("SELECT sa.activity_name_snap FROM session_activities sa")).
@@ -31,6 +32,14 @@ func caxExpectPutGates(mock sqlmock.Sqlmock) {
 	mock.ExpectQuery(q("SELECT EXISTS(SELECT 1 FROM users")).
 		WithArgs(int64(3), int64(1)).
 		WillReturnRows(sqlmock.NewRows([]string{"ok"}).AddRow(1))
+}
+
+// caxExpectFASOwner wires the FASILITATOR owner probe requirePChild runs
+// right after session membership (user 3 = FASILITATOR of session 2/child 30).
+func caxExpectFASOwner(mock sqlmock.Sqlmock) {
+	mock.ExpectQuery(q("SELECT g.facilitator_id FROM session_members sm")).
+		WithArgs(int64(2), int64(30)).
+		WillReturnRows(sqlmock.NewRows([]string{"facilitator_id"}).AddRow(3))
 }
 
 // caxExpectStatusLockTx wires the in-Tx FOR UPDATE status re-read (B1a) that
@@ -48,7 +57,7 @@ func caxExpectUpsert(mock sqlmock.Sqlmock, note any) {
 	caxExpectStatusLockTx(mock, "OPENED")
 	mock.ExpectExec(q("INSERT INTO assessments")).
 		WithArgs(int64(2), int64(11), int64(30), int64(1), 3, note,
-			"Aktivitas A", "Ayu", int64(2)).
+			"Aktivitas A", "Ayu", int64(3)).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectQuery(q("SELECT updated_at FROM assessments")).
 		WithArgs(int64(11), int64(30)).
@@ -64,7 +73,7 @@ func TestCaxAssessmentPutErrorBranches(t *testing.T) {
 	t.Run("malformed session id is not found before any sql", func(t *testing.T) {
 		s, mock := newTestServer(t)
 		app := newTestApp(t, s)
-		h := sessionAdminHeaders(t, s, mock)
+		h := assessmentFASHeaders(t, s, mock)
 		res := jsonReq(t, app, "PUT",
 			"/api/sessions/abc/topics/5/children/30/activities/11",
 			map[string]any{"stars": 3}, h)
@@ -73,7 +82,7 @@ func TestCaxAssessmentPutErrorBranches(t *testing.T) {
 	t.Run("malformed topic id is not found before any sql", func(t *testing.T) {
 		s, mock := newTestServer(t)
 		app := newTestApp(t, s)
-		h := sessionAdminHeaders(t, s, mock)
+		h := assessmentFASHeaders(t, s, mock)
 		res := jsonReq(t, app, "PUT",
 			"/api/sessions/2/topics/abc/children/30/activities/11",
 			map[string]any{"stars": 3}, h)
@@ -82,7 +91,7 @@ func TestCaxAssessmentPutErrorBranches(t *testing.T) {
 	t.Run("malformed child id is not found before any sql", func(t *testing.T) {
 		s, mock := newTestServer(t)
 		app := newTestApp(t, s)
-		h := sessionAdminHeaders(t, s, mock)
+		h := assessmentFASHeaders(t, s, mock)
 		res := jsonReq(t, app, "PUT",
 			"/api/sessions/2/topics/5/children/abc/activities/11",
 			map[string]any{"stars": 3}, h)
@@ -91,30 +100,34 @@ func TestCaxAssessmentPutErrorBranches(t *testing.T) {
 	t.Run("malformed activity id is not found before any sql", func(t *testing.T) {
 		s, mock := newTestServer(t)
 		app := newTestApp(t, s)
-		h := sessionAdminHeaders(t, s, mock)
+		h := assessmentFASHeaders(t, s, mock)
 		res := jsonReq(t, app, "PUT",
 			"/api/sessions/2/topics/5/children/30/activities/abc",
 			map[string]any{"stars": 3}, h)
 		requireErrEnvelope(t, res, CodeNotFound)
 	})
-	t.Run("SA without school header is validation before any sql", func(t *testing.T) {
+	t.Run("SA is forbidden on evaluate (handler guard, route allows SA)", func(t *testing.T) {
 		s, mock := newTestServer(t)
 		app := newTestApp(t, s)
 		mock.ExpectQuery(sqlUserByID).WithArgs(int64(1)).WillReturnRows(sqlSARow())
-		res := jsonReq(t, app, "PUT", caxPutPath, map[string]any{"stars": 3}, hSABare(t, s))
-		requireErrEnvelope(t, res, CodeValidation)
+		mock.ExpectQuery(sqlSchoolActive()).WithArgs(int64(1)).
+			WillReturnRows(sqlmock.NewRows([]string{"is_active"}).AddRow(true))
+		h := bearer(mintAccess(t, s, saUserRow()))
+		h["X-School-ID"] = "1"
+		res := jsonReq(t, app, "PUT", caxPutPath, map[string]any{"stars": 3}, h)
+		requireErrEnvelope(t, res, CodeForbiddenRole)
 	})
 	t.Run("malformed json body is validation before any sql", func(t *testing.T) {
 		s, mock := newTestServer(t)
 		app := newTestApp(t, s)
-		h := sessionAdminHeaders(t, s, mock)
+		h := assessmentFASHeaders(t, s, mock)
 		res := doReq(t, app, "PUT", caxPutPath, `{"stars":`, h)
 		requireErrEnvelope(t, res, CodeValidation)
 	})
 	t.Run("membership read failure is db unavailable", func(t *testing.T) {
 		s, mock := newTestServer(t)
 		app := newTestApp(t, s)
-		h := sessionAdminHeaders(t, s, mock)
+		h := assessmentFASHeaders(t, s, mock)
 		mock.ExpectQuery(q("SELECT EXISTS(SELECT 1 FROM session_members WHERE session_id = ? AND child_id = ?)")).
 			WithArgs(int64(2), int64(30)).WillReturnError(errors.New("connection refused"))
 		res := jsonReq(t, app, "PUT", caxPutPath, map[string]any{"stars": 3}, h)
@@ -123,10 +136,11 @@ func TestCaxAssessmentPutErrorBranches(t *testing.T) {
 	t.Run("unknown session is not found", func(t *testing.T) {
 		s, mock := newTestServer(t)
 		app := newTestApp(t, s)
-		h := sessionAdminHeaders(t, s, mock)
+		h := assessmentFASHeaders(t, s, mock)
 		mock.ExpectQuery(q("SELECT EXISTS(SELECT 1 FROM session_members WHERE session_id = ? AND child_id = ?)")).
 			WithArgs(int64(2), int64(30)).
 			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(1))
+		caxExpectFASOwner(mock)
 		mock.ExpectQuery(q("FROM sessions WHERE id = ? AND school_id = ?")).
 			WithArgs(int64(2), int64(1)).WillReturnError(sql.ErrNoRows)
 		res := jsonReq(t, app, "PUT", caxPutPath, map[string]any{"stars": 3}, h)
@@ -135,10 +149,11 @@ func TestCaxAssessmentPutErrorBranches(t *testing.T) {
 	t.Run("status read failure is db unavailable", func(t *testing.T) {
 		s, mock := newTestServer(t)
 		app := newTestApp(t, s)
-		h := sessionAdminHeaders(t, s, mock)
+		h := assessmentFASHeaders(t, s, mock)
 		mock.ExpectQuery(q("SELECT EXISTS(SELECT 1 FROM session_members WHERE session_id = ? AND child_id = ?)")).
 			WithArgs(int64(2), int64(30)).
 			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(1))
+		caxExpectFASOwner(mock)
 		mock.ExpectQuery(q("FROM sessions WHERE id = ? AND school_id = ?")).
 			WithArgs(int64(2), int64(1)).WillReturnError(errors.New("connection refused"))
 		res := jsonReq(t, app, "PUT", caxPutPath, map[string]any{"stars": 3}, h)
@@ -147,10 +162,11 @@ func TestCaxAssessmentPutErrorBranches(t *testing.T) {
 	t.Run("unlinked activity is not found", func(t *testing.T) {
 		s, mock := newTestServer(t)
 		app := newTestApp(t, s)
-		h := sessionAdminHeaders(t, s, mock)
+		h := assessmentFASHeaders(t, s, mock)
 		mock.ExpectQuery(q("SELECT EXISTS(SELECT 1 FROM session_members WHERE session_id = ? AND child_id = ?)")).
 			WithArgs(int64(2), int64(30)).
 			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(1))
+		caxExpectFASOwner(mock)
 		mock.ExpectQuery(q("FROM sessions WHERE id = ? AND school_id = ?")).
 			WithArgs(int64(2), int64(1)).WillReturnRows(statusRows("OPENED"))
 		mock.ExpectQuery(q("SELECT sa.activity_name_snap FROM session_activities sa")).
@@ -161,10 +177,11 @@ func TestCaxAssessmentPutErrorBranches(t *testing.T) {
 	t.Run("linkage read failure is db unavailable", func(t *testing.T) {
 		s, mock := newTestServer(t)
 		app := newTestApp(t, s)
-		h := sessionAdminHeaders(t, s, mock)
+		h := assessmentFASHeaders(t, s, mock)
 		mock.ExpectQuery(q("SELECT EXISTS(SELECT 1 FROM session_members WHERE session_id = ? AND child_id = ?)")).
 			WithArgs(int64(2), int64(30)).
 			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(1))
+		caxExpectFASOwner(mock)
 		mock.ExpectQuery(q("FROM sessions WHERE id = ? AND school_id = ?")).
 			WithArgs(int64(2), int64(1)).WillReturnRows(statusRows("OPENED"))
 		mock.ExpectQuery(q("SELECT sa.activity_name_snap FROM session_activities sa")).
@@ -175,10 +192,11 @@ func TestCaxAssessmentPutErrorBranches(t *testing.T) {
 	t.Run("vanishing child row is not found", func(t *testing.T) {
 		s, mock := newTestServer(t)
 		app := newTestApp(t, s)
-		h := sessionAdminHeaders(t, s, mock)
+		h := assessmentFASHeaders(t, s, mock)
 		mock.ExpectQuery(q("SELECT EXISTS(SELECT 1 FROM session_members WHERE session_id = ? AND child_id = ?)")).
 			WithArgs(int64(2), int64(30)).
 			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(1))
+		caxExpectFASOwner(mock)
 		mock.ExpectQuery(q("FROM sessions WHERE id = ? AND school_id = ?")).
 			WithArgs(int64(2), int64(1)).WillReturnRows(statusRows("OPENED"))
 		mock.ExpectQuery(q("SELECT sa.activity_name_snap FROM session_activities sa")).
@@ -192,10 +210,11 @@ func TestCaxAssessmentPutErrorBranches(t *testing.T) {
 	t.Run("child read failure is db unavailable", func(t *testing.T) {
 		s, mock := newTestServer(t)
 		app := newTestApp(t, s)
-		h := sessionAdminHeaders(t, s, mock)
+		h := assessmentFASHeaders(t, s, mock)
 		mock.ExpectQuery(q("SELECT EXISTS(SELECT 1 FROM session_members WHERE session_id = ? AND child_id = ?)")).
 			WithArgs(int64(2), int64(30)).
 			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(1))
+		caxExpectFASOwner(mock)
 		mock.ExpectQuery(q("FROM sessions WHERE id = ? AND school_id = ?")).
 			WithArgs(int64(2), int64(1)).WillReturnRows(statusRows("OPENED"))
 		mock.ExpectQuery(q("SELECT sa.activity_name_snap FROM session_activities sa")).
@@ -209,10 +228,11 @@ func TestCaxAssessmentPutErrorBranches(t *testing.T) {
 	t.Run("member without a group row is not found", func(t *testing.T) {
 		s, mock := newTestServer(t)
 		app := newTestApp(t, s)
-		h := sessionAdminHeaders(t, s, mock)
+		h := assessmentFASHeaders(t, s, mock)
 		mock.ExpectQuery(q("SELECT EXISTS(SELECT 1 FROM session_members WHERE session_id = ? AND child_id = ?)")).
 			WithArgs(int64(2), int64(30)).
 			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(1))
+		caxExpectFASOwner(mock)
 		mock.ExpectQuery(q("FROM sessions WHERE id = ? AND school_id = ?")).
 			WithArgs(int64(2), int64(1)).WillReturnRows(statusRows("OPENED"))
 		mock.ExpectQuery(q("SELECT sa.activity_name_snap FROM session_activities sa")).
@@ -229,10 +249,11 @@ func TestCaxAssessmentPutErrorBranches(t *testing.T) {
 	t.Run("owner read failure is db unavailable", func(t *testing.T) {
 		s, mock := newTestServer(t)
 		app := newTestApp(t, s)
-		h := sessionAdminHeaders(t, s, mock)
+		h := assessmentFASHeaders(t, s, mock)
 		mock.ExpectQuery(q("SELECT EXISTS(SELECT 1 FROM session_members WHERE session_id = ? AND child_id = ?)")).
 			WithArgs(int64(2), int64(30)).
 			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(1))
+		caxExpectFASOwner(mock)
 		mock.ExpectQuery(q("FROM sessions WHERE id = ? AND school_id = ?")).
 			WithArgs(int64(2), int64(1)).WillReturnRows(statusRows("OPENED"))
 		mock.ExpectQuery(q("SELECT sa.activity_name_snap FROM session_activities sa")).
@@ -249,10 +270,11 @@ func TestCaxAssessmentPutErrorBranches(t *testing.T) {
 	t.Run("owner active check failure is db unavailable", func(t *testing.T) {
 		s, mock := newTestServer(t)
 		app := newTestApp(t, s)
-		h := sessionAdminHeaders(t, s, mock)
+		h := assessmentFASHeaders(t, s, mock)
 		mock.ExpectQuery(q("SELECT EXISTS(SELECT 1 FROM session_members WHERE session_id = ? AND child_id = ?)")).
 			WithArgs(int64(2), int64(30)).
 			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(1))
+		caxExpectFASOwner(mock)
 		mock.ExpectQuery(q("FROM sessions WHERE id = ? AND school_id = ?")).
 			WithArgs(int64(2), int64(1)).WillReturnRows(statusRows("OPENED"))
 		mock.ExpectQuery(q("SELECT sa.activity_name_snap FROM session_activities sa")).
@@ -272,10 +294,11 @@ func TestCaxAssessmentPutErrorBranches(t *testing.T) {
 	t.Run("inactive group owner blocks for everyone", func(t *testing.T) {
 		s, mock := newTestServer(t)
 		app := newTestApp(t, s)
-		h := sessionAdminHeaders(t, s, mock)
+		h := assessmentFASHeaders(t, s, mock)
 		mock.ExpectQuery(q("SELECT EXISTS(SELECT 1 FROM session_members WHERE session_id = ? AND child_id = ?)")).
 			WithArgs(int64(2), int64(30)).
 			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(1))
+		caxExpectFASOwner(mock)
 		mock.ExpectQuery(q("FROM sessions WHERE id = ? AND school_id = ?")).
 			WithArgs(int64(2), int64(1)).WillReturnRows(statusRows("OPENED"))
 		mock.ExpectQuery(q("SELECT sa.activity_name_snap FROM session_activities sa")).
@@ -296,13 +319,13 @@ func TestCaxAssessmentPutErrorBranches(t *testing.T) {
 	t.Run("upsert failure is db unavailable", func(t *testing.T) {
 		s, mock := newTestServer(t)
 		app := newTestApp(t, s)
-		h := sessionAdminHeaders(t, s, mock)
+		h := assessmentFASHeaders(t, s, mock)
 		caxExpectPutGates(mock)
 		mock.ExpectBegin()
 		caxExpectStatusLockTx(mock, "OPENED")
 		mock.ExpectExec(q("INSERT INTO assessments")).
 			WithArgs(int64(2), int64(11), int64(30), int64(1), 3, nil,
-				"Aktivitas A", "Ayu", int64(2)).
+				"Aktivitas A", "Ayu", int64(3)).
 			WillReturnError(errors.New("connection refused"))
 		mock.ExpectRollback()
 		res := jsonReq(t, app, "PUT", caxPutPath, map[string]any{"stars": 3}, h)
@@ -311,13 +334,13 @@ func TestCaxAssessmentPutErrorBranches(t *testing.T) {
 	t.Run("updated_at re-read failure is db unavailable", func(t *testing.T) {
 		s, mock := newTestServer(t)
 		app := newTestApp(t, s)
-		h := sessionAdminHeaders(t, s, mock)
+		h := assessmentFASHeaders(t, s, mock)
 		caxExpectPutGates(mock)
 		mock.ExpectBegin()
 		caxExpectStatusLockTx(mock, "OPENED")
 		mock.ExpectExec(q("INSERT INTO assessments")).
 			WithArgs(int64(2), int64(11), int64(30), int64(1), 3, nil,
-				"Aktivitas A", "Ayu", int64(2)).
+				"Aktivitas A", "Ayu", int64(3)).
 			WillReturnResult(sqlmock.NewResult(1, 1))
 		mock.ExpectQuery(q("SELECT updated_at FROM assessments")).
 			WithArgs(int64(11), int64(30)).WillReturnError(errors.New("connection refused"))
@@ -333,7 +356,7 @@ func TestCaxAssessmentPutErrorBranches(t *testing.T) {
 func TestCaxAssessmentPutReadinessFailureKeepsSuccess(t *testing.T) {
 	s, mock := newTestServer(t)
 	app := newTestApp(t, s)
-	h := sessionAdminHeaders(t, s, mock)
+	h := assessmentFASHeaders(t, s, mock)
 
 	sub := covSubscribe(t, s, ScopeSnapshot{Role: "ADMIN", SchoolID: 1})
 
@@ -348,7 +371,7 @@ func TestCaxAssessmentPutReadinessFailureKeepsSuccess(t *testing.T) {
 	data := requireDataEnvelope(t, res).(map[string]any)
 	require.Equal(t, float64(11), data["said"])
 	require.Equal(t, float64(3), data["stars"])
-	require.Equal(t, float64(2), data["assessor_id"])
+	require.Equal(t, float64(3), data["assessor_id"], "FASILITATOR caller")
 	require.Equal(t, "2026-01-02T03:04:05Z", data["updated_at"])
 
 	changed := covNextFrame(t, sub, "assessment.changed after upsert")
@@ -365,7 +388,7 @@ func TestCaxAssessmentPutStatusRaceRollsBack(t *testing.T) {
 		t.Run(raced+" between pre-read and upsert", func(t *testing.T) {
 			s, mock := newTestServer(t)
 			app := newTestApp(t, s)
-			h := sessionAdminHeaders(t, s, mock)
+			h := assessmentFASHeaders(t, s, mock)
 
 			caxExpectPutGates(mock) // pre-read status = OPENED (gate order intact)
 			mock.ExpectBegin()
@@ -396,10 +419,11 @@ func TestCaxAssessmentsListErrorBranches(t *testing.T) {
 	t.Run("list query failure is db unavailable", func(t *testing.T) {
 		s, mock := newTestServer(t)
 		app := newTestApp(t, s)
-		h := sessionAdminHeaders(t, s, mock)
+		h := assessmentFASHeaders(t, s, mock)
 		mock.ExpectQuery(q("SELECT EXISTS(SELECT 1 FROM session_members WHERE session_id = ? AND child_id = ?)")).
 			WithArgs(int64(2), int64(30)).
 			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(1))
+		caxExpectFASOwner(mock) // requirePChild FAS probe inside pScope
 		mock.ExpectQuery(q("SELECT 1 FROM session_topics WHERE id = ? AND session_id = ?")).
 			WithArgs(int64(5), int64(2), int64(1)).
 			WillReturnRows(sqlmock.NewRows([]string{"probe"}).AddRow(1))
@@ -412,10 +436,11 @@ func TestCaxAssessmentsListErrorBranches(t *testing.T) {
 	t.Run("row scan failure is db unavailable", func(t *testing.T) {
 		s, mock := newTestServer(t)
 		app := newTestApp(t, s)
-		h := sessionAdminHeaders(t, s, mock)
+		h := assessmentFASHeaders(t, s, mock)
 		mock.ExpectQuery(q("SELECT EXISTS(SELECT 1 FROM session_members WHERE session_id = ? AND child_id = ?)")).
 			WithArgs(int64(2), int64(30)).
 			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(1))
+		caxExpectFASOwner(mock) // requirePChild FAS probe inside pScope
 		mock.ExpectQuery(q("SELECT 1 FROM session_topics WHERE id = ? AND session_id = ?")).
 			WithArgs(int64(5), int64(2), int64(1)).
 			WillReturnRows(sqlmock.NewRows([]string{"probe"}).AddRow(1))
@@ -429,10 +454,11 @@ func TestCaxAssessmentsListErrorBranches(t *testing.T) {
 	t.Run("row iteration failure is db unavailable", func(t *testing.T) {
 		s, mock := newTestServer(t)
 		app := newTestApp(t, s)
-		h := sessionAdminHeaders(t, s, mock)
+		h := assessmentFASHeaders(t, s, mock)
 		mock.ExpectQuery(q("SELECT EXISTS(SELECT 1 FROM session_members WHERE session_id = ? AND child_id = ?)")).
 			WithArgs(int64(2), int64(30)).
 			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(1))
+		caxExpectFASOwner(mock) // requirePChild FAS probe inside pScope
 		mock.ExpectQuery(q("SELECT 1 FROM session_topics WHERE id = ? AND session_id = ?")).
 			WithArgs(int64(5), int64(2), int64(1)).
 			WillReturnRows(sqlmock.NewRows([]string{"probe"}).AddRow(1))

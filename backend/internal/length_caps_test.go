@@ -230,13 +230,18 @@ func TestLengthCapAssessmentNoteBoundary(t *testing.T) {
 	t.Run("2000-char note passes", func(t *testing.T) {
 		s, mock := newTestServer(t)
 		app := newTestApp(t, s)
-		h := sessionAdminHeaders(t, s, mock)
+		// Evaluate is FASILITATOR-only since the route gate fix — ADMIN gets
+		// FORBIDDEN_ROLE before any SQL.
+		h := assessmentFASHeaders(t, s, mock)
 
 		note := atCap(2000)
-		// Gate order mirrors TestAssessmentPutHappyPathUpsertsAndPublishes.
+		// Gate order mirrors TestAssessmentPutHappyPathUpsertsAndPublishes
+		// (membership → FAS ownership probe → status → linkage → child →
+		// group-owner probe → users).
 		mock.ExpectQuery(q("SELECT EXISTS(SELECT 1 FROM session_members WHERE session_id = ? AND child_id = ?)")).
 			WithArgs(int64(2), int64(30)).
 			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(1))
+		caxExpectFASOwner(mock)
 		mock.ExpectQuery(q("FROM sessions WHERE id = ? AND school_id = ?")).
 			WithArgs(int64(2), int64(1)).WillReturnRows(statusRows("OPENED"))
 		mock.ExpectQuery(q("SELECT sa.activity_name_snap FROM session_activities sa")).
@@ -255,7 +260,7 @@ func TestLengthCapAssessmentNoteBoundary(t *testing.T) {
 		caxExpectStatusLockTx(mock, "OPENED")
 		mock.ExpectExec(q("INSERT INTO assessments")).
 			WithArgs(int64(2), int64(11), int64(30), int64(1), 3, note,
-				"Aktivitas A", "Ayu", int64(2)).
+				"Aktivitas A", "Ayu", int64(3)).
 			WillReturnResult(sqlmock.NewResult(1, 1))
 		mock.ExpectQuery(q("SELECT updated_at FROM assessments")).
 			WithArgs(int64(11), int64(30)).
@@ -280,7 +285,7 @@ func TestLengthCapAssessmentNoteBoundary(t *testing.T) {
 	t.Run("2001-char note is VALIDATION before any SQL", func(t *testing.T) {
 		s, mock := newTestServer(t)
 		app := newTestApp(t, s)
-		h := sessionAdminHeaders(t, s, mock)
+		h := assessmentFASHeaders(t, s, mock)
 
 		res := jsonReq(t, app, "PUT", "/api/sessions/2/topics/5/children/30/activities/11",
 			map[string]any{"stars": 3, "note": atCap(2001)}, h)

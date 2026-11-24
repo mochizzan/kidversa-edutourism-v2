@@ -367,7 +367,7 @@ func TestAsxRoleAllowedMatrix(t *testing.T) {
 		{[]string{}, "ADMIN", true},               // zero-length slice, same rule
 		{nil, "SA", true},                         // SA supersedes
 		{[]string{"ADMIN"}, "ADMIN", true},        // exact match
-		{[]string{"FASILITATOR"}, "ADMIN", true},  // ADMIN passes facilitator-level checks
+		{[]string{"FASILITATOR"}, "ADMIN", false}, // ADMIN no longer passes facilitator-level routes (assessments.go)
 		{[]string{"ADMIN"}, "FASILITATOR", false}, // FAS does not pass ADMIN-only routes
 		{[]string{"SA"}, "ADMIN", false},          // SA-only routes stay SA-only
 		{[]string{"SA"}, "SA", true},              // exact match

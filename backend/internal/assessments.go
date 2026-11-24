@@ -270,7 +270,7 @@ func (s *Server) reportReadiness(ctx context.Context, school, sid, cid, stid int
 // session-level progress/readiness views).
 func (s *Server) RegisterAssessments(api fiber.Router) {
 	api.Put("/sessions/:sid/topics/:stid/children/:cid/activities/:said",
-		s.authed(), s.handleAssessmentPut)
+		s.authed("FASILITATOR"), s.handleAssessmentPut)
 	api.Get("/sessions/:sid/topics/:stid/children/:cid/assessments",
 		s.authed(), s.handleAssessmentsList)
 	api.Get("/sessions/:sid/progress", s.authed(), s.handleSessionProgress)
@@ -338,6 +338,15 @@ func (s *Server) handleAssessmentPut(c fiber.Ctx) error {
 		return nil
 	}
 	u, _ := c.Locals(kvUser).(*userRow)
+
+	// Evaluate is FASILITATOR-only: ADMIN/SA may still VIEW evaluations
+	// (GET routes), but never save them. The route gate
+	// (s.authed("FASILITATOR")) already blocks ADMIN via roleAllowed; the
+	// handler re-checks the loaded role so a passing SA is rejected here too
+	// (the SA pass in roleAllowed stays for SA's other routes).
+	if u.Role != "FASILITATOR" {
+		return fail(c, CodeForbiddenRole, MsgForbiddenRole)
+	}
 
 	var req assessmentReq
 	if !bindBody(c, &req) {

@@ -54,15 +54,16 @@ func assessmentFASHeaders(t *testing.T, s *Server, mock sqlmock.Sqlmock) map[str
 func TestAssessmentPutHappyPathUpsertsAndPublishes(t *testing.T) {
 	s, mock := newTestServer(t)
 	app := newTestApp(t, s)
-	h := sessionAdminHeaders(t, s, mock)
+	h := assessmentFASHeaders(t, s, mock)
 
 	sub := covSubscribe(t, s, ScopeSnapshot{Role: "ADMIN", SchoolID: 1})
 
-	// Membership gate (decision 18) → status gate → linkage → child →
-	// owner depth (group owner active).
+	// Membership gate (decision 18) → FAS owner probe → status → linkage →
+	// child → owner depth (group owner active).
 	mock.ExpectQuery(q("SELECT EXISTS(SELECT 1 FROM session_members WHERE session_id = ? AND child_id = ?)")).
 		WithArgs(int64(2), int64(30)).
 		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(1))
+	caxExpectFASOwner(mock)
 	mock.ExpectQuery(q("FROM sessions WHERE id = ? AND school_id = ?")).
 		WithArgs(int64(2), int64(1)).WillReturnRows(statusRows("OPENED"))
 	mock.ExpectQuery(q("SELECT sa.activity_name_snap FROM session_activities sa")).
@@ -83,7 +84,7 @@ func TestAssessmentPutHappyPathUpsertsAndPublishes(t *testing.T) {
 	caxExpectStatusLockTx(mock, "OPENED")
 	mock.ExpectExec(q("INSERT INTO assessments")).
 		WithArgs(int64(2), int64(11), int64(30), int64(1), 3, "Catatan bagus",
-			"Aktivitas A", "Ayu", int64(2)).
+			"Aktivitas A", "Ayu", int64(3)).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectQuery(q("SELECT updated_at FROM assessments")).
 		WithArgs(int64(11), int64(30)).
@@ -107,7 +108,7 @@ func TestAssessmentPutHappyPathUpsertsAndPublishes(t *testing.T) {
 	require.Equal(t, float64(11), data["said"])
 	require.Equal(t, float64(3), data["stars"])
 	require.Equal(t, "Catatan bagus", data["note"])
-	require.Equal(t, float64(2), data["assessor_id"])
+	require.Equal(t, float64(3), data["assessor_id"])
 	require.NotEmpty(t, data["updated_at"])
 
 	changed := covNextFrame(t, sub, "assessment.changed after upsert")
@@ -154,7 +155,7 @@ func TestAssessmentPutGateMatrix(t *testing.T) {
 	t.Run("stars above 4 is validation before any db work", func(t *testing.T) {
 		s, mock := newTestServer(t)
 		app := newTestApp(t, s)
-		h := sessionAdminHeaders(t, s, mock)
+		h := assessmentFASHeaders(t, s, mock)
 		res := jsonReq(t, app, "PUT", putPath, map[string]any{"stars": 5}, h)
 		requireErrEnvelope(t, res, CodeValidation)
 	})
@@ -162,7 +163,7 @@ func TestAssessmentPutGateMatrix(t *testing.T) {
 	t.Run("stars zero is validation", func(t *testing.T) {
 		s, mock := newTestServer(t)
 		app := newTestApp(t, s)
-		h := sessionAdminHeaders(t, s, mock)
+		h := assessmentFASHeaders(t, s, mock)
 		res := jsonReq(t, app, "PUT", putPath, map[string]any{"stars": 0}, h)
 		requireErrEnvelope(t, res, CodeValidation)
 	})
@@ -170,7 +171,7 @@ func TestAssessmentPutGateMatrix(t *testing.T) {
 	t.Run("note over 2000 chars is validation", func(t *testing.T) {
 		s, mock := newTestServer(t)
 		app := newTestApp(t, s)
-		h := sessionAdminHeaders(t, s, mock)
+		h := assessmentFASHeaders(t, s, mock)
 		res := jsonReq(t, app, "PUT", putPath,
 			map[string]any{"stars": 3, "note": strings.Repeat("n", 2001)}, h)
 		requireErrEnvelope(t, res, CodeValidation)
@@ -179,7 +180,7 @@ func TestAssessmentPutGateMatrix(t *testing.T) {
 	t.Run("non-member child is not found", func(t *testing.T) {
 		s, mock := newTestServer(t)
 		app := newTestApp(t, s)
-		h := sessionAdminHeaders(t, s, mock)
+		h := assessmentFASHeaders(t, s, mock)
 		expectMembership(mock, 0)
 		res := jsonReq(t, app, "PUT", putPath, map[string]any{"stars": 3}, h)
 		requireErrEnvelope(t, res, CodeNotFound)
@@ -188,8 +189,9 @@ func TestAssessmentPutGateMatrix(t *testing.T) {
 	t.Run("draft session is session locked", func(t *testing.T) {
 		s, mock := newTestServer(t)
 		app := newTestApp(t, s)
-		h := sessionAdminHeaders(t, s, mock)
+		h := assessmentFASHeaders(t, s, mock)
 		expectMembership(mock, 1)
+		caxExpectFASOwner(mock)
 		expectStatus(mock, "DRAFT")
 		res := jsonReq(t, app, "PUT", putPath, map[string]any{"stars": 3}, h)
 		requireErrEnvelope(t, res, CodeSessionLocked)
@@ -198,8 +200,9 @@ func TestAssessmentPutGateMatrix(t *testing.T) {
 	t.Run("finished session is session locked", func(t *testing.T) {
 		s, mock := newTestServer(t)
 		app := newTestApp(t, s)
-		h := sessionAdminHeaders(t, s, mock)
+		h := assessmentFASHeaders(t, s, mock)
 		expectMembership(mock, 1)
+		caxExpectFASOwner(mock)
 		expectStatus(mock, "FINISHED")
 		res := jsonReq(t, app, "PUT", putPath, map[string]any{"stars": 3}, h)
 		requireErrEnvelope(t, res, CodeSessionLocked)
@@ -208,8 +211,9 @@ func TestAssessmentPutGateMatrix(t *testing.T) {
 	t.Run("inactive child is child inactive", func(t *testing.T) {
 		s, mock := newTestServer(t)
 		app := newTestApp(t, s)
-		h := sessionAdminHeaders(t, s, mock)
+		h := assessmentFASHeaders(t, s, mock)
 		expectMembership(mock, 1)
+		caxExpectFASOwner(mock)
 		expectStatus(mock, "OPENED")
 		expectLinkage(mock)
 		expectChild(mock, false)
@@ -220,8 +224,9 @@ func TestAssessmentPutGateMatrix(t *testing.T) {
 	t.Run("ownerless group blocks for everyone", func(t *testing.T) {
 		s, mock := newTestServer(t)
 		app := newTestApp(t, s)
-		h := sessionAdminHeaders(t, s, mock)
+		h := assessmentFASHeaders(t, s, mock)
 		expectMembership(mock, 1)
+		caxExpectFASOwner(mock)
 		expectStatus(mock, "OPENED")
 		expectLinkage(mock)
 		expectChild(mock, true)

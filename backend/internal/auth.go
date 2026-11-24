@@ -208,17 +208,17 @@ func (s *Server) parseRefresh(token string) (*refreshClaims, error) {
 // Guards
 // ---------------------------------------------------------------------------
 
-// roleAllowed: SA passes every role check (superset); ADMIN also passes
-// facilitator-level checks; empty roles = any authenticated role (02 pipeline).
+// roleAllowed: SA passes every role check (superset); empty roles = any
+// authenticated role (02 pipeline). A route registered with a concrete role
+// (e.g. FASILITATOR) requires the user's role to match exactly — the old
+// ADMIN-passes-facilitator-level-checks branch was removed: it let ADMIN
+// evaluate sessions, which must stay FASILITATOR-only (assessments.go).
 func roleAllowed(roles []string, role string) bool {
 	if role == "SA" || len(roles) == 0 {
 		return true
 	}
 	for _, r := range roles {
 		if r == role {
-			return true
-		}
-		if role == "ADMIN" && r == "FASILITATOR" {
 			return true
 		}
 	}
