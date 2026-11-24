@@ -592,7 +592,16 @@ export default function AppLayout() {
               segments — both need this one registry. */}
           <CrumbNamesProvider>
             <Breadcrumbs />
-            <Outlet />
+            {/* A school switch changes the data scope behind X-School-ID. The
+                routed page holds school-scoped state (list rows, picker
+                options, detail fetches, local filters), so remount it under
+                the new school id — otherwise the open page keeps showing the
+                previous school until a route change or reload. Keying the
+                fragment remounts only the page subtree; the shell and its
+                switcher stay mounted. */}
+            <Fragment key={school?.id ?? 'no-school'}>
+              <Outlet />
+            </Fragment>
           </CrumbNamesProvider>
         </Content>
       </div>
