@@ -237,8 +237,8 @@ func TestReportDataCanonicalShape(t *testing.T) {
 	mock.ExpectQuery(q("FROM report_missions")).
 		WithArgs(int64(2), int64(5), int64(30)).
 		WillReturnRows(sqlmock.NewRows([]string{"mission_id",
-			"mission_name_snap", "mission_body_snap"}).
-			AddRow(7, "Misal Misi", "Body misi"))
+			"mission_name_snap"}).
+			AddRow(7, "Misal Misi"))
 	// Candidate photo (bytes exist on disk).
 	mock.ExpectQuery(q("AND is_candidate = TRUE AND file_ready = TRUE")).
 		WithArgs(int64(2), int64(5), int64(30), int64(1)).
@@ -307,7 +307,7 @@ func TestReportDataCanonicalShape(t *testing.T) {
 	mis0 := mis[0].(map[string]any)
 	require.Equal(t, float64(7), mis0["mission_id"])
 	require.Equal(t, "Misal Misi", mis0["name"])
-	require.Equal(t, "Body misi", mis0["body"])
+	require.NotContains(t, mis0, "body", "the public report carries the mission name only")
 
 	// badges + candidate photo + completeness.
 	badges := data["badges"].(map[string]any)
@@ -363,7 +363,7 @@ func TestReportDataCanonicalShape(t *testing.T) {
 	mock.ExpectQuery(q("FROM report_missions")).
 		WithArgs(int64(2), int64(5), int64(30)).
 		WillReturnRows(sqlmock.NewRows([]string{"mission_id",
-			"mission_name_snap", "mission_body_snap"}))
+			"mission_name_snap"}))
 	mock.ExpectQuery(q("AND is_candidate = TRUE AND file_ready = TRUE")).
 		WithArgs(int64(2), int64(5), int64(30), int64(1)).
 		WillReturnError(sql.ErrNoRows)
@@ -625,7 +625,7 @@ func TestPublicReportStaysOpenForInactiveChild(t *testing.T) {
 	mock.ExpectQuery(q("FROM report_missions")).
 		WithArgs(int64(2), int64(5), int64(30)).
 		WillReturnRows(sqlmock.NewRows([]string{"mission_id",
-			"mission_name_snap", "mission_body_snap"}))
+			"mission_name_snap"}))
 	mock.ExpectQuery(q("AND is_candidate = TRUE AND file_ready = TRUE")).
 		WithArgs(int64(2), int64(5), int64(30), int64(1)).
 		WillReturnError(sql.ErrNoRows)

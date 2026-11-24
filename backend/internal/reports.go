@@ -120,7 +120,6 @@ type reportOutcome struct {
 type reportMission struct {
 	MissionID int64  `json:"mission_id"`
 	Name      string `json:"name"`
-	Body      string `json:"body"`
 }
 
 type reportBadge struct {
@@ -327,7 +326,7 @@ func (s *Server) buildReportData(ctx context.Context, school, sid, stid, cid int
 
 	// Mission picks (snapped).
 	mRows, err := s.db.QueryContext(ctx,
-		`SELECT mission_id, mission_name_snap, mission_body_snap
+		`SELECT mission_id, mission_name_snap
 		 FROM report_missions
 		 WHERE session_id = ? AND session_topic_id = ? AND child_id = ?
 		 ORDER BY mission_id`, sid, stid, cid)
@@ -336,7 +335,7 @@ func (s *Server) buildReportData(ctx context.Context, school, sid, stid, cid int
 	}
 	for mRows.Next() {
 		var m reportMission
-		if err := mRows.Scan(&m.MissionID, &m.Name, &m.Body); err != nil {
+		if err := mRows.Scan(&m.MissionID, &m.Name); err != nil {
 			mRows.Close()
 			return nil, err
 		}
@@ -470,7 +469,7 @@ func (s *Server) handleReportGet(c fiber.Ctx) error {
 // Missions replace-set
 // ---------------------------------------------------------------------------
 
-// handleMissionList — GET P/missions → [{mission_id, name, body}].
+// handleMissionList — GET P/missions → [{mission_id, name}].
 func (s *Server) handleMissionList(c fiber.Ctx) error {
 	ctx, cancel, sid, stid, cid, _, _, okP := s.pScope(c)
 	if !okP {
@@ -483,7 +482,7 @@ func (s *Server) handleMissionList(c fiber.Ctx) error {
 // missionPicks reads the current snapped picks (ordered by mission id).
 func (s *Server) missionPicks(ctx context.Context, sid, stid, cid int64) []reportMission {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT mission_id, mission_name_snap, mission_body_snap
+		`SELECT mission_id, mission_name_snap
 		 FROM report_missions
 		 WHERE session_id = ? AND session_topic_id = ? AND child_id = ?
 		 ORDER BY mission_id`, sid, stid, cid)
@@ -495,7 +494,7 @@ func (s *Server) missionPicks(ctx context.Context, sid, stid, cid int64) []repor
 	out := []reportMission{}
 	for rows.Next() {
 		var m reportMission
-		if err := rows.Scan(&m.MissionID, &m.Name, &m.Body); err != nil {
+		if err := rows.Scan(&m.MissionID, &m.Name); err != nil {
 			slog.Error("mission picks scan", "err", err)
 			return []reportMission{}
 		}
@@ -586,7 +585,6 @@ func (s *Server) handleMissionPut(c fiber.Ctx) error {
 	type pick struct {
 		id   int64
 		name string
-		body string
 	}
 	picks := make([]pick, 0, len(req.MissionIDs))
 	for _, id := range req.MissionIDs {
@@ -596,8 +594,8 @@ func (s *Server) handleMissionPut(c fiber.Ctx) error {
 		seen[id] = true
 		var p pick
 		if err := s.db.QueryRowContext(ctx,
-			`SELECT name, body FROM missions WHERE id = ? AND school_id = ?`, id, school).
-			Scan(&p.name, &p.body); err != nil {
+			`SELECT name FROM missions WHERE id = ? AND school_id = ?`, id, school).
+			Scan(&p.name); err != nil {
 			if err == sql.ErrNoRows {
 				return fail(c, CodeValidation, MsgValidation)
 			}
@@ -640,9 +638,9 @@ func (s *Server) handleMissionPut(c fiber.Ctx) error {
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO report_missions
 			 (session_id, session_topic_id, child_id, mission_id,
-			  mission_name_snap, mission_body_snap, school_id)
-			 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			sid, stid, cid, p.id, p.name, p.body, school); err != nil {
+			  mission_name_snap, school_id)
+			 VALUES (?, ?, ?, ?, ?, ?)`,
+			sid, stid, cid, p.id, p.name, school); err != nil {
 			return failDB(c, err)
 		}
 	}

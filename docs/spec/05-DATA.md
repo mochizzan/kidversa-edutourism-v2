@@ -139,8 +139,9 @@ program/topic_name_snap*, name*, indicator TEXT NULL, sort_order,
 created_at. `INDEX(school_id,topic_id,sort_order)`.
 
 `missions`: id, school_id*, program_id* (loose), program_name_snap*,
-name*, body* TEXT, created_at. `mission_topics(mission_id*,
-topic_id*, topic_name_snap*, school_id*)`
+name*, created_at. A mission is its name only — the former `body`
+column was dropped by migration `0005` (2026-11-24).
+`mission_topics(mission_id*, topic_id*, topic_name_snap*, school_id*)`
 PK(mission_id,topic_id), `INDEX(topic_id)`.
 
 `frames`: id, school_id*, image_path* `VARCHAR(512)`, name*
@@ -223,11 +224,12 @@ generated_at NULL, generated_by (loose). `UNIQUE(session_id,
 session_topic_id,child_id)`. Upsert on success only.
 
 `report_missions`: session_id*, session_topic_id*, child_id*,
-mission_id* (loose), mission_name_snap*, mission_body_snap* TEXT,
-school_id*. PK(session_id,session_topic_id,child_id,mission_id).
+mission_id* (loose), mission_name_snap*, school_id*.
+PK(session_id,session_topic_id,child_id,mission_id).
 Replace-set in one Tx; app + `CHECK`-via-count (≤4 → else
-`MISSION_LIMIT`). The snaps are HISTORY-ONLY as of decision 56 — the
-report render resolves the mission name/body LIVE from the bank.
+`MISSION_LIMIT`). The snap is HISTORY-ONLY as of decision 56 — the
+report render resolves the mission name LIVE from the bank. The former
+`mission_body_snap` was dropped by migration `0005` (2026-11-24).
 
 `consent_links`: id, school_id*, session_id* (its index IS the leading
 column of the `UNIQUE(session_id,child_id)` below — no separate KEY

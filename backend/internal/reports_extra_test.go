@@ -494,8 +494,8 @@ func TestRpxReportGetBuilderErrorBranches(t *testing.T) {
 			"indicator_snap", "stars", "note"}))
 	mock.ExpectQuery(q("FROM report_missions")).
 		WithArgs(int64(2), int64(5), int64(30)).
-		WillReturnRows(sqlmock.NewRows([]string{"mission_id", "mission_name_snap", "mission_body_snap"}).
-			AddRow("x", "Misi", "Badan"))
+		WillReturnRows(sqlmock.NewRows([]string{"mission_id", "mission_name_snap"}).
+			AddRow("x", "Misi"))
 	requireErrEnvelope(t, doReq(t, app, "GET", getPath, "", h), CodeDBUnavailable)
 
 	// Mission pick stream dies mid-read → DB_UNAVAILABLE.
@@ -516,8 +516,8 @@ func TestRpxReportGetBuilderErrorBranches(t *testing.T) {
 			"indicator_snap", "stars", "note"}))
 	mock.ExpectQuery(q("FROM report_missions")).
 		WithArgs(int64(2), int64(5), int64(30)).
-		WillReturnRows(sqlmock.NewRows([]string{"mission_id", "mission_name_snap", "mission_body_snap"}).
-			AddRow(11, "Misi", "Badan").RowError(0, errors.New("iter boom")))
+		WillReturnRows(sqlmock.NewRows([]string{"mission_id", "mission_name_snap"}).
+			AddRow(11, "Misi").RowError(0, errors.New("iter boom")))
 	requireErrEnvelope(t, doReq(t, app, "GET", getPath, "", h), CodeDBUnavailable)
 
 	// Candidate photo lookup dead → DB_UNAVAILABLE.
@@ -538,7 +538,7 @@ func TestRpxReportGetBuilderErrorBranches(t *testing.T) {
 			"indicator_snap", "stars", "note"}))
 	mock.ExpectQuery(q("FROM report_missions")).
 		WithArgs(int64(2), int64(5), int64(30)).
-		WillReturnRows(sqlmock.NewRows([]string{"mission_id", "mission_name_snap", "mission_body_snap"}))
+		WillReturnRows(sqlmock.NewRows([]string{"mission_id", "mission_name_snap"}))
 	mock.ExpectQuery(q("SELECT path FROM photos")).
 		WithArgs(int64(2), int64(5), int64(30), int64(1)).
 		WillReturnError(errors.New("connection reset"))
@@ -562,7 +562,7 @@ func TestRpxReportGetBuilderErrorBranches(t *testing.T) {
 			"indicator_snap", "stars", "note"}))
 	mock.ExpectQuery(q("FROM report_missions")).
 		WithArgs(int64(2), int64(5), int64(30)).
-		WillReturnRows(sqlmock.NewRows([]string{"mission_id", "mission_name_snap", "mission_body_snap"}))
+		WillReturnRows(sqlmock.NewRows([]string{"mission_id", "mission_name_snap"}))
 	mock.ExpectQuery(q("SELECT path FROM photos")).
 		WithArgs(int64(2), int64(5), int64(30), int64(1)).WillReturnError(sql.ErrNoRows)
 	mock.ExpectQuery(q("FROM session_activities sa WHERE sa.session_id = ?")).
@@ -587,7 +587,7 @@ func TestRpxReportGetBuilderErrorBranches(t *testing.T) {
 			"indicator_snap", "stars", "note"}))
 	mock.ExpectQuery(q("FROM report_missions")).
 		WithArgs(int64(2), int64(5), int64(30)).
-		WillReturnRows(sqlmock.NewRows([]string{"mission_id", "mission_name_snap", "mission_body_snap"}))
+		WillReturnRows(sqlmock.NewRows([]string{"mission_id", "mission_name_snap"}))
 	mock.ExpectQuery(q("SELECT path FROM photos")).
 		WithArgs(int64(2), int64(5), int64(30), int64(1)).WillReturnError(sql.ErrNoRows)
 	mock.ExpectQuery(q("FROM session_activities sa WHERE sa.session_id = ?")).
@@ -630,8 +630,8 @@ func TestRpxReportGetAttestationFallbackRenders(t *testing.T) {
 			AddRow(11, "Aktivitas A", "Menulis nama", 4, "Mandiri"))
 	mock.ExpectQuery(q("FROM report_missions")).
 		WithArgs(int64(2), int64(5), int64(30)).
-		WillReturnRows(sqlmock.NewRows([]string{"mission_id", "mission_name_snap", "mission_body_snap"}).
-			AddRow(11, "Misi Sehat", "Badan sehat"))
+		WillReturnRows(sqlmock.NewRows([]string{"mission_id", "mission_name_snap"}).
+			AddRow(11, "Misi Sehat"))
 	mock.ExpectQuery(q("SELECT path FROM photos")).
 		WithArgs(int64(2), int64(5), int64(30), int64(1)).WillReturnError(sql.ErrNoRows)
 	mock.ExpectQuery(q("FROM session_activities sa WHERE sa.session_id = ?")).
@@ -695,8 +695,8 @@ func TestRpxMissionListQueryTroubleReturnsEmptyList(t *testing.T) {
 	missPrefix()
 	mock.ExpectQuery(q("FROM report_missions")).
 		WithArgs(int64(2), int64(5), int64(30)).
-		WillReturnRows(sqlmock.NewRows([]string{"mission_id", "mission_name_snap", "mission_body_snap"}).
-			AddRow("x", "Misi", "Badan"))
+		WillReturnRows(sqlmock.NewRows([]string{"mission_id", "mission_name_snap"}).
+			AddRow("x", "Misi"))
 	res = doReq(t, app, "GET", "/api/sessions/2/topics/5/children/30/missions", "", h)
 	require.Equal(t, []any{}, requireDataEnvelope(t, res), "scan failure degrades to empty list")
 }
@@ -772,7 +772,7 @@ func TestRpxMissionPutGateAndValidationBranches(t *testing.T) {
 	// Unknown mission → VALIDATION.
 	rpxExpectMissionPutPrefix(mock, true)
 	rpxExpectMissionPutStatus(mock)
-	mock.ExpectQuery(q("SELECT name, body FROM missions WHERE id = ? AND school_id = ?")).
+	mock.ExpectQuery(q("SELECT name FROM missions WHERE id = ? AND school_id = ?")).
 		WithArgs(int64(99), int64(1)).WillReturnError(sql.ErrNoRows)
 	res = jsonReq(t, app, "PUT", missionPutPath, map[string]any{"mission_ids": []int64{99}}, h)
 	requireErrEnvelope(t, res, CodeValidation)
@@ -780,9 +780,9 @@ func TestRpxMissionPutGateAndValidationBranches(t *testing.T) {
 	// Mission not linked to the topic's master topic → VALIDATION.
 	rpxExpectMissionPutPrefix(mock, true)
 	rpxExpectMissionPutStatus(mock)
-	mock.ExpectQuery(q("SELECT name, body FROM missions WHERE id = ? AND school_id = ?")).
+	mock.ExpectQuery(q("SELECT name FROM missions WHERE id = ? AND school_id = ?")).
 		WithArgs(int64(11), int64(1)).
-		WillReturnRows(sqlmock.NewRows([]string{"name", "body"}).AddRow("Misi 1", "Badan sehat"))
+		WillReturnRows(sqlmock.NewRows([]string{"name"}).AddRow("Misi 1"))
 	mock.ExpectQuery(q("SELECT EXISTS(SELECT 1 FROM mission_topics WHERE mission_id = ? AND topic_id = ?)")).
 		WithArgs(int64(11), int64(9)).
 		WillReturnRows(sqlmock.NewRows([]string{"linked"}).AddRow(0))
@@ -792,9 +792,9 @@ func TestRpxMissionPutGateAndValidationBranches(t *testing.T) {
 	// Duplicate id → VALIDATION (dedup keeps the Tx insert conflict-free).
 	rpxExpectMissionPutPrefix(mock, true)
 	rpxExpectMissionPutStatus(mock)
-	mock.ExpectQuery(q("SELECT name, body FROM missions WHERE id = ? AND school_id = ?")).
+	mock.ExpectQuery(q("SELECT name FROM missions WHERE id = ? AND school_id = ?")).
 		WithArgs(int64(11), int64(1)).
-		WillReturnRows(sqlmock.NewRows([]string{"name", "body"}).AddRow("Misi 1", "Badan sehat"))
+		WillReturnRows(sqlmock.NewRows([]string{"name"}).AddRow("Misi 1"))
 	mock.ExpectQuery(q("SELECT EXISTS(SELECT 1 FROM mission_topics WHERE mission_id = ? AND topic_id = ?)")).
 		WithArgs(int64(11), int64(9)).
 		WillReturnRows(sqlmock.NewRows([]string{"linked"}).AddRow(1))
@@ -812,9 +812,9 @@ func TestRpxMissionPutTxTroubleRollsBack(t *testing.T) {
 	// Begin dead.
 	rpxExpectMissionPutPrefix(mock, true)
 	rpxExpectMissionPutStatus(mock)
-	mock.ExpectQuery(q("SELECT name, body FROM missions WHERE id = ? AND school_id = ?")).
+	mock.ExpectQuery(q("SELECT name FROM missions WHERE id = ? AND school_id = ?")).
 		WithArgs(int64(11), int64(1)).
-		WillReturnRows(sqlmock.NewRows([]string{"name", "body"}).AddRow("Misi 1", "Badan sehat"))
+		WillReturnRows(sqlmock.NewRows([]string{"name"}).AddRow("Misi 1"))
 	mock.ExpectQuery(q("SELECT EXISTS(SELECT 1 FROM mission_topics WHERE mission_id = ? AND topic_id = ?)")).
 		WithArgs(int64(11), int64(9)).
 		WillReturnRows(sqlmock.NewRows([]string{"linked"}).AddRow(1))
@@ -825,9 +825,9 @@ func TestRpxMissionPutTxTroubleRollsBack(t *testing.T) {
 	// DELETE dead → rollback.
 	rpxExpectMissionPutPrefix(mock, true)
 	rpxExpectMissionPutStatus(mock)
-	mock.ExpectQuery(q("SELECT name, body FROM missions WHERE id = ? AND school_id = ?")).
+	mock.ExpectQuery(q("SELECT name FROM missions WHERE id = ? AND school_id = ?")).
 		WithArgs(int64(11), int64(1)).
-		WillReturnRows(sqlmock.NewRows([]string{"name", "body"}).AddRow("Misi 1", "Badan sehat"))
+		WillReturnRows(sqlmock.NewRows([]string{"name"}).AddRow("Misi 1"))
 	mock.ExpectQuery(q("SELECT EXISTS(SELECT 1 FROM mission_topics WHERE mission_id = ? AND topic_id = ?)")).
 		WithArgs(int64(11), int64(9)).
 		WillReturnRows(sqlmock.NewRows([]string{"linked"}).AddRow(1))
@@ -842,9 +842,9 @@ func TestRpxMissionPutTxTroubleRollsBack(t *testing.T) {
 	// INSERT dead → rollback.
 	rpxExpectMissionPutPrefix(mock, true)
 	rpxExpectMissionPutStatus(mock)
-	mock.ExpectQuery(q("SELECT name, body FROM missions WHERE id = ? AND school_id = ?")).
+	mock.ExpectQuery(q("SELECT name FROM missions WHERE id = ? AND school_id = ?")).
 		WithArgs(int64(11), int64(1)).
-		WillReturnRows(sqlmock.NewRows([]string{"name", "body"}).AddRow("Misi 1", "Badan sehat"))
+		WillReturnRows(sqlmock.NewRows([]string{"name"}).AddRow("Misi 1"))
 	mock.ExpectQuery(q("SELECT EXISTS(SELECT 1 FROM mission_topics WHERE mission_id = ? AND topic_id = ?)")).
 		WithArgs(int64(11), int64(9)).
 		WillReturnRows(sqlmock.NewRows([]string{"linked"}).AddRow(1))
@@ -853,7 +853,7 @@ func TestRpxMissionPutTxTroubleRollsBack(t *testing.T) {
 	mock.ExpectExec(q("DELETE FROM report_missions")).
 		WithArgs(int64(2), int64(5), int64(30)).WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(q("INSERT INTO report_missions")).
-		WithArgs(int64(2), int64(5), int64(30), int64(11), "Misi 1", "Badan sehat", int64(1)).
+		WithArgs(int64(2), int64(5), int64(30), int64(11), "Misi 1", int64(1)).
 		WillReturnError(errors.New("connection refused"))
 	mock.ExpectRollback()
 	res = jsonReq(t, app, "PUT", missionPutPath, map[string]any{"mission_ids": []int64{11}}, h)
@@ -871,9 +871,9 @@ func TestRpxMissionPutStatusRaceRollsBack(t *testing.T) {
 
 	rpxExpectMissionPutPrefix(mock, true)
 	rpxExpectMissionPutStatus(mock) // pre-read: still writable (gate order intact)
-	mock.ExpectQuery(q("SELECT name, body FROM missions WHERE id = ? AND school_id = ?")).
+	mock.ExpectQuery(q("SELECT name FROM missions WHERE id = ? AND school_id = ?")).
 		WithArgs(int64(11), int64(1)).
-		WillReturnRows(sqlmock.NewRows([]string{"name", "body"}).AddRow("Misi 1", "Badan sehat"))
+		WillReturnRows(sqlmock.NewRows([]string{"name"}).AddRow("Misi 1"))
 	mock.ExpectQuery(q("SELECT EXISTS(SELECT 1 FROM mission_topics WHERE mission_id = ? AND topic_id = ?)")).
 		WithArgs(int64(11), int64(9)).
 		WillReturnRows(sqlmock.NewRows([]string{"linked"}).AddRow(1))
@@ -2410,7 +2410,7 @@ func TestRpxMissionPutLookupAndCommitFailures(t *testing.T) {
 	// Mission lookup dead → DB_UNAVAILABLE.
 	rpxExpectMissionPutPrefix(mock, true)
 	rpxExpectMissionPutStatus(mock)
-	mock.ExpectQuery(q("SELECT name, body FROM missions WHERE id = ? AND school_id = ?")).
+	mock.ExpectQuery(q("SELECT name FROM missions WHERE id = ? AND school_id = ?")).
 		WithArgs(int64(11), int64(1)).WillReturnError(errors.New("connection refused"))
 	requireErrEnvelope(t,
 		jsonReq(t, app, "PUT", missionPutPath, map[string]any{"mission_ids": []int64{11}}, h),
@@ -2419,9 +2419,9 @@ func TestRpxMissionPutLookupAndCommitFailures(t *testing.T) {
 	// Topic-link probe dead → DB_UNAVAILABLE.
 	rpxExpectMissionPutPrefix(mock, true)
 	rpxExpectMissionPutStatus(mock)
-	mock.ExpectQuery(q("SELECT name, body FROM missions WHERE id = ? AND school_id = ?")).
+	mock.ExpectQuery(q("SELECT name FROM missions WHERE id = ? AND school_id = ?")).
 		WithArgs(int64(11), int64(1)).
-		WillReturnRows(sqlmock.NewRows([]string{"name", "body"}).AddRow("Misi 1", "Badan sehat"))
+		WillReturnRows(sqlmock.NewRows([]string{"name"}).AddRow("Misi 1"))
 	mock.ExpectQuery(q("SELECT EXISTS(SELECT 1 FROM mission_topics WHERE mission_id = ? AND topic_id = ?)")).
 		WithArgs(int64(11), int64(9)).WillReturnError(errors.New("connection refused"))
 	requireErrEnvelope(t,
@@ -2431,9 +2431,9 @@ func TestRpxMissionPutLookupAndCommitFailures(t *testing.T) {
 	// Dead commit → DB_UNAVAILABLE (the replace never half-applies).
 	rpxExpectMissionPutPrefix(mock, true)
 	rpxExpectMissionPutStatus(mock)
-	mock.ExpectQuery(q("SELECT name, body FROM missions WHERE id = ? AND school_id = ?")).
+	mock.ExpectQuery(q("SELECT name FROM missions WHERE id = ? AND school_id = ?")).
 		WithArgs(int64(11), int64(1)).
-		WillReturnRows(sqlmock.NewRows([]string{"name", "body"}).AddRow("Misi 1", "Badan sehat"))
+		WillReturnRows(sqlmock.NewRows([]string{"name"}).AddRow("Misi 1"))
 	mock.ExpectQuery(q("SELECT EXISTS(SELECT 1 FROM mission_topics WHERE mission_id = ? AND topic_id = ?)")).
 		WithArgs(int64(11), int64(9)).
 		WillReturnRows(sqlmock.NewRows([]string{"linked"}).AddRow(1))
@@ -2442,7 +2442,7 @@ func TestRpxMissionPutLookupAndCommitFailures(t *testing.T) {
 	mock.ExpectExec(q("DELETE FROM report_missions")).
 		WithArgs(int64(2), int64(5), int64(30)).WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(q("INSERT INTO report_missions")).
-		WithArgs(int64(2), int64(5), int64(30), int64(11), "Misi 1", "Badan sehat", int64(1)).
+		WithArgs(int64(2), int64(5), int64(30), int64(11), "Misi 1", int64(1)).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit().WillReturnError(errors.New("connection refused"))
 	requireErrEnvelope(t,

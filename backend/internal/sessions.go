@@ -2862,21 +2862,20 @@ type copyMissionRow struct {
 	topicID   int64
 	missionID int64
 	name      string
-	body      string
 }
 
 // copyMissions copies picks only when the target topic has zero picks AND
 // each mission still links that topic (mission_topics, master topic id).
 func copyMissions(ctx context.Context, tx *sql.Tx, job copyJob, maps *copyMaps) (int, int, error) {
 	return copyCategory(ctx, tx,
-		`SELECT st.topic_id, rm.mission_id, rm.mission_name_snap, rm.mission_body_snap
+		`SELECT st.topic_id, rm.mission_id, rm.mission_name_snap
 		 FROM report_missions rm
 		 JOIN session_topics st ON st.id = rm.session_topic_id
 		 WHERE rm.session_id = ? AND rm.child_id = ?`,
 		[]any{job.srcSID, job.cid},
 		func(rows *sql.Rows) (copyMissionRow, error) {
 			var r copyMissionRow
-			err := rows.Scan(&r.topicID, &r.missionID, &r.name, &r.body)
+			err := rows.Scan(&r.topicID, &r.missionID, &r.name)
 			return r, err
 		},
 		`SELECT session_topic_id FROM report_missions
@@ -2900,9 +2899,9 @@ func copyMissions(ctx context.Context, tx *sql.Tx, job copyJob, maps *copyMaps) 
 			if _, err := tx.ExecContext(ctx,
 				`INSERT INTO report_missions
 				 (session_id, session_topic_id, child_id, mission_id,
-				  mission_name_snap, mission_body_snap, school_id)
-				 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-				job.dstSID, dst, job.cid, r.missionID, r.name, r.body, job.school); err != nil {
+				  mission_name_snap, school_id)
+				 VALUES (?, ?, ?, ?, ?, ?)`,
+				job.dstSID, dst, job.cid, r.missionID, r.name, job.school); err != nil {
 				if isDuplicateErr(err) {
 					return false, nil
 				}

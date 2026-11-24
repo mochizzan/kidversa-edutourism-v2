@@ -359,8 +359,8 @@ verification items tracked under decision 72). Every API assertion below means H
   refresh rotation against an inactive school → revoke + clear +
   200 `SCHOOL_INACTIVE` (decision 55).
 - Given a mission in the bank edited after being picked When the report
-  link is opened Then the report shows the CURRENT bank name/body
-  (decision 56 — snaps are history-only).
+  link is opened Then the report shows the CURRENT bank name
+  (decision 56 — the snap is history-only; missions have no body).
 - Given a program/topic `is_active=false` or without ≥1×1 activity When
   the session-create picker opens Then the entry is DISABLED with
   reason (decision 57); direct API create → 200 `PROGRAM_INCOMPLETE`.

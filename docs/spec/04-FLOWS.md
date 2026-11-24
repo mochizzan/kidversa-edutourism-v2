@@ -154,10 +154,10 @@ admin B sees admin A's new program without reload (the motivating case).
 
 ## FL-05 Mission bank + Frame [ADMIN/SA]
 
-Mission `POST /api/missions {program*,name*,body*,topic_ids[1+]}` (same
+Mission `POST /api/missions {program*,name*,topic_ids[1+]}` (same
 school). Frame `POST /api/frames` multipart (JPG/JPEG/PNG/WebP ≤50 MB — client side validation only, Pembaruan 2026-10-11) + `name*` + `program_ids[1+]` → `uploads/frames/<school_id>/` (decision 33, school-di-luar — canonical in 05§8).
-Both LIVE (resolved at pick/capture; mission name/body render LIVE from
-the bank — `report_missions` snaps are history-only, decision 56). Update/delete follow the master shape (`PATCH` validates same rules → 200 `VALIDATION` on empty name (format/size = client side only, Pembaruan 2026-10-11); unknown/cross-school id → 200 `NOT_FOUND`; terminal = updated row or deleted + file swept). Realtime (round 7):
+Both LIVE (resolved at pick/capture; mission name renders LIVE from
+the bank — `report_missions` snap is history-only, decision 56). Update/delete follow the master shape (`PATCH` validates same rules → 200 `VALIDATION` on empty name (format/size = client side only, Pembaruan 2026-10-11); unknown/cross-school id → 200 `NOT_FOUND`; terminal = updated row or deleted + file swept). Realtime (round 7):
 mission/frame CRUD publishes `mission.changed` / `frame.changed`; open
 pickers + capture frame lists refetch.
 

@@ -5,18 +5,20 @@
  * id asc; any change resets page=1), SSE `mission.changed` → same-params
  * refetch via `registerRefetch` (StreamGate owns debounce + rev-gate; no
  * polling), create/edit modal, typed-text delete. No is_active, no badge and
- * no sort_order field on this entity. Topic links are cross-program by
- * contract: the form's topic picker uses ALL school topics labelled
- * `topic · program` so same-named topics across programs stay
- * distinguishable, and `topic_ids` replaces the whole link set on PATCH.
+ * no sort_order field on this entity. A mission is its name only — the report
+ * renders exactly that name, so the form shows a small report preview instead
+ * of a separate body field. Topic links are cross-program by contract: the
+ * form's topic picker uses ALL school topics labelled `topic · program` so
+ * same-named topics across programs stay distinguishable, and `topic_ids`
+ * replaces the whole link set on PATCH.
  *
  * Wire contract (B1, 2026-10-09): GET `/api/missions` = {page, per_page, q,
- * program_id, topic_id, sort, dir}. POST = JSON {program_id, name, body,
- * topic_ids} (≥1 topic, same school — server rejects foreign ids with
- * NOT_FOUND). PATCH sends {program_id, name, body, topic_ids} — program_id IS
- * editable here (unlike activities/topics). DELETE `/api/missions/:id`.
- * Errors branch on `ApiError.code` — NOT_FOUND/VALIDATION show inline in the
- * modal, row-action failures toast `errors.<CODE>`.
+ * program_id, topic_id, sort, dir}. POST = JSON {program_id, name, topic_ids}
+ * (≥1 topic, same school — server rejects foreign ids with NOT_FOUND). PATCH
+ * sends {program_id, name, topic_ids} — program_id IS editable here (unlike
+ * activities/topics). DELETE `/api/missions/:id`. Errors branch on
+ * `ApiError.code` — NOT_FOUND/VALIDATION show inline in the modal, row-action
+ * failures toast `errors.<CODE>`.
  */
 import { useEffect, useState } from 'react'
 import {
@@ -43,7 +45,7 @@ import RefreshButton from '../../components/RefreshButton'
 import StatusPill from '../../components/StatusPill'
 import { useErrorToast } from '../../lib/errors'
 import { useFeedback } from '../../lib/feedback'
-import { MAX_NOTE, MAX_SHORT_TEXT, toValueRule } from '../../lib/validation'
+import { MAX_SHORT_TEXT, toValueRule } from '../../lib/validation'
 import {
   usePagedList,
   useProgramOptions,
@@ -61,7 +63,6 @@ interface Mission {
   program_id: number
   program_name: string
   name: string
-  body: string | null
   topics: MissionTopic[]
 }
 
@@ -70,7 +71,6 @@ const DEFAULT_SORT: ListParams = { sort: 'id', dir: 'asc' }
 interface MissionFormValues {
   program_id?: number
   name?: string
-  body?: string
   topic_ids?: number[]
 }
 
@@ -95,6 +95,7 @@ function MissionForm({
   const { t } = useTranslation(['master', 'common'])
   const feedback = useFeedback()
   const [form] = Form.useForm<MissionFormValues>()
+  const missionName = Form.useWatch('name', form)
   const [saving, setSaving] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   // No argument = ALL school topics (cross-program links allowed by B1);
@@ -120,7 +121,6 @@ function MissionForm({
       form.setFieldsValue({
         program_id: record.program_id,
         name: record.name,
-        body: record.body ?? '',
         topic_ids: record.topics.map((topic) => topic.topic_id),
       })
     } else if (programFilter != null) {
@@ -132,12 +132,11 @@ function MissionForm({
     setSaving(true)
     setSubmitError(null)
     try {
-      // PATCH sends the same four keys (program_id IS editable; topic_ids
+      // PATCH sends the same three keys (program_id IS editable; topic_ids
       // replaces the whole link set); POST is identical in shape.
       const body = {
         program_id: values.program_id as number,
         name: (values.name ?? '').trim(),
-        body: (values.body ?? '').trim(),
         topic_ids: values.topic_ids ?? [],
       }
       if (record) {
@@ -180,18 +179,7 @@ function MissionForm({
         />
       ) : null}
       <Form form={form} layout="vertical" onFinish={onFinish} scrollToFirstError>
-        <Form.Item
-          name="program_id"
-          label={t('master:missions.program')}
-          rules={[{ required: true }]}
-        >
-          <Select
-            showSearch
-            optionFilterProp="label"
-            options={programOptions}
-            placeholder={t('master:missions.programPlaceholder')}
-          />
-        </Form.Item>
+        <p className="kv-mission-form__intro">{t('master:missions.formIntro')}</p>
         <Form.Item
           name="name"
           label={t('master:missions.name')}
@@ -199,22 +187,39 @@ function MissionForm({
           rules={[{ required: true }]}
         >
           <Input
+            autoFocus
             maxLength={MAX_SHORT_TEXT}
             showCount
             placeholder={t('master:missions.namePlaceholder')}
           />
         </Form.Item>
+        <div className="kv-mission-preview">
+          <span className="kv-mission-preview__label">
+            {t('master:missions.reportPreview')}
+          </span>
+          <div className="kv-mission-preview__section">
+            {t('master:missions.reportSection')}
+          </div>
+          <ol className="kv-mission-preview__list">
+            <li className={missionName?.trim() ? undefined : 'is-empty'}>
+              {missionName?.trim() || t('master:missions.reportPreviewEmpty')}
+            </li>
+          </ol>
+          <p className="kv-mission-preview__hint">
+            {t('master:missions.reportPreviewHint')}
+          </p>
+        </div>
         <Form.Item
-          name="body"
-          label={t('master:missions.body')}
-          extra={t('master:missions.bodyHint')}
+          name="program_id"
+          label={t('master:missions.program')}
+          extra={t('master:missions.programHint')}
           rules={[{ required: true }]}
         >
-          <Input.TextArea
-            rows={4}
-            maxLength={MAX_NOTE}
-            showCount
-            placeholder={t('master:missions.bodyPlaceholder')}
+          <Select
+            showSearch
+            optionFilterProp="label"
+            options={programOptions}
+            placeholder={t('master:missions.programPlaceholder')}
           />
         </Form.Item>
         <Form.Item
@@ -308,14 +313,6 @@ export default function MissionsPage() {
       dataIndex: 'program_name',
       key: 'program_name',
       width: 180,
-    },
-    {
-      title: t('master:missions.body'),
-      dataIndex: 'body',
-      key: 'body',
-      ellipsis: true,
-      width: 260,
-      render: (value: string | null) => value || '—',
     },
     {
       title: t('master:missions.topics'),
@@ -459,7 +456,7 @@ export default function MissionsPage() {
             columns={columns}
             dataSource={list.rows}
             pagination={false}
-            scroll={{ x: 1000 }}
+            scroll={{ x: 860 }}
             empty={
               <EmptyState
                 title={t('master:empty.missions')}

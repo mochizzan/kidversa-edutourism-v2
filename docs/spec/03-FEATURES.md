@@ -152,11 +152,12 @@ Conventions: `[ROLE: SA/ADMIN/FAS]` = who may use. All school-scoped.
 
 ## F-05 Bank Misi [SA/ADMIN]
 
-- Per-school bank: program*, name*, body*, `topic_ids[1+]` (same school,
-  any program). Editable any time; reports resolve LIVE — the report
-  renders the mission name/body LIVE from the bank at open time
+- Per-school bank: program*, name*, `topic_ids[1+]` (same school,
+  any program). A mission is its name only; the former body field was
+  removed (migration `0005`). Editable any time; reports resolve LIVE —
+  the report renders the mission name LIVE from the bank at open time
   (decision 56: bank edits after pick change what links show; the
-  `report_missions` snaps are history-only), picks (the mission SET)
+  `report_missions` snap is history-only), picks (the mission SET)
   resolve live per child+topic (`report_missions`).
 - Server enforces max 4 per child+topic (`PUT P/missions` with
   `{mission_ids[]}` replaces set in one Tx; 5th → 200 `MISSION_LIMIT`).

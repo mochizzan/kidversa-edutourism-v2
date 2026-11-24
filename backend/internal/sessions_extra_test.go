@@ -3596,7 +3596,7 @@ func SpxCopyCategoriesEmpty(mock sqlmock.Sqlmock, srcSID, cid int64) {
 		WillReturnRows(sqlmock.NewRows([]string{"topic_id", "text", "model", "generated_at"}))
 	mock.ExpectQuery(q("FROM report_missions rm")).
 		WithArgs(srcSID, cid).
-		WillReturnRows(sqlmock.NewRows([]string{"topic_id", "mission_id", "name", "body"}))
+		WillReturnRows(sqlmock.NewRows([]string{"topic_id", "mission_id", "name"}))
 }
 
 // SpxCopyPhotosEmpty queues empty photo lock + source reads.
@@ -3947,8 +3947,8 @@ func TestSpxCopyMapAndCategoryFailuresReleaseClaim(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"topic_id", "text", "model", "generated_at"}))
 		mock.ExpectQuery(q("FROM report_missions rm")).
 			WithArgs(int64(5), int64(30)).
-			WillReturnRows(sqlmock.NewRows([]string{"topic_id", "mission_id", "name", "body"}).
-				AddRow(9, 77, "Misi", "badan misi"))
+			WillReturnRows(sqlmock.NewRows([]string{"topic_id", "mission_id", "name"}).
+				AddRow(9, 77, "Misi"))
 		mock.ExpectQuery(q("SELECT session_topic_id FROM report_missions")).
 			WithArgs(int64(2), int64(30)).
 			WillReturnRows(sqlmock.NewRows([]string{"session_topic_id"}))
@@ -4008,7 +4008,7 @@ func TestSpxCopyExecuteHappyPathLandsPhotos(t *testing.T) {
 	mock.ExpectQuery(q("FROM report_missions rm")).
 		WithArgs(int64(5), int64(30)).
 		WillReturnRows(sqlmock.NewRows([]string{"topic_id", "mission_id",
-			"name", "body"}).AddRow(9, 77, "Misi Konservasi", "badan misi"))
+			"name"}).AddRow(9, 77, "Misi Konservasi"))
 	mock.ExpectQuery(q("SELECT session_topic_id FROM report_missions")).
 		WithArgs(int64(2), int64(30)).
 		WillReturnRows(sqlmock.NewRows([]string{"session_topic_id"}))
@@ -5029,7 +5029,7 @@ func TestSpxCopyDuplicateTolerantInserts(t *testing.T) {
 			mock.ExpectQuery(q("FROM report_missions rm")).
 				WithArgs(int64(5), int64(30)).
 				WillReturnRows(sqlmock.NewRows([]string{"topic_id", "mission_id",
-					"name", "body"}))
+					"name"}))
 		}
 		SpxCopyCategoriesRest()
 		SpxCopyPhotosEmpty(mock, 2, 5, 30)
@@ -5060,7 +5060,7 @@ func TestSpxCopyDuplicateTolerantInserts(t *testing.T) {
 		mock.ExpectQuery(q("FROM report_missions rm")).
 			WithArgs(int64(5), int64(30)).
 			WillReturnRows(sqlmock.NewRows([]string{"topic_id", "mission_id",
-				"name", "body"}).AddRow(9, 77, "Misi", "badan"))
+				"name"}).AddRow(9, 77, "Misi"))
 		mock.ExpectQuery(q("SELECT session_topic_id FROM report_missions")).
 			WithArgs(int64(2), int64(30)).
 			WillReturnRows(sqlmock.NewRows([]string{"session_topic_id"}))
@@ -5096,7 +5096,7 @@ func TestSpxCopyDuplicateTolerantInserts(t *testing.T) {
 		mock.ExpectQuery(q("FROM report_missions rm")).
 			WithArgs(int64(5), int64(30)).
 			WillReturnRows(sqlmock.NewRows([]string{"topic_id", "mission_id",
-				"name", "body"}).AddRow(9, 77, "Misi", "badan"))
+				"name"}).AddRow(9, 77, "Misi"))
 		mock.ExpectQuery(q("SELECT session_topic_id FROM report_missions")).
 			WithArgs(int64(2), int64(30)).
 			WillReturnRows(sqlmock.NewRows([]string{"session_topic_id"}))
@@ -5135,7 +5135,7 @@ func TestSpxCopyDuplicateTolerantInserts(t *testing.T) {
 		mock.ExpectQuery(q("FROM report_missions rm")).
 			WithArgs(int64(5), int64(30)).
 			WillReturnRows(sqlmock.NewRows([]string{"topic_id", "mission_id",
-				"name", "body"}))
+				"name"}))
 		SpxCopyPhotosEmpty(mock, 2, 5, 30)
 		mock.ExpectCommit()
 		SpxIdemRecord(mock, spxCopyRoute, key)
@@ -5196,7 +5196,7 @@ func TestSpxCopyInsertFailuresReleaseClaim(t *testing.T) {
 		mock.ExpectQuery(q("FROM report_missions rm")).
 			WithArgs(int64(5), int64(30)).
 			WillReturnRows(sqlmock.NewRows([]string{"topic_id", "mission_id",
-				"name", "body"}).AddRow(9, 77, "Misi", "badan"))
+				"name"}).AddRow(9, 77, "Misi"))
 		mock.ExpectQuery(q("SELECT session_topic_id FROM report_missions")).
 			WithArgs(int64(2), int64(30)).
 			WillReturnRows(sqlmock.NewRows([]string{"session_topic_id"}))

@@ -120,7 +120,7 @@ func TestMscMissionsGuardFalseBranches(t *testing.T) {
 		// POST: body valid → requireSchool before the program lookup.
 		expectSAAuth(mock, 0)
 		res = jsonReq(t, app, "POST", "/api/missions", map[string]any{
-			"program_id": 3, "name": "Misi", "body": "Badan", "topic_ids": []int64{5},
+			"program_id": 3, "name": "Misi", "topic_ids": []int64{5},
 		}, hSABare(t, s))
 		requireErrEnvelope(t, res, CodeValidation)
 		// PATCH: load never runs without a school.
@@ -142,9 +142,9 @@ func TestMscMissionsListRowsAndLinkFailures(t *testing.T) {
 		expectAdminAuth(mock)
 		mock.ExpectQuery(q(misCountFrag)).WithArgs(int64(1)).
 			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
-		// missionSelect scans 5 columns; 4 make the Scan fail mid-iteration.
+		// missionSelect scans 4 columns; 3 make the Scan fail mid-iteration.
 		mock.ExpectQuery(q(misRowsFrag)).WithArgs(int64(1), 20, 0).
-			WillReturnRows(MscShortRow(4))
+			WillReturnRows(MscShortRow(3))
 		res := doReq(t, app, "GET", "/api/missions", "", hAdmin(t, s))
 		requireErrEnvelope(t, res, CodeDBUnavailable)
 	})
@@ -157,8 +157,8 @@ func TestMscMissionsListRowsAndLinkFailures(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
 		mock.ExpectQuery(q(misRowsFrag)).WithArgs(int64(1), 20, 0).
 			WillReturnRows(MscErrRows(
-				[]string{"id", "program_id", "program_name_snap", "name", "body"},
-				[]any{int64(1), int64(3), "Prog", "Misi", "Badan"}, 0))
+				[]string{"id", "program_id", "program_name_snap", "name"},
+				[]any{int64(1), int64(3), "Prog", "Misi"}, 0))
 		res := doReq(t, app, "GET", "/api/missions", "", hAdmin(t, s))
 		requireErrEnvelope(t, res, CodeDBUnavailable)
 	})
@@ -170,7 +170,7 @@ func TestMscMissionsListRowsAndLinkFailures(t *testing.T) {
 		mock.ExpectQuery(q(misCountFrag)).WithArgs(int64(1)).
 			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
 		mock.ExpectQuery(q(misRowsFrag)).WithArgs(int64(1), 20, 0).
-			WillReturnRows(misRow(1, 3, "Prog", "Misi", "Badan"))
+			WillReturnRows(misRow(1, 3, "Prog", "Misi"))
 		mock.ExpectQuery(q(misLinkSelFrag)).WithArgs(int64(1), int64(1)).
 			WillReturnError(errors.New("dial tcp: connection refused"))
 		res := doReq(t, app, "GET", "/api/missions", "", hAdmin(t, s))
@@ -194,7 +194,7 @@ func TestMscMissionsGetDetailLoadAndLinkFailures(t *testing.T) {
 		app := newTestApp(t, s)
 		expectAdminAuth(mock)
 		mock.ExpectQuery(q(misByIDFrag)).WithArgs(int64(9), int64(1)).
-			WillReturnRows(misRow(9, 3, "Prog", "Misi", "Badan"))
+			WillReturnRows(misRow(9, 3, "Prog", "Misi"))
 		mock.ExpectQuery(q(misLinkSelFrag)).WithArgs(int64(1), int64(9)).
 			WillReturnError(errors.New("dial tcp: connection refused"))
 		res := doReq(t, app, "GET", "/api/missions/9", "", hAdmin(t, s))
@@ -206,7 +206,7 @@ func TestMscMissionsGetDetailLoadAndLinkFailures(t *testing.T) {
 		app := newTestApp(t, s)
 		expectAdminAuth(mock)
 		mock.ExpectQuery(q(misByIDFrag)).WithArgs(int64(9), int64(1)).
-			WillReturnRows(misRow(9, 3, "Prog", "Misi", "Badan"))
+			WillReturnRows(misRow(9, 3, "Prog", "Misi"))
 		// missionTopics scans 3 columns; 2 make the Scan fail.
 		mock.ExpectQuery(q(misLinkSelFrag)).WithArgs(int64(1), int64(9)).
 			WillReturnRows(MscShortRow(2))
@@ -241,7 +241,7 @@ func TestMscMissionsTopicValidationQueryFailures(t *testing.T) {
 			}
 			// No Tx in any branch: the failure answers before begin.
 			res := jsonReq(t, app, "POST", "/api/missions", map[string]any{
-				"program_id": 3, "name": "Misi", "body": "Badan", "topic_ids": []int64{5},
+				"program_id": 3, "name": "Misi", "topic_ids": []int64{5},
 			}, hAdmin(t, s))
 			requireErrEnvelope(t, res, CodeDBUnavailable)
 		})
@@ -255,7 +255,7 @@ func TestMscMissionsCreateProgramLookupFailureIsDBUnavailable(t *testing.T) {
 	mock.ExpectQuery(q(misProgFrag)).WithArgs(int64(3), int64(1)).
 		WillReturnError(errors.New("dial tcp: connection refused"))
 	res := jsonReq(t, app, "POST", "/api/missions", map[string]any{
-		"program_id": 3, "name": "Misi", "body": "Badan", "topic_ids": []int64{5},
+		"program_id": 3, "name": "Misi", "topic_ids": []int64{5},
 	}, hAdmin(t, s))
 	requireErrEnvelope(t, res, CodeDBUnavailable)
 }
@@ -273,7 +273,7 @@ func TestMscMissionsCreateTxFailures(t *testing.T) {
 				AddRow(int64(5), "Topic Membaca"))
 		mock.ExpectBegin().WillReturnError(errors.New("connection refused"))
 		res := jsonReq(t, app, "POST", "/api/missions", map[string]any{
-			"program_id": 3, "name": "Misi", "body": "Badan", "topic_ids": []int64{5},
+			"program_id": 3, "name": "Misi", "topic_ids": []int64{5},
 		}, hAdmin(t, s))
 		requireErrEnvelope(t, res, CodeDBUnavailable)
 	})
@@ -290,14 +290,14 @@ func TestMscMissionsCreateTxFailures(t *testing.T) {
 				AddRow(int64(5), "Topic Membaca"))
 		mock.ExpectBegin()
 		mock.ExpectExec(q(misInsFrag)).
-			WithArgs(int64(1), int64(3), "Progam Literasi", "Misi", "Badan").
+			WithArgs(int64(1), int64(3), "Progam Literasi", "Misi").
 			WillReturnResult(sqlmock.NewResult(21, 1))
 		mock.ExpectExec(q(misInsLinkFrag)).
 			WithArgs(int64(21), int64(5), "Topic Membaca", int64(1)).
 			WillReturnResult(sqlmock.NewResult(0, 1))
 		mock.ExpectCommit().WillReturnError(errors.New("driver: bad connection"))
 		res := jsonReq(t, app, "POST", "/api/missions", map[string]any{
-			"program_id": 3, "name": "Misi", "body": "Badan", "topic_ids": []int64{5},
+			"program_id": 3, "name": "Misi", "topic_ids": []int64{5},
 		}, hAdmin(t, s))
 		requireErrEnvelope(t, res, CodeDBUnavailable)
 	})
@@ -313,7 +313,7 @@ func TestMscMissionsCreateReloadFailuresAfterCommit(t *testing.T) {
 				AddRow(int64(5), "Topic Membaca"))
 		mock.ExpectBegin()
 		mock.ExpectExec(q(misInsFrag)).
-			WithArgs(int64(1), int64(3), "Progam Literasi", "Misi", "Badan").
+			WithArgs(int64(1), int64(3), "Progam Literasi", "Misi").
 			WillReturnResult(sqlmock.NewResult(21, 1))
 		mock.ExpectExec(q(misInsLinkFrag)).
 			WithArgs(int64(21), int64(5), "Topic Membaca", int64(1)).
@@ -321,7 +321,7 @@ func TestMscMissionsCreateReloadFailuresAfterCommit(t *testing.T) {
 		mock.ExpectCommit()
 	}
 	body := map[string]any{
-		"program_id": 3, "name": "Misi", "body": "Badan", "topic_ids": []int64{5},
+		"program_id": 3, "name": "Misi", "topic_ids": []int64{5},
 	}
 
 	t.Run("reload driver error is DB_UNAVAILABLE", func(t *testing.T) {
@@ -352,7 +352,7 @@ func TestMscMissionsCreateReloadFailuresAfterCommit(t *testing.T) {
 		expectAdminAuth(mock)
 		wire(mock)
 		mock.ExpectQuery(q(misByIDFrag)).WithArgs(int64(21), int64(1)).
-			WillReturnRows(misRow(21, 3, "Progam Literasi", "Misi", "Badan"))
+			WillReturnRows(misRow(21, 3, "Progam Literasi", "Misi"))
 		mock.ExpectQuery(q(misLinkSelFrag)).WithArgs(int64(1), int64(21)).
 			WillReturnError(errors.New("dial tcp: connection refused"))
 		res := jsonReq(t, app, "POST", "/api/missions", body, hAdmin(t, s))
@@ -363,7 +363,7 @@ func TestMscMissionsCreateReloadFailuresAfterCommit(t *testing.T) {
 func TestMscMissionsPatchFailureBranches(t *testing.T) {
 	loadCur := func(mock sqlmock.Sqlmock) {
 		mock.ExpectQuery(q(misByIDFrag)).WithArgs(int64(1), int64(1)).
-			WillReturnRows(misRow(1, 1, "Progam Lama", "Misi Lama", "Badan Lama"))
+			WillReturnRows(misRow(1, 1, "Progam Lama", "Misi Lama"))
 	}
 
 	t.Run("load failure is DB_UNAVAILABLE", func(t *testing.T) {
@@ -411,7 +411,7 @@ func TestMscMissionsPatchFailureBranches(t *testing.T) {
 				AddRow(int64(8), "Topic Pagi"))
 		mock.ExpectBegin()
 		mock.ExpectExec(q(misUpdFrag)).
-			WithArgs(int64(1), "Progam Lama", "Misi Lama", "Badan Lama", int64(1), int64(1)).
+			WithArgs(int64(1), "Progam Lama", "Misi Lama", int64(1), int64(1)).
 			WillReturnResult(sqlmock.NewResult(0, 1))
 		mock.ExpectExec(q(misDelLinkFrag)).WithArgs(int64(1), int64(1)).
 			WillReturnError(errors.New("connection reset"))
@@ -432,7 +432,7 @@ func TestMscMissionsPatchFailureBranches(t *testing.T) {
 				AddRow(int64(8), "Topic Pagi"))
 		mock.ExpectBegin()
 		mock.ExpectExec(q(misUpdFrag)).
-			WithArgs(int64(1), "Progam Lama", "Misi Lama", "Badan Lama", int64(1), int64(1)).
+			WithArgs(int64(1), "Progam Lama", "Misi Lama", int64(1), int64(1)).
 			WillReturnResult(sqlmock.NewResult(0, 1))
 		mock.ExpectExec(q(misDelLinkFrag)).WithArgs(int64(1), int64(1)).
 			WillReturnResult(sqlmock.NewResult(0, 3))
@@ -452,7 +452,7 @@ func TestMscMissionsPatchFailureBranches(t *testing.T) {
 		loadCur(mock)
 		mock.ExpectBegin()
 		mock.ExpectExec(q(misUpdFrag)).
-			WithArgs(int64(1), "Progam Lama", "Baru", "Badan Lama", int64(1), int64(1)).
+			WithArgs(int64(1), "Progam Lama", "Baru", int64(1), int64(1)).
 			WillReturnResult(sqlmock.NewResult(0, 1))
 		mock.ExpectCommit().WillReturnError(errors.New("driver: bad connection"))
 		res := jsonReq(t, app, "PATCH", "/api/missions/1",
@@ -467,7 +467,7 @@ func TestMscMissionsPatchFailureBranches(t *testing.T) {
 		loadCur(mock)
 		mock.ExpectBegin()
 		mock.ExpectExec(q(misUpdFrag)).
-			WithArgs(int64(1), "Progam Lama", "Baru", "Badan Lama", int64(1), int64(1)).
+			WithArgs(int64(1), "Progam Lama", "Baru", int64(1), int64(1)).
 			WillReturnResult(sqlmock.NewResult(0, 1))
 		mock.ExpectCommit()
 		mock.ExpectQuery(q(misByIDFrag)).WithArgs(int64(1), int64(1)).
@@ -484,7 +484,7 @@ func TestMscMissionsPatchFailureBranches(t *testing.T) {
 		loadCur(mock)
 		mock.ExpectBegin()
 		mock.ExpectExec(q(misUpdFrag)).
-			WithArgs(int64(1), "Progam Lama", "Baru", "Badan Lama", int64(1), int64(1)).
+			WithArgs(int64(1), "Progam Lama", "Baru", int64(1), int64(1)).
 			WillReturnResult(sqlmock.NewResult(0, 1))
 		mock.ExpectCommit()
 		mock.ExpectQuery(q(misByIDFrag)).WithArgs(int64(1), int64(1)).
@@ -501,11 +501,11 @@ func TestMscMissionsPatchFailureBranches(t *testing.T) {
 		loadCur(mock)
 		mock.ExpectBegin()
 		mock.ExpectExec(q(misUpdFrag)).
-			WithArgs(int64(1), "Progam Lama", "Baru", "Badan Lama", int64(1), int64(1)).
+			WithArgs(int64(1), "Progam Lama", "Baru", int64(1), int64(1)).
 			WillReturnResult(sqlmock.NewResult(0, 1))
 		mock.ExpectCommit()
 		mock.ExpectQuery(q(misByIDFrag)).WithArgs(int64(1), int64(1)).
-			WillReturnRows(misRow(1, 1, "Progam Lama", "Baru", "Badan Lama"))
+			WillReturnRows(misRow(1, 1, "Progam Lama", "Baru"))
 		mock.ExpectQuery(q(misLinkSelFrag)).WithArgs(int64(1), int64(1)).
 			WillReturnError(errors.New("dial tcp: connection refused"))
 		res := jsonReq(t, app, "PATCH", "/api/missions/1",
@@ -517,7 +517,7 @@ func TestMscMissionsPatchFailureBranches(t *testing.T) {
 func TestMscMissionsDeleteFailureBranches(t *testing.T) {
 	loadCur := func(mock sqlmock.Sqlmock) {
 		mock.ExpectQuery(q(misByIDFrag)).WithArgs(int64(1), int64(1)).
-			WillReturnRows(misRow(1, 1, "Progam Lama", "Misi Lama", "Badan Lama"))
+			WillReturnRows(misRow(1, 1, "Progam Lama", "Misi Lama"))
 	}
 
 	t.Run("load failure is DB_UNAVAILABLE", func(t *testing.T) {

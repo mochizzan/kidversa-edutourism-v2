@@ -23,17 +23,17 @@ const (
 	misByIDFrag    = "FROM missions m WHERE m.id = ? AND m.school_id = ?"
 	misProgFrag    = "SELECT name FROM programs WHERE id = ? AND school_id = ?"
 	misLinkSelFrag = "SELECT mission_id, topic_id, topic_name_snap FROM mission_topics"
-	misInsFrag     = "INSERT INTO missions (school_id, program_id, program_name_snap, name, body)"
+	misInsFrag     = "INSERT INTO missions (school_id, program_id, program_name_snap, name)"
 	misInsLinkFrag = "INSERT INTO mission_topics (mission_id, topic_id, topic_name_snap, school_id)"
-	misUpdFrag     = "UPDATE missions SET program_id = ?, program_name_snap = ?, name = ?, body = ?"
+	misUpdFrag     = "UPDATE missions SET program_id = ?, program_name_snap = ?, name = ?"
 	misDelLinkFrag = "DELETE FROM mission_topics WHERE mission_id = ? AND school_id = ?"
 	misDelFrag     = "DELETE FROM missions WHERE id = ? AND school_id = ?"
 )
 
-// misRow builds one missionSelect row (5 columns: missionSelect order).
-func misRow(id, programID int64, programName, name, body string) *sqlmock.Rows {
-	return sqlmock.NewRows([]string{"id", "program_id", "program_name_snap", "name", "body"}).
-		AddRow(id, programID, programName, name, body)
+// misRow builds one missionSelect row (4 columns: missionSelect order).
+func misRow(id, programID int64, programName, name string) *sqlmock.Rows {
+	return sqlmock.NewRows([]string{"id", "program_id", "program_name_snap", "name"}).
+		AddRow(id, programID, programName, name)
 }
 
 // misLinkRows builds one mission_topics link row (3 columns).
@@ -84,8 +84,8 @@ func TestMissionsListDefaultSortTopicsAndItemShape(t *testing.T) {
 	mock.ExpectQuery(q(misCountFrag)).WithArgs(int64(1)).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(2))
 	mock.ExpectQuery(q(misRowsFrag)).WithArgs(int64(1), 20, 0).
-		WillReturnRows(misRow(1, 3, "Progam Literasi", "Misi A", "Badan A").
-			AddRow(2, 3, "Progam Literasi", "Misi B", "Badan B"))
+		WillReturnRows(misRow(1, 3, "Progam Literasi", "Misi A").
+			AddRow(2, 3, "Progam Literasi", "Misi B"))
 	// One link query for the whole page; placeholder list grows per mission id.
 	mock.ExpectQuery(q(misLinkSelFrag)).WithArgs(int64(1), int64(1), int64(2)).
 		WillReturnRows(misLinkRows(1, 5, "Topic Membaca").
@@ -103,9 +103,8 @@ func TestMissionsListDefaultSortTopicsAndItemShape(t *testing.T) {
 	require.Len(t, rows, 2)
 
 	first := rows[0].(map[string]any)
-	require.Len(t, first, 6, "mission item carries exactly the contract fields")
+	require.Len(t, first, 5, "mission item carries exactly the contract fields")
 	require.Equal(t, "Misi A", first["name"])
-	require.Equal(t, "Badan A", first["body"])
 	require.Equal(t, []any{
 		map[string]any{"topic_id": float64(5), "name": "Topic Membaca"},
 		map[string]any{"topic_id": float64(6), "name": "Topic Menulis"},
@@ -126,7 +125,7 @@ func TestMissionsListEmptyPageSkipsLinkQuery(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
 	mock.ExpectQuery(q(misRowsFrag)).WithArgs(int64(1), 20, 0).
 		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "program_id", "program_name_snap", "name", "body",
+			"id", "program_id", "program_name_snap", "name",
 		}))
 	// missionTopics early-returns on zero ids: NO link query at all — a stray
 	// expectation-free query fails the mock.
@@ -206,7 +205,7 @@ func TestMissionsListFiltersAndSort(t *testing.T) {
 			mock.ExpectQuery(q(tc.countFrag)).WithArgs(tc.countArgs...).
 				WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
 			mock.ExpectQuery(q(tc.rowsFrag)).WithArgs(tc.rowsArgs...).
-				WillReturnRows(misRow(11, 3, "Progam Literasi", "Misi Sebelas", "Badan"))
+				WillReturnRows(misRow(11, 3, "Progam Literasi", "Misi Sebelas"))
 			mock.ExpectQuery(q(misLinkSelFrag)).WithArgs(int64(1), int64(11)).
 				WillReturnRows(sqlmock.NewRows([]string{
 					"mission_id", "topic_id", "topic_name_snap",
@@ -278,11 +277,10 @@ func TestMissionsCreateRejectsInvalidPayloadBeforeAnySQL(t *testing.T) {
 		name string
 		body map[string]any
 	}{
-		{"program_id zero", map[string]any{"program_id": 0, "name": "Misi", "body": "Badan", "topic_ids": []int64{5}}},
-		{"program_id missing", map[string]any{"name": "Misi", "body": "Badan", "topic_ids": []int64{5}}},
-		{"blank name", map[string]any{"program_id": 3, "name": "  ", "body": "Badan", "topic_ids": []int64{5}}},
-		{"name over 200", map[string]any{"program_id": 3, "name": strings.Repeat("m", 201), "body": "Badan", "topic_ids": []int64{5}}},
-		{"blank body", map[string]any{"program_id": 3, "name": "Misi", "body": "   ", "topic_ids": []int64{5}}},
+		{"program_id zero", map[string]any{"program_id": 0, "name": "Misi", "topic_ids": []int64{5}}},
+		{"program_id missing", map[string]any{"name": "Misi", "topic_ids": []int64{5}}},
+		{"blank name", map[string]any{"program_id": 3, "name": "  ", "topic_ids": []int64{5}}},
+		{"name over 200", map[string]any{"program_id": 3, "name": strings.Repeat("m", 201), "topic_ids": []int64{5}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			expectAdminAuth(mock) // guard only — no program lookup may follow
@@ -301,7 +299,7 @@ func TestMissionsCreateUnknownProgramIsNotFound(t *testing.T) {
 		WillReturnError(sql.ErrNoRows)
 
 	res := jsonReq(t, app, "POST", "/api/missions",
-		map[string]any{"program_id": 404, "name": "Misi", "body": "Badan",
+		map[string]any{"program_id": 404, "name": "Misi",
 			"topic_ids": []int64{5}}, hAdmin(t, s))
 	requireErrEnvelope(t, res, CodeNotFound)
 }
@@ -325,7 +323,7 @@ func TestMissionsCreateRejectsMissingTopicIDsAfterProgramLookup(t *testing.T) {
 			mock.ExpectQuery(q(misProgFrag)).WithArgs(int64(3), int64(1)).
 				WillReturnRows(sqlmock.NewRows([]string{"name"}).AddRow("Progam Literasi"))
 			// validateMissionTopics rejects before the topics SELECT: no Tx, no INSERT.
-			body := map[string]any{"program_id": 3, "name": "Misi", "body": "Badan"}
+			body := map[string]any{"program_id": 3, "name": "Misi"}
 			if !tc.omit {
 				body["topic_ids"] = tc.ids
 			}
@@ -352,7 +350,7 @@ func TestMissionsCreateDedupesTopicsAndPublishes(t *testing.T) {
 			AddRow(int64(6), "Topic Menulis"))
 	mock.ExpectBegin()
 	mock.ExpectExec(q(misInsFrag)).
-		WithArgs(int64(1), int64(3), "Progam Literasi", "Misi Baru", "Badan misi").
+		WithArgs(int64(1), int64(3), "Progam Literasi", "Misi Baru").
 		WillReturnResult(sqlmock.NewResult(21, 1))
 	// Exactly TWO link INSERTs — an undeduped third would fail the mock.
 	mock.ExpectExec(q(misInsLinkFrag)).
@@ -363,19 +361,18 @@ func TestMissionsCreateDedupesTopicsAndPublishes(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 	mock.ExpectQuery(q(misByIDFrag)).WithArgs(int64(21), int64(1)).
-		WillReturnRows(misRow(21, 3, "Progam Literasi", "Misi Baru", "Badan misi"))
+		WillReturnRows(misRow(21, 3, "Progam Literasi", "Misi Baru"))
 	mock.ExpectQuery(q(misLinkSelFrag)).WithArgs(int64(1), int64(21)).
 		WillReturnRows(misLinkRows(21, 5, "Topic Membaca").
 			AddRow(21, 6, "Topic Menulis"))
 
 	res := jsonReq(t, app, "POST", "/api/missions", map[string]any{
-		"program_id": 3, "name": "  Misi Baru  ", "body": "Badan misi",
+		"program_id": 3, "name": "  Misi Baru  ",
 		"topic_ids": []int64{5, 5, 6},
 	}, hAdmin(t, s))
 	mission := requireDataEnvelope(t, res).(map[string]any)["mission"].(map[string]any)
 	require.Equal(t, float64(21), mission["id"])
 	require.Equal(t, "Misi Baru", mission["name"], "name trimmed before persist")
-	require.Equal(t, "Badan misi", mission["body"])
 	require.Equal(t, []any{
 		map[string]any{"topic_id": float64(5), "name": "Topic Membaca"},
 		map[string]any{"topic_id": float64(6), "name": "Topic Menulis"},
@@ -402,7 +399,7 @@ func TestMissionsCreateUnknownTopicIsNotFoundWithoutTx(t *testing.T) {
 			AddRow(int64(5), "Topic Membaca"))
 
 	res := jsonReq(t, app, "POST", "/api/missions", map[string]any{
-		"program_id": 3, "name": "Misi", "body": "Badan", "topic_ids": []int64{5, 9},
+		"program_id": 3, "name": "Misi", "topic_ids": []int64{5, 9},
 	}, hAdmin(t, s))
 	requireErrEnvelope(t, res, CodeNotFound)
 }
@@ -420,12 +417,12 @@ func TestMissionsCreateInsertFailureIsDBUnavailable(t *testing.T) {
 			AddRow(int64(5), "Topic Membaca"))
 	mock.ExpectBegin()
 	mock.ExpectExec(q(misInsFrag)).
-		WithArgs(int64(1), int64(3), "Progam Literasi", "Misi", "Badan").
+		WithArgs(int64(1), int64(3), "Progam Literasi", "Misi").
 		WillReturnError(errors.New("disk full"))
 	mock.ExpectRollback()
 
 	res := jsonReq(t, app, "POST", "/api/missions", map[string]any{
-		"program_id": 3, "name": "Misi", "body": "Badan", "topic_ids": []int64{5},
+		"program_id": 3, "name": "Misi", "topic_ids": []int64{5},
 	}, hAdmin(t, s))
 	requireErrEnvelope(t, res, CodeDBUnavailable)
 }
@@ -443,7 +440,7 @@ func TestMissionsCreateLinkInsertFailureRollsBack(t *testing.T) {
 			AddRow(int64(5), "Topic Membaca"))
 	mock.ExpectBegin()
 	mock.ExpectExec(q(misInsFrag)).
-		WithArgs(int64(1), int64(3), "Progam Literasi", "Misi", "Badan").
+		WithArgs(int64(1), int64(3), "Progam Literasi", "Misi").
 		WillReturnResult(sqlmock.NewResult(22, 1))
 	mock.ExpectExec(q(misInsLinkFrag)).
 		WithArgs(int64(22), int64(5), "Topic Membaca", int64(1)).
@@ -451,7 +448,7 @@ func TestMissionsCreateLinkInsertFailureRollsBack(t *testing.T) {
 	mock.ExpectRollback()
 
 	res := jsonReq(t, app, "POST", "/api/missions", map[string]any{
-		"program_id": 3, "name": "Misi", "body": "Badan", "topic_ids": []int64{5},
+		"program_id": 3, "name": "Misi", "topic_ids": []int64{5},
 	}, hAdmin(t, s))
 	requireErrEnvelope(t, res, CodeDBUnavailable)
 }
@@ -466,7 +463,7 @@ func TestMissionsGetDetail(t *testing.T) {
 		app := newTestApp(t, s)
 		expectAdminAuth(mock)
 		mock.ExpectQuery(q(misByIDFrag)).WithArgs(int64(9), int64(1)).
-			WillReturnRows(misRow(9, 3, "Progam Literasi", "Misi Sembilan", "Badan sembilan"))
+			WillReturnRows(misRow(9, 3, "Progam Literasi", "Misi Sembilan"))
 		mock.ExpectQuery(q(misLinkSelFrag)).WithArgs(int64(1), int64(9)).
 			WillReturnRows(misLinkRows(9, 5, "Topic Membaca"))
 
@@ -507,13 +504,12 @@ func TestMissionsPatchRejectsInvalidFieldsAfterLoad(t *testing.T) {
 	}{
 		{"blank name", map[string]any{"name": "   "}},
 		{"name over 200", map[string]any{"name": strings.Repeat("m", 201)}},
-		{"blank body", map[string]any{"body": "   "}},
 		{"program_id zero", map[string]any{"program_id": 0}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			expectAdminAuth(mock)
 			mock.ExpectQuery(q(misByIDFrag)).WithArgs(int64(1), int64(1)).
-				WillReturnRows(misRow(1, 1, "Progam Lama", "Misi Lama", "Badan Lama"))
+				WillReturnRows(misRow(1, 1, "Progam Lama", "Misi Lama"))
 			// No UPDATE/Tx: a stray write fails the mock.
 			res := jsonReq(t, app, "PATCH", "/api/missions/1", tc.body, h)
 			requireErrEnvelope(t, res, CodeValidation)
@@ -541,7 +537,7 @@ func TestMissionsPatchProgramReassignUnknownIsNotFoundWithoutTx(t *testing.T) {
 
 	expectAdminAuth(mock)
 	mock.ExpectQuery(q(misByIDFrag)).WithArgs(int64(1), int64(1)).
-		WillReturnRows(misRow(1, 1, "Progam Lama", "Misi Lama", "Badan Lama"))
+		WillReturnRows(misRow(1, 1, "Progam Lama", "Misi Lama"))
 	mock.ExpectQuery(q(misProgFrag)).WithArgs(int64(404), int64(1)).
 		WillReturnError(sql.ErrNoRows)
 
@@ -558,17 +554,17 @@ func TestMissionsPatchProgramReassignRefreshesNameSnap(t *testing.T) {
 
 	expectAdminAuth(mock)
 	mock.ExpectQuery(q(misByIDFrag)).WithArgs(int64(1), int64(1)).
-		WillReturnRows(misRow(1, 1, "Progam Lama", "Misi Lama", "Badan Lama"))
+		WillReturnRows(misRow(1, 1, "Progam Lama", "Misi Lama"))
 	mock.ExpectQuery(q(misProgFrag)).WithArgs(int64(4), int64(1)).
 		WillReturnRows(sqlmock.NewRows([]string{"name"}).AddRow("Progam Baru"))
 	mock.ExpectBegin()
 	mock.ExpectExec(q(misUpdFrag)).
-		WithArgs(int64(4), "Progam Baru", "Misi Lama", "Badan Lama", int64(1), int64(1)).
+		WithArgs(int64(4), "Progam Baru", "Misi Lama", int64(1), int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	// topic_ids absent → topics stays nil → NO link DELETE (stray fails mock).
 	mock.ExpectCommit()
 	mock.ExpectQuery(q(misByIDFrag)).WithArgs(int64(1), int64(1)).
-		WillReturnRows(misRow(1, 4, "Progam Baru", "Misi Lama", "Badan Lama"))
+		WillReturnRows(misRow(1, 4, "Progam Baru", "Misi Lama"))
 	mock.ExpectQuery(q(misLinkSelFrag)).WithArgs(int64(1), int64(1)).
 		WillReturnRows(misLinkRows(1, 5, "Topic Membaca"))
 
@@ -593,14 +589,14 @@ func TestMissionsPatchRelinksTopicsInOneTx(t *testing.T) {
 
 	expectAdminAuth(mock)
 	mock.ExpectQuery(q(misByIDFrag)).WithArgs(int64(1), int64(1)).
-		WillReturnRows(misRow(1, 1, "Progam Lama", "Misi Lama", "Badan Lama"))
+		WillReturnRows(misRow(1, 1, "Progam Lama", "Misi Lama"))
 	mock.ExpectQuery(q("SELECT id, name FROM topics WHERE school_id = ? AND id IN (?)")).
 		WithArgs(int64(1), int64(8)).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "name"}).
 			AddRow(int64(8), "Topic Pagi"))
 	mock.ExpectBegin()
 	mock.ExpectExec(q(misUpdFrag)).
-		WithArgs(int64(1), "Progam Lama", "Misi Baru", "Badan Lama", int64(1), int64(1)).
+		WithArgs(int64(1), "Progam Lama", "Misi Baru", int64(1), int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	// topic_ids present → whole link set replaced: DELETE then one INSERT.
 	mock.ExpectExec(q(misDelLinkFrag)).WithArgs(int64(1), int64(1)).
@@ -610,7 +606,7 @@ func TestMissionsPatchRelinksTopicsInOneTx(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 	mock.ExpectQuery(q(misByIDFrag)).WithArgs(int64(1), int64(1)).
-		WillReturnRows(misRow(1, 1, "Progam Lama", "Misi Baru", "Badan Lama"))
+		WillReturnRows(misRow(1, 1, "Progam Lama", "Misi Baru"))
 	mock.ExpectQuery(q(misLinkSelFrag)).WithArgs(int64(1), int64(1)).
 		WillReturnRows(misLinkRows(1, 8, "Topic Pagi"))
 
@@ -619,7 +615,6 @@ func TestMissionsPatchRelinksTopicsInOneTx(t *testing.T) {
 	}, hAdmin(t, s))
 	mission := requireDataEnvelope(t, res).(map[string]any)["mission"].(map[string]any)
 	require.Equal(t, "Misi Baru", mission["name"], "name trimmed before persist")
-	require.Equal(t, "Badan Lama", mission["body"], "body untouched without a body field")
 	require.Equal(t, []any{
 		map[string]any{"topic_id": float64(8), "name": "Topic Pagi"},
 	}, mission["topics"])
@@ -645,7 +640,7 @@ func TestMissionsPatchTopicIDSGatesBeforeTx(t *testing.T) {
 
 			expectAdminAuth(mock)
 			mock.ExpectQuery(q(misByIDFrag)).WithArgs(int64(1), int64(1)).
-				WillReturnRows(misRow(1, 1, "Progam Lama", "Misi Lama", "Badan Lama"))
+				WillReturnRows(misRow(1, 1, "Progam Lama", "Misi Lama"))
 			if tc.code == CodeNotFound {
 				// Only the unknown-topic case reaches the topics SELECT.
 				mock.ExpectQuery(q("SELECT id, name FROM topics WHERE school_id = ? AND id IN (?)")).
@@ -666,10 +661,10 @@ func TestMissionsPatchUpdateFailureRollsBack(t *testing.T) {
 
 	expectAdminAuth(mock)
 	mock.ExpectQuery(q(misByIDFrag)).WithArgs(int64(1), int64(1)).
-		WillReturnRows(misRow(1, 1, "Progam Lama", "Misi Lama", "Badan Lama"))
+		WillReturnRows(misRow(1, 1, "Progam Lama", "Misi Lama"))
 	mock.ExpectBegin()
 	mock.ExpectExec(q(misUpdFrag)).
-		WithArgs(int64(1), "Progam Lama", "Misi Baru", "Badan Lama", int64(1), int64(1)).
+		WithArgs(int64(1), "Progam Lama", "Misi Baru", int64(1), int64(1)).
 		WillReturnError(errors.New("connection refused"))
 	mock.ExpectRollback()
 
@@ -690,7 +685,7 @@ func TestMissionsDeleteRunsOneTxAndPublishes(t *testing.T) {
 
 	expectAdminAuth(mock)
 	mock.ExpectQuery(q(misByIDFrag)).WithArgs(int64(1), int64(1)).
-		WillReturnRows(misRow(1, 1, "Progam Lama", "Misi Lama", "Badan Lama"))
+		WillReturnRows(misRow(1, 1, "Progam Lama", "Misi Lama"))
 	mock.ExpectBegin()
 	mock.ExpectExec(q(misDelLinkFrag)).WithArgs(int64(1), int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 3))
@@ -728,7 +723,7 @@ func TestMissionsDeleteRowFailureRollsBack(t *testing.T) {
 
 	expectAdminAuth(mock)
 	mock.ExpectQuery(q(misByIDFrag)).WithArgs(int64(1), int64(1)).
-		WillReturnRows(misRow(1, 1, "Progam Lama", "Misi Lama", "Badan Lama"))
+		WillReturnRows(misRow(1, 1, "Progam Lama", "Misi Lama"))
 	mock.ExpectBegin()
 	mock.ExpectExec(q(misDelLinkFrag)).WithArgs(int64(1), int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 3))

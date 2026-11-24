@@ -86,7 +86,7 @@ describe('report view sections', () => {
     expect(screen.getByText('Kelompok Merah')).toBeInTheDocument()
   })
 
-  it('renders out-of-range stars and body-less missions as em dashes', () => {
+  it('renders out-of-range stars and mission names without a description tail', () => {
     render(
       <ReportView
         data={reportData({
@@ -94,15 +94,16 @@ describe('report view sections', () => {
             { said: 10, activity_name: 'Mengamati motif', indicator: 'X', stars: 0, note: '' },
             { said: 11, activity_name: 'Menggambar motif', indicator: 'Y', stars: 5, note: '' },
           ],
-          missions: [{ mission_id: 1, name: 'Kumpulkan 5 motif', body: '' }],
+          missions: [{ mission_id: 1, name: 'Kumpulkan 5 motif' }],
         })}
       />,
     )
     // Neither 0 nor 5 maps to a star label — the cell falls back to em dash.
     expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(2)
-    // A body-less mission renders its name without the " — body" tail.
-    screen.getByText('Kumpulkan 5 motif')
-    expect(screen.queryByText(/— Foto motif di rumah/)).toBeNull()
+    // The mission line carries exactly the name; the report has no body slot.
+    expect(screen.getByText('Kumpulkan 5 motif').closest('li')).toHaveTextContent(
+      /^Kumpulkan 5 motif$/,
+    )
   })
 
   it('the incomplete banner without missing rows ends with a bare period', () => {

@@ -18,11 +18,11 @@ import { ok, paged } from '../../test/handlers'
 const P = '/api/sessions/1/topics/3/children/2'
 
 const BANK = [
-  { id: 1, name: 'Misi Satu', body: 'Body satu' },
-  { id: 2, name: 'Misi Dua', body: 'Body dua' },
-  { id: 3, name: 'Misi Tiga', body: 'Body tiga' },
-  { id: 4, name: 'Misi Empat', body: 'Body empat' },
-  { id: 5, name: 'Misi Lima', body: 'Body lima' },
+  { id: 1, name: 'Misi Satu' },
+  { id: 2, name: 'Misi Dua' },
+  { id: 3, name: 'Misi Tiga' },
+  { id: 4, name: 'Misi Empat' },
+  { id: 5, name: 'Misi Lima' },
 ]
 
 function bankHandler(rows = BANK) {
@@ -41,20 +41,18 @@ describe('mission panel', () => {
     await screen.findByText('Belum ada misi terpilih.')
   })
 
-  it('lists picked missions with name and body', async () => {
+  it('lists picked missions by name only', async () => {
     server.use(
-      http.get(`${P}/missions`, () =>
-        ok([{ mission_id: 21, name: 'Misi Alpha', body: 'Body alpha' }]),
-      ),
+      http.get(`${P}/missions`, () => ok([{ mission_id: 21, name: 'Misi Alpha' }])),
     )
     renderApp(<MissionPanel prefix={P} masterTopicId={9} />)
 
-    await screen.findByText(/Misi Alpha/)
-    screen.getByText(/Body alpha/)
+    await screen.findByText('Misi Alpha')
+    expect(screen.queryByText(/Body alpha/)).toBeNull()
   })
 
   it('saves a ≤4 selection via the replace-set PUT and refetches', async () => {
-    let picks = [{ mission_id: 21, name: 'Misi Alpha', body: 'Body alpha' }]
+    let picks = [{ mission_id: 21, name: 'Misi Alpha' }]
     let putBody: unknown = null
     server.use(
       http.get(`${P}/missions`, () => ok(picks)),
@@ -62,8 +60,8 @@ describe('mission panel', () => {
       http.put(`${P}/missions`, async ({ request }) => {
         putBody = await request.json()
         picks = [
-          { mission_id: 1, name: 'Misi Satu', body: 'Body satu' },
-          { mission_id: 2, name: 'Misi Dua', body: 'Body dua' },
+          { mission_id: 1, name: 'Misi Satu' },
+          { mission_id: 2, name: 'Misi Dua' },
         ]
         return ok({})
       }),
@@ -115,7 +113,7 @@ describe('mission panel', () => {
     server.use(
       http.get(`${P}/missions`, async () => {
         await gate.promise
-        return ok([{ mission_id: 1, name: 'Misi Satu', body: 'Body satu' }])
+        return ok([{ mission_id: 1, name: 'Misi Satu' }])
       }),
       bankHandler(),
       http.put(`${P}/missions`, async ({ request }) => {
@@ -143,8 +141,8 @@ describe('mission panel', () => {
     server.use(
       http.get(`${P}/missions`, () =>
         ok([
-          { mission_id: 1, name: 'Misi Satu', body: 'Body satu' },
-          { mission_id: 2, name: 'Misi Dua', body: 'Body dua' },
+          { mission_id: 1, name: 'Misi Satu' },
+          { mission_id: 2, name: 'Misi Dua' },
         ]),
       ),
       bankHandler(),

@@ -35,7 +35,7 @@ const PROG2 = programRow(2, 'Petualangan Alam')
 const TOPIC = topicRow(2, 'Batik Nusantara')
 const TOPIC2 = topicRow(3, 'Angklung', { program_id: 2, program_name: 'Petualangan Alam' })
 const MISSION = missionRow(1, 'Misi Baru')
-const MISSION2 = missionRow(2, 'Misi Kosong', { body: null, topics: [] })
+const MISSION2 = missionRow(2, 'Misi Kosong', { topics: [] })
 
 type Json = Record<string, unknown>
 
@@ -124,12 +124,13 @@ describe('mission list cursor', () => {
     renderAs(<MissionsPage />)
 
     expect(await screen.findByText('Misi Baru')).toBeInTheDocument()
-    expect(screen.getByText('Misi Baru — isi misi')).toBeInTheDocument()
     expect(within(rowOf('Misi Baru')).getByText('Eksplorasi Kota')).toBeInTheDocument() // program cell
     expect(within(rowOf('Misi Baru')).getByText('Batik Nusantara')).toBeInTheDocument() // topic tag
     expect(screen.getByText('Misi Kosong')).toBeInTheDocument()
-    // null body + no topic links both render the dash
-    expect(within(rowOf('Misi Kosong')).getAllByText('—')).toHaveLength(2)
+    // No body column survives: a mission is its name only.
+    expect(screen.queryByRole('columnheader', { name: 'Isi misi' })).toBeNull()
+    // No topic links render the dash
+    expect(within(rowOf('Misi Kosong')).getByText('—')).toBeInTheDocument()
 
     expect(list.seen[0].searchParams.get('page')).toBe('1')
     expect(list.seen[0].searchParams.get('per_page')).toBe('20')
@@ -334,17 +335,22 @@ describe('mission create form', () => {
     const initialFetches = list.seen.length
 
     const dialog = await openCreateDialog(user)
+    // The report preview starts with the placeholder — only the name is printed.
+    expect(dialog.querySelector('.kv-mission-preview__list')).toHaveTextContent(
+      'Nama misi tampil di sini.',
+    )
+    expect(within(dialog).queryByLabelText('Isi misi')).toBeNull()
     await user.click(within(dialog).getByRole('button', { name: 'Simpan' }))
     await waitFor(() => expect(fieldItem(dialog, 'Program')).toHaveClass('ant-form-item-has-error'))
     expect(fieldItem(dialog, 'Nama misi')).toHaveClass('ant-form-item-has-error')
-    expect(fieldItem(dialog, 'Isi misi')).toHaveClass('ant-form-item-has-error')
     expect(fieldItem(dialog, 'Tautan topik')).toHaveClass('ant-form-item-has-error')
     expect(create.bodies).toHaveLength(0) // required rules fired client-side
 
     await user.click(formSelect(dialog, 'Program'))
     await user.click(await findOption('Eksplorasi Kota'))
     await user.type(within(dialog).getByLabelText('Nama misi'), 'Misi Baru Baru')
-    await user.type(within(dialog).getByLabelText('Isi misi'), 'Kumpulkan 5 karya')
+    // The preview mirrors the typed name exactly as the report will print it.
+    expect(dialog.querySelector('.kv-mission-preview__list')).toHaveTextContent('Misi Baru Baru')
 
     // the picker carries ALL school topics labelled "<topic> · <program>"
     await user.click(formSelect(dialog, 'Tautan topik'))
@@ -358,7 +364,6 @@ describe('mission create form', () => {
     expect(create.bodies[0]).toEqual({
       program_id: 1,
       name: 'Misi Baru Baru',
-      body: 'Kumpulkan 5 karya',
       topic_ids: [2],
     })
 
@@ -378,7 +383,6 @@ describe('mission create form', () => {
     await user.click(formSelect(dialog, 'Program'))
     await user.click(await findOption('Eksplorasi Kota'))
     await user.type(within(dialog).getByLabelText('Nama misi'), 'Misi Tanpa Topik')
-    await user.type(within(dialog).getByLabelText('Isi misi'), 'Isi misi tanpa tautan')
 
     // select a topic, then remove it again → the link set is empty
     await user.click(formSelect(dialog, 'Tautan topik'))
@@ -415,7 +419,6 @@ describe('mission create form', () => {
     await user.click(formSelect(dialog, 'Program'))
     await user.click(await findOption('Eksplorasi Kota'))
     await user.type(within(dialog).getByLabelText('Nama misi'), 'Misi Tolak')
-    await user.type(within(dialog).getByLabelText('Isi misi'), 'Isi misi tolak')
     await user.click(formSelect(dialog, 'Tautan topik'))
     await user.click(await findOption('Batik Nusantara · Eksplorasi Kota'))
     await collapsePicker(user, dialog, 'Tautan topik')
@@ -429,7 +432,7 @@ describe('mission create form', () => {
 })
 
 describe('mission edit and delete', () => {
-  it('edits via PATCH JSON: program_id editable, same four keys, prefilled form', async () => {
+  it('edits via PATCH JSON: program_id editable, same three keys, prefilled form', async () => {
     const update = recordCall<Json>('patch', '/api/missions/1', (request) => request.json())
     const list = pagedList('/api/missions', [MISSION])
     server.use(list.handler, ...optionHandlers(), update.handler)
@@ -441,7 +444,6 @@ describe('mission edit and delete', () => {
     await user.click(within(rowOf('Misi Baru')).getByRole('button', { name: /Ubah/ }))
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByLabelText('Nama misi')).toHaveValue('Misi Baru')
-    expect(within(dialog).getByLabelText('Isi misi')).toHaveValue('Misi Baru — isi misi')
     expect(within(dialog).getByText('Eksplorasi Kota')).toBeInTheDocument() // prefilled program
     expect(within(dialog).getByText('Batik Nusantara · Eksplorasi Kota')).toBeInTheDocument() // topic_ids tag
 
@@ -456,7 +458,6 @@ describe('mission edit and delete', () => {
     expect(update.bodies[0]).toEqual({
       program_id: 2,
       name: 'Misi Baru 2',
-      body: 'Misi Baru — isi misi',
       topic_ids: [2],
     })
 

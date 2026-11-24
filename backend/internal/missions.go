@@ -19,23 +19,23 @@ type missionTopicRef struct {
 	Name    string `json:"name"` // topic_name_snap
 }
 
-// missionItem is the Mission wire object (contracts-shapes.md).
+// missionItem is the Mission wire object (contracts-shapes.md). A mission is
+// its name only; the report renders that name.
 type missionItem struct {
 	ID          int64             `json:"id"`
 	ProgramID   int64             `json:"program_id"`
 	ProgramName string            `json:"program_name"` // program_name_snap
 	Name        string            `json:"name"`
-	Body        string            `json:"body"`
 	Topics      []missionTopicRef `json:"topics"`
 }
 
-const missionSelect = `SELECT m.id, m.program_id, m.program_name_snap, m.name, m.body FROM missions m `
+const missionSelect = `SELECT m.id, m.program_id, m.program_name_snap, m.name FROM missions m `
 
 func (s *Server) missionItemByID(ctx context.Context, id, school int64) (*missionItem, error) {
 	var it missionItem
 	err := s.db.QueryRowContext(ctx,
 		missionSelect+`WHERE m.id = ? AND m.school_id = ?`, id, school).
-		Scan(&it.ID, &it.ProgramID, &it.ProgramName, &it.Name, &it.Body)
+		Scan(&it.ID, &it.ProgramID, &it.ProgramName, &it.Name)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -199,7 +199,7 @@ func (s *Server) listMissions(c fiber.Ctx) error {
 	var ids []int64
 	for rows.Next() {
 		var it missionItem
-		if err := rows.Scan(&it.ID, &it.ProgramID, &it.ProgramName, &it.Name, &it.Body); err != nil {
+		if err := rows.Scan(&it.ID, &it.ProgramID, &it.ProgramName, &it.Name); err != nil {
 			rows.Close()
 			return failDB(c, err)
 		}
@@ -220,13 +220,12 @@ func (s *Server) listMissions(c fiber.Ctx) error {
 	return okPaged(c, out, p.Page, p.PerPage, total)
 }
 
-// createMission: program* + name* + body* + topic_ids[1+] (same school, any
-// program — F-05); links land in the same Tx as the row.
+// createMission: program* + name* + topic_ids[1+] (same school, any program —
+// F-05); links land in the same Tx as the row.
 func (s *Server) createMission(c fiber.Ctx) error {
 	var req struct {
 		ProgramID int64   `json:"program_id"`
 		Name      string  `json:"name"`
-		Body      string  `json:"body"`
 		TopicIDs  []int64 `json:"topic_ids"`
 	}
 	if !bindBody(c, &req) {
@@ -237,8 +236,7 @@ func (s *Server) createMission(c fiber.Ctx) error {
 		return nil
 	}
 	req.Name = strings.TrimSpace(req.Name)
-	req.Body = strings.TrimSpace(req.Body)
-	if req.ProgramID <= 0 || req.Name == "" || len(req.Name) > maxShortTextLen || req.Body == "" {
+	if req.ProgramID <= 0 || req.Name == "" || len(req.Name) > maxShortTextLen {
 		return fail(c, CodeValidation, MsgValidation)
 	}
 
@@ -264,8 +262,8 @@ func (s *Server) createMission(c fiber.Ctx) error {
 	}
 	defer tx.Rollback()
 	res, err := tx.ExecContext(ctx,
-		`INSERT INTO missions (school_id, program_id, program_name_snap, name, body)
-		 VALUES (?, ?, ?, ?, ?)`, school, req.ProgramID, programName, req.Name, req.Body)
+		`INSERT INTO missions (school_id, program_id, program_name_snap, name)
+		 VALUES (?, ?, ?, ?)`, school, req.ProgramID, programName, req.Name)
 	if err != nil {
 		return failDB(c, err)
 	}
@@ -332,7 +330,6 @@ func (s *Server) patchMission(c fiber.Ctx) error {
 	}
 	var req struct {
 		Name      *string  `json:"name"`
-		Body      *string  `json:"body"`
 		ProgramID *int64   `json:"program_id"`
 		TopicIDs  *[]int64 `json:"topic_ids"`
 	}
@@ -358,13 +355,6 @@ func (s *Server) patchMission(c fiber.Ctx) error {
 	if req.Name != nil {
 		name = strings.TrimSpace(*req.Name)
 		if name == "" || len(name) > maxShortTextLen {
-			return fail(c, CodeValidation, MsgValidation)
-		}
-	}
-	body := cur.Body
-	if req.Body != nil {
-		body = strings.TrimSpace(*req.Body)
-		if body == "" {
 			return fail(c, CodeValidation, MsgValidation)
 		}
 	}
@@ -399,9 +389,9 @@ func (s *Server) patchMission(c fiber.Ctx) error {
 	}
 	defer tx.Rollback()
 	if _, err := tx.ExecContext(ctx,
-		`UPDATE missions SET program_id = ?, program_name_snap = ?, name = ?, body = ?
+		`UPDATE missions SET program_id = ?, program_name_snap = ?, name = ?
 		 WHERE id = ? AND school_id = ?`,
-		programID, programName, name, body, id, school); err != nil {
+		programID, programName, name, id, school); err != nil {
 		return failDB(c, err)
 	}
 	if topics != nil {

@@ -50,15 +50,15 @@ func TestMissionPutReplaceSet(t *testing.T) {
 	mock.ExpectQuery(q("FROM sessions WHERE id = ? AND school_id = ?")).
 		WithArgs(int64(2), int64(1)).WillReturnRows(statusRows("OPENED"))
 	// Each pick must exist in-school and link the topic's master topic.
-	mock.ExpectQuery(q("SELECT name, body FROM missions WHERE id = ? AND school_id = ?")).
+	mock.ExpectQuery(q("SELECT name FROM missions WHERE id = ? AND school_id = ?")).
 		WithArgs(int64(11), int64(1)).
-		WillReturnRows(sqlmock.NewRows([]string{"name", "body"}).AddRow("Misi 1", "Badan sehat"))
+		WillReturnRows(sqlmock.NewRows([]string{"name"}).AddRow("Misi 1"))
 	mock.ExpectQuery(q("SELECT EXISTS(SELECT 1 FROM mission_topics WHERE mission_id = ? AND topic_id = ?)")).
 		WithArgs(int64(11), int64(9)).
 		WillReturnRows(sqlmock.NewRows([]string{"linked"}).AddRow(1))
-	mock.ExpectQuery(q("SELECT name, body FROM missions WHERE id = ? AND school_id = ?")).
+	mock.ExpectQuery(q("SELECT name FROM missions WHERE id = ? AND school_id = ?")).
 		WithArgs(int64(12), int64(1)).
-		WillReturnRows(sqlmock.NewRows([]string{"name", "body"}).AddRow("Misi 2", "Rajin belajar"))
+		WillReturnRows(sqlmock.NewRows([]string{"name"}).AddRow("Misi 2"))
 	mock.ExpectQuery(q("SELECT EXISTS(SELECT 1 FROM mission_topics WHERE mission_id = ? AND topic_id = ?)")).
 		WithArgs(int64(12), int64(9)).
 		WillReturnRows(sqlmock.NewRows([]string{"linked"}).AddRow(1))
@@ -69,17 +69,17 @@ func TestMissionPutReplaceSet(t *testing.T) {
 		WithArgs(int64(2), int64(5), int64(30)).
 		WillReturnResult(sqlmock.NewResult(0, 2))
 	mock.ExpectExec(q("INSERT INTO report_missions")).
-		WithArgs(int64(2), int64(5), int64(30), int64(11), "Misi 1", "Badan sehat", int64(1)).
+		WithArgs(int64(2), int64(5), int64(30), int64(11), "Misi 1", int64(1)).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectExec(q("INSERT INTO report_missions")).
-		WithArgs(int64(2), int64(5), int64(30), int64(12), "Misi 2", "Rajin belajar", int64(1)).
+		WithArgs(int64(2), int64(5), int64(30), int64(12), "Misi 2", int64(1)).
 		WillReturnResult(sqlmock.NewResult(2, 1))
 	mock.ExpectCommit()
 	mock.ExpectQuery(q("FROM report_missions")).
 		WithArgs(int64(2), int64(5), int64(30)).
-		WillReturnRows(sqlmock.NewRows([]string{"mission_id", "mission_name_snap", "mission_body_snap"}).
-			AddRow(11, "Misi 1", "Badan sehat").
-			AddRow(12, "Misi 2", "Rajin belajar"))
+		WillReturnRows(sqlmock.NewRows([]string{"mission_id", "mission_name_snap"}).
+			AddRow(11, "Misi 1").
+			AddRow(12, "Misi 2"))
 
 	res := jsonReq(t, app, "PUT", missionPutPath,
 		map[string]any{"mission_ids": []int64{11, 12}}, h)
@@ -317,9 +317,9 @@ func TestMissionListReturnsSnappedPicks(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"probe"}).AddRow(1))
 	mock.ExpectQuery(q("FROM report_missions")).
 		WithArgs(int64(2), int64(5), int64(30)).
-		WillReturnRows(sqlmock.NewRows([]string{"mission_id", "name", "body"}).
-			AddRow(11, "Misi Sehat", "Badan sehat").
-			AddRow(12, "Misi Belajar", "Rajin belajar"))
+		WillReturnRows(sqlmock.NewRows([]string{"mission_id", "mission_name_snap"}).
+			AddRow(11, "Misi Sehat").
+			AddRow(12, "Misi Belajar"))
 
 	res := doReq(t, app, "GET", "/api/sessions/2/topics/5/children/30/missions", "", h)
 	data := requireDataEnvelope(t, res).([]any)
@@ -327,7 +327,7 @@ func TestMissionListReturnsSnappedPicks(t *testing.T) {
 	first := data[0].(map[string]any)
 	require.Equal(t, float64(11), first["mission_id"])
 	require.Equal(t, "Misi Sehat", first["name"])
-	require.Equal(t, "Badan sehat", first["body"])
+	require.NotContains(t, first, "body", "a pick is its snapped name only")
 }
 
 // TestNarrativeGetAbsentThenPresent: no narrative → raw null data; an

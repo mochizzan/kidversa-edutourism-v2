@@ -255,7 +255,6 @@ export interface MissionRow {
   program_id: number
   program_name: string
   name: string
-  body: string | null
   topics: Array<{ topic_id: number; name: string }>
 }
 
@@ -265,7 +264,6 @@ export function missionRow(id: number, name: string, over: Partial<MissionRow> =
     program_id: 1,
     program_name: 'Eksplorasi Kota',
     name,
-    body: `${name} — isi misi`,
     topics: [{ topic_id: 2, name: 'Batik Nusantara' }],
     ...over,
   }

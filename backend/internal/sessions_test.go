@@ -864,7 +864,7 @@ func TestCopyExecuteKeepsFilledTargetCells(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"topic_id", "text", "model", "generated_at"}))
 	mock.ExpectQuery(q("FROM report_missions rm")).
 		WithArgs(int64(5), int64(30)).
-		WillReturnRows(sqlmock.NewRows([]string{"topic_id", "mission_id", "name", "body"}))
+		WillReturnRows(sqlmock.NewRows([]string{"topic_id", "mission_id", "name"}))
 	mock.ExpectQuery(q("SELECT id, session_topic_id FROM photos")).
 		WithArgs(int64(2), int64(30)).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "session_topic_id"}))

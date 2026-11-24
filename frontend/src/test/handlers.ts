@@ -167,7 +167,7 @@ export function reportData(overrides: Partial<ReportData> = {}): ReportData {
         note: 'Sangat percaya diri',
       },
     ],
-    missions: [{ mission_id: 1, name: 'Kumpulkan 5 motif', body: 'Foto motif di rumah' }],
+    missions: [{ mission_id: 1, name: 'Kumpulkan 5 motif' }],
     badges: {
       topic: { name: 'Badge Batik', image_url: '/uploads/badges/batik.png' },
       program: null,

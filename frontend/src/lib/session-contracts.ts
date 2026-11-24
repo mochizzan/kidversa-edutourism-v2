@@ -187,7 +187,6 @@ export interface NarrativeItem {
 export interface PickedMission {
   mission_id: number
   name: string
-  body: string
 }
 
 export interface PublicLink {

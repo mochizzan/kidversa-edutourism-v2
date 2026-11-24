@@ -593,8 +593,8 @@ report/ReportView.tsx + report.css (PLAIN CSS — the `#report-a4` interior per 
   45 / D-4); `wa_outbox` retained 90 d; OpenWA untouched.
 - Snapshots: session create copies program/topics/activities/badges
   (+names) into `session_*`; master edits never touch sessions.
-  Missions/frames LIVE (resolved at pick/capture; mission name/body
-  render LIVE from the bank — `report_missions` snaps are history-only,
+  Missions/frames LIVE (resolved at pick/capture; mission name renders
+  LIVE from the bank — `report_missions` snap is history-only,
   decision 56).
 - Photos on disk namespaced; DB relative path only. Report bytes never
   touch the server (WA link-only).

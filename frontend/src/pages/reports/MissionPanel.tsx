@@ -16,7 +16,6 @@ import type { PickedMission } from '../../lib/session-contracts'
 interface MissionRow {
   id: number
   name: string
-  body: string
 }
 
 const MAX_MISSIONS = 4
@@ -111,7 +110,7 @@ export default function MissionPanel({
     ...(available ?? []),
     ...(picked ?? [])
       .filter((mission) => !(available ?? []).some((row) => row.id === mission.mission_id))
-      .map((mission) => ({ id: mission.mission_id, name: mission.name, body: mission.body })),
+      .map((mission) => ({ id: mission.mission_id, name: mission.name })),
   ]
 
   return (
@@ -136,7 +135,7 @@ export default function MissionPanel({
           renderItem={(mission) => (
             <List.Item key={mission.mission_id} style={{ padding: '4px 0' }}>
               <Typography.Text style={{ fontSize: 12 }}>
-                <strong>{mission.name}</strong> — {mission.body}
+                <strong>{mission.name}</strong>
               </Typography.Text>
             </List.Item>
           )}
@@ -181,8 +180,6 @@ export default function MissionPanel({
                   style={{ alignItems: 'flex-start' }}
                 >
                   <strong>{mission.name}</strong>
-                  <br />
-                  <Typography.Text type="secondary">{mission.body}</Typography.Text>
                 </Checkbox>
               )
             })

@@ -142,13 +142,15 @@ func TestInxMigrateAppliesPendingMigrationAndRecordsVersion(t *testing.T) {
 		InxMySQLStep{Match: "SELECT version FROM migrations", Resp: InxMyTable([]string{"version"})},
 		InxMySQLStep{Match: "CREATE TABLE IF NOT EXISTS tenants"},
 		InxMySQLStep{Match: "INSERT INTO migrations"},
-		// 0002_users_photo_path, 0003_admin_controls and 0004_school_rename
-		// are also pending (the real migrations dir).
+		// 0002_users_photo_path, 0003_admin_controls, 0004_school_rename and
+		// 0005_mission_body_removal are also pending (the real migrations dir).
 		InxMySQLStep{Match: "ADD COLUMN photo_path"},
 		InxMySQLStep{Match: "INSERT INTO migrations"},
 		InxMySQLStep{Match: "ADD COLUMN impersonated_by"},
 		InxMySQLStep{Match: "INSERT INTO migrations"},
 		InxMySQLStep{Match: "RENAME TABLE tenants TO schools"},
+		InxMySQLStep{Match: "INSERT INTO migrations"},
+		InxMySQLStep{Match: "DROP COLUMN body"},
 		InxMySQLStep{Match: "INSERT INTO migrations"},
 		InxMySQLStep{Match: "RELEASE_LOCK", Resp: InxMyTable([]string{"r"}, []*string{new("1")})},
 	)
@@ -171,13 +173,15 @@ func TestInxMigrateSkipsAlreadyAppliedVersion(t *testing.T) {
 		InxMySQLStep{Match: "CREATE TABLE IF NOT EXISTS migrations"},
 		InxMySQLStep{Match: "SELECT version FROM migrations",
 			Resp: InxMyTable([]string{"version"}, []*string{new("1")})},
-		// 0002_users_photo_path, 0003_admin_controls and 0004_school_rename
-		// are still pending over the applied 0001.
+		// 0002_users_photo_path, 0003_admin_controls, 0004_school_rename and
+		// 0005_mission_body_removal are still pending over the applied 0001.
 		InxMySQLStep{Match: "ADD COLUMN photo_path"},
 		InxMySQLStep{Match: "INSERT INTO migrations"},
 		InxMySQLStep{Match: "ADD COLUMN impersonated_by"},
 		InxMySQLStep{Match: "INSERT INTO migrations"},
 		InxMySQLStep{Match: "RENAME TABLE tenants TO schools"},
+		InxMySQLStep{Match: "INSERT INTO migrations"},
+		InxMySQLStep{Match: "DROP COLUMN body"},
 		InxMySQLStep{Match: "INSERT INTO migrations"},
 		InxMySQLStep{Match: "RELEASE_LOCK", Resp: InxMyTable([]string{"r"}, []*string{new("1")})},
 	)
@@ -186,8 +190,8 @@ func TestInxMigrateSkipsAlreadyAppliedVersion(t *testing.T) {
 	srv.RequireDone(t)
 	require.NotContains(t, srv.Log(), "CREATE TABLE IF NOT EXISTS tenants",
 		"an applied version must never be re-executed")
-	require.Equal(t, 3, strings.Count(strings.Join(srv.Log(), "\n"), "INSERT INTO migrations"),
-		"each pending migration (0002, 0003, 0004) records its version exactly once")
+	require.Equal(t, 4, strings.Count(strings.Join(srv.Log(), "\n"), "INSERT INTO migrations"),
+		"each pending migration (0002, 0003, 0004, 0005) records its version exactly once")
 }
 
 func TestInxMigrateLockFailures(t *testing.T) {
@@ -422,13 +426,15 @@ func TestInxMigrateReleaseLockFailureOnlyLogs(t *testing.T) {
 		InxMySQLStep{Match: "CREATE TABLE IF NOT EXISTS migrations"},
 		InxMySQLStep{Match: "SELECT version FROM migrations",
 			Resp: InxMyTable([]string{"version"}, []*string{new("1")})},
-		// 0002_users_photo_path, 0003_admin_controls and 0004_school_rename
-		// apply over the applied 0001.
+		// 0002_users_photo_path, 0003_admin_controls, 0004_school_rename and
+		// 0005_mission_body_removal apply over the applied 0001.
 		InxMySQLStep{Match: "ADD COLUMN photo_path"},
 		InxMySQLStep{Match: "INSERT INTO migrations"},
 		InxMySQLStep{Match: "ADD COLUMN impersonated_by"},
 		InxMySQLStep{Match: "INSERT INTO migrations"},
 		InxMySQLStep{Match: "RENAME TABLE tenants TO schools"},
+		InxMySQLStep{Match: "INSERT INTO migrations"},
+		InxMySQLStep{Match: "DROP COLUMN body"},
 		InxMySQLStep{Match: "INSERT INTO migrations"},
 		InxMySQLStep{Match: "RELEASE_LOCK", Resp: InxMyErr(1105, "release died")},
 	)

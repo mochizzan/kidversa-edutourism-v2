@@ -467,12 +467,13 @@ Letak pembaruan di tiap berkas:
     (2) refresh rotation validates the target school's active state —
     inactive → revoke jti + clear cookie + 200 `SCHOOL_INACTIVE`
     (fail-closed). Locations: `03 F-01`, `06§5`, `08`. Code task.
-56. Mission text LIVE (item 6): the report renders the mission
-    name/body LIVE from the bank at open time; `report_missions`
-    `mission_name_snap`/`mission_body_snap` are HISTORY-ONLY; the
-    mission SET resolves live. Supersedes the "picks snapped (render)"
-    reading. Locations: `02§2`, `03 F-05`, `04 FL-05`, `05§2`. Code
-    task (render reads bank).
+56. Mission text LIVE (item 6): the report renders the mission name
+    LIVE from the bank at open time; `report_missions`
+    `mission_name_snap` is HISTORY-ONLY; the mission SET resolves
+    live. Supersedes the "picks snapped (render)" reading. The mission
+    body was later removed entirely (migration `0005`, 2026-11-24), so
+    `mission_body_snap` no longer exists. Locations: `02§2`,
+    `03 F-05`, `04 FL-05`, `05§2`. Code task (render reads bank).
 57. Eligibility + picker wording (item 7): program eligible iff
     ≥1 topic × ≥1 activity AND program + topics `is_active` (create
     gate binding; the wire `Eligible` flag aligned with the gate);

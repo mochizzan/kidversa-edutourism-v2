@@ -173,7 +173,6 @@ export default function ReportView({ data }: { data: ReportData }) {
                 {data.missions.map((mission) => (
                   <li key={mission.mission_id}>
                     <b>{mission.name}</b>
-                    {mission.body ? ` — ${mission.body}` : ''}
                   </li>
                 ))}
               </ol>

@@ -23,7 +23,7 @@ export interface ReportData {
   attestation: { name: string; role: string }
   narrative: { text: string | null; generated_at: string | null }
   outcomes: Array<{ said: number; activity_name: string; indicator: string; stars: number; note: string }>
-  missions: Array<{ mission_id: number; name: string; body: string }>
+  missions: Array<{ mission_id: number; name: string }>
   badges: {
     topic: { name: string; image_url: string } | null
     program: { name: string; image_url: string } | null
