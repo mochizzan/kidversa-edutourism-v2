@@ -3175,14 +3175,21 @@ func (s *Server) wipeChildrenScopeTx(ctx context.Context, tx *sql.Tx, school, si
 
 	tcond, targs := schoolCond(school, "school_id")
 	ph := placeholders(len(childIDs))
-	base := func(cols string) (string, []any) {
+	// base builds "cols WHERE session_id = ? AND child_id IN (...)[AND extra]" —
+	// the WHERE comes from the helper, so any extra condition (e.g.
+	// revoked_at IS NULL for public_links) must NOT repeat it (MariaDB 1064).
+	base := func(cols string, extra ...string) (string, []any) {
 		args := make([]any, 0, len(childIDs)+1)
 		args = append(args, sid)
 		for _, id := range childIDs {
 			args = append(args, id)
 		}
 		args = append(args, targs...)
-		return cols + ` WHERE session_id = ? AND child_id IN (` + ph + `)` + tcond, args
+		q := cols + ` WHERE session_id = ? AND child_id IN (` + ph + `)` + tcond
+		if len(extra) > 0 {
+			q += " AND " + strings.Join(extra, " AND ")
+		}
+		return q, args
 	}
 
 	// Collect tokens first (the frames published after commit need them).
@@ -3207,7 +3214,7 @@ func (s *Server) wipeChildrenScopeTx(ctx context.Context, tx *sql.Tx, school, si
 	}
 	rows.Close()
 
-	q, qArgs = base(`SELECT id, child_id, token, kind FROM public_links WHERE revoked_at IS NULL`)
+	q, qArgs = base(`SELECT id, child_id, token, kind FROM public_links`, "revoked_at IS NULL")
 	rows, err = tx.QueryContext(ctx, q, qArgs...)
 	if err != nil {
 		return w, err

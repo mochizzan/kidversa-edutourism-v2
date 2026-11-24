@@ -143,7 +143,7 @@ func SpxWipeTokens(mock sqlmock.Sqlmock, sid, cid, school int64,
 	args := SpxWipeArgs(sid, cid, school)
 	mock.ExpectQuery(q("SELECT id, child_id, token FROM consent_links")).
 		WithArgs(args...).WillReturnRows(consentRows)
-	mock.ExpectQuery(q("SELECT id, child_id, token, kind FROM public_links WHERE revoked_at IS NULL")).
+	mock.ExpectQuery(q("SELECT id, child_id, token, kind FROM public_links WHERE session_id = ? AND child_id IN (?) AND school_id = ? AND revoked_at IS NULL")).
 		WithArgs(args...).WillReturnRows(publicRows)
 }
 
@@ -2584,7 +2584,7 @@ func TestSpxMemberRemoveFailureBranches(t *testing.T) {
 		mock.ExpectQuery(q("SELECT id, child_id, token FROM consent_links")).
 			WithArgs(int64(2), int64(30), int64(1)).
 			WillReturnRows(sqlmock.NewRows([]string{"id", "child_id", "token"}))
-		mock.ExpectQuery(q("SELECT id, child_id, token, kind FROM public_links WHERE revoked_at IS NULL")).
+		mock.ExpectQuery(q("SELECT id, child_id, token, kind FROM public_links WHERE session_id = ? AND child_id IN (?) AND school_id = ? AND revoked_at IS NULL")).
 			WithArgs(int64(2), int64(30), int64(1)).WillReturnError(SpxErr)
 		mock.ExpectRollback()
 		res := doReq(t, app, "DELETE", "/api/sessions/2/groups/10/members/30", "", h)

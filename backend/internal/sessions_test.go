@@ -687,7 +687,7 @@ func TestSessionDeleteDraftWipesScopeAndPublishesRevocations(t *testing.T) {
 		WithArgs(int64(2), int64(30), int64(1)).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "child_id", "token"}).
 			AddRow(7, int64(30), "ctok"))
-	mock.ExpectQuery(q("SELECT id, child_id, token, kind FROM public_links WHERE revoked_at IS NULL")).
+	mock.ExpectQuery(q("SELECT id, child_id, token, kind FROM public_links WHERE session_id = ? AND child_id IN (?) AND school_id = ? AND revoked_at IS NULL")).
 		WithArgs(int64(2), int64(30), int64(1)).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "child_id", "token", "kind"}).
 			AddRow(9, int64(30), "ptok", "REPORT"))
@@ -1312,7 +1312,7 @@ func TestSessionGroupDeleteCascadeWipesChildrenScope(t *testing.T) {
 	mock.ExpectQuery(q("SELECT id, child_id, token FROM consent_links")).
 		WithArgs(int64(2), int64(30), int64(1)).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "child_id", "token"}))
-	mock.ExpectQuery(q("SELECT id, child_id, token, kind FROM public_links WHERE revoked_at IS NULL")).
+	mock.ExpectQuery(q("SELECT id, child_id, token, kind FROM public_links WHERE session_id = ? AND child_id IN (?) AND school_id = ? AND revoked_at IS NULL")).
 		WithArgs(int64(2), int64(30), int64(1)).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "child_id", "token", "kind"}))
 	for _, table := range []string{"assessments", "narratives", "report_missions",
@@ -1410,7 +1410,7 @@ func TestSessionMemberRemoveWipesAndPublishes(t *testing.T) {
 	mock.ExpectQuery(q("SELECT id, child_id, token FROM consent_links")).
 		WithArgs(int64(2), int64(30), int64(1)).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "child_id", "token"}))
-	mock.ExpectQuery(q("SELECT id, child_id, token, kind FROM public_links WHERE revoked_at IS NULL")).
+	mock.ExpectQuery(q("SELECT id, child_id, token, kind FROM public_links WHERE session_id = ? AND child_id IN (?) AND school_id = ? AND revoked_at IS NULL")).
 		WithArgs(int64(2), int64(30), int64(1)).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "child_id", "token", "kind"}))
 	for _, table := range []string{"assessments", "narratives", "report_missions",
@@ -1536,6 +1536,47 @@ func TestSessionPatchDraftHappyPathPublishes(t *testing.T) {
 	require.Equal(t, "session.changed", f.Entity)
 	require.Equal(t, "updated", f.Action)
 	covNoFrame(t, sub, "exactly one frame per patch")
+}
+
+// TestSessionPatchEditAppliesAllFields: a DRAFT session edit carrying
+// name+description+location+date+start_time+end_time issues ONE guarded
+// UPDATE and echoes the merged row (regression for Bug 1: live edits on the
+// running stack returned 200; this test pins the happy path end to end).
+func TestSessionPatchEditAppliesAllFields(t *testing.T) {
+	s, mock := newTestServer(t)
+	app := newTestApp(t, s)
+	h := sessionAdminHeaders(t, s, mock)
+
+	mock.ExpectQuery(q("FROM sessions WHERE id = ? AND school_id = ?")).
+		WithArgs(int64(2), int64(1)).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "program_id",
+			"program_name_snap", "name", "description", "date", "start_time",
+			"end_time", "location", "status", "created_by", "created_at"}).
+			AddRow(2, 9, "Program A", "Sesi A", nil, fixedTS, nil, nil, "Lab",
+				"DRAFT", int64(2), fixedTS))
+	mock.ExpectExec(q("UPDATE sessions SET name = ?, description = ?, location = ?, date = ?, start_time = ?, end_time = ? WHERE id = ?")).
+		WithArgs("Sesi Baru", "Desc baru", "Sleman", "2026-10-05",
+			"09:00:00", "11:30:00", int64(2), int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	res := jsonReq(t, app, "PATCH", "/api/sessions/2",
+		map[string]any{
+			"name":        "Sesi Baru",
+			"description": "Desc baru",
+			"location":    "Sleman",
+			"date":        "2026-10-05",
+			"start_time":  "09:00:00",
+			"end_time":    "11:30:00",
+		}, h)
+	data := requireDataEnvelope(t, res).(map[string]any)
+	sess := data["session"].(map[string]any)
+	require.Equal(t, "Sesi Baru", sess["name"])
+	require.Equal(t, "Desc baru", sess["description"])
+	require.Equal(t, "Sleman", sess["location"])
+	require.Equal(t, "2026-10-05", sess["date"])
+	require.Equal(t, "09:00:00", sess["start_time"])
+	require.Equal(t, "11:30:00", sess["end_time"])
+	require.Equal(t, "DRAFT", sess["status"])
 }
 
 // TestSessionPatchTimeRangeSharesCreateValidator: patch and create run the
