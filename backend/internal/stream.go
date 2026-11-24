@@ -69,7 +69,7 @@ type ScopeSnapshot struct {
 	UserID          int64
 	OwnGroupIDs     []int64
 	OwnedSessionIDs []int64
-	ChildIDs        []int64 // FAS: children in own groups
+	ChildIDs        []int64 // FAS: children in scope — fasChildScope (the REST predicate)
 
 	Public       bool
 	Kind         string // token kind: REPORT | GALLERY | CONSENT
@@ -226,9 +226,14 @@ func (sub *subscription) takeClosing() bool {
 }
 
 // scopeRefreshOn lists event bases that must recompute a FAS snapshot.
+// "session" is included because session.changed frames are published for
+// facilitator assignment changes (group PATCH/CREATE) and session
+// create/status changes — after the refresh the frame passes the new
+// ownership filter (02 §2c: a frame is delivered iff the matching REST GET
+// would return that row).
 func scopeRefreshOn(entity string) bool {
 	switch entityBase(entity) {
-	case "member", "group", "child":
+	case "member", "group", "child", "session":
 		return true
 	}
 	return false
@@ -278,11 +283,13 @@ func (s *Server) frameAllowedLocked(sub *subscription, f *Frame) bool {
 
 // fasFrameAllowed scopes a facilitator to its own sessions/children; masters,
 // users, schools, resets and stats frames are skipped (FAS has no REST access
-// to them — the predicate mirrors GET, never a copy of auth logic).
+// to them — the predicate mirrors GET, never a copy of auth logic). Child
+// frames pass: the same-school check above already bounds them to the
+// facilitator's school, matching the school-wide fasChildScope predicate.
 func fasFrameAllowed(sc *ScopeSnapshot, f *Frame) bool {
 	switch entityBase(f.Entity) {
 	case "child":
-		return slices.Contains(sc.ChildIDs, f.EntityID)
+		return true
 	case "session", "group", "member", "assessment", "photo", "narrative",
 		"mission-pick", "readiness", "copy", "consent", "report-link":
 		return f.SessionID != nil && slices.Contains(sc.OwnedSessionIDs, *f.SessionID)

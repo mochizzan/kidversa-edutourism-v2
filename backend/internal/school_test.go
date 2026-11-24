@@ -97,12 +97,12 @@ func TestSchoolCrossSchoolIDIsNotFoundWithoutLeak(t *testing.T) {
 	s, mock := newTestServer(t)
 	app := newTestApp(t, s)
 
-	// FAS with own children {3}: asking for child 77 (another facilitator's)
+	// FAS with school-wide scope {3}: asking for child 77 (another school's)
 	// must be NOT_FOUND with NO row lookup at all.
 	mock.ExpectQuery(sqlUserByID).WithArgs(int64(3)).WillReturnRows(sqlFASRow())
-	mock.ExpectQuery(q("SELECT DISTINCT sm.child_id FROM session_members sm")).
-		WithArgs(int64(3), int64(1)).
-		WillReturnRows(sqlmock.NewRows([]string{"child_id"}).AddRow(3))
+	mock.ExpectQuery(q("SELECT id FROM children WHERE school_id = ?")).
+		WithArgs(int64(1)).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(3))
 	hFAS := bearer(mintAccess(t, s, fasUserRow()))
 	hFAS["X-School-ID"] = "1"
 	resFAS := doReq(t, app, "GET", "/api/children/77", "", hFAS)
@@ -124,21 +124,21 @@ func TestSchoolCrossSchoolIDIsNotFoundWithoutLeak(t *testing.T) {
 }
 
 // TestSchoolFASScopedChildrenList: the children list runs through
-// fasChildScope — the same helper the stream filter uses.
+// fasChildScope — school-wide for facilitators.
 func TestSchoolFASScopedChildrenList(t *testing.T) {
 	s, mock := newTestServer(t)
 	app := newTestApp(t, s)
 
 	mock.ExpectQuery(sqlUserByID).WithArgs(int64(3)).WillReturnRows(sqlFASRow())
-	mock.ExpectQuery(q("SELECT DISTINCT sm.child_id FROM session_members sm")).
-		WithArgs(int64(3), int64(1)).
-		WillReturnRows(sqlmock.NewRows([]string{"child_id"}).AddRow(3).AddRow(5))
+	mock.ExpectQuery(q("SELECT id FROM children WHERE school_id = ?")).
+		WithArgs(int64(1)).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(3).AddRow(5))
 	mock.ExpectQuery(q("SELECT COUNT(*) FROM children WHERE school_id = ? AND id IN (?,?)")).
 		WithArgs(int64(1), int64(3), int64(5)).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(2))
 	childCols := []string{"id", "name", "age", "age_confirmed", "school", "mother_name",
 		"mother_wa", "father_name", "father_wa", "guardian_name", "is_active", "created_at"}
-	mock.ExpectQuery(q("ORDER BY id asc, id ASC LIMIT ? OFFSET ?")).
+	mock.ExpectQuery(q("FROM children WHERE school_id = ? AND id IN (?,?) ORDER BY id asc, id ASC LIMIT ? OFFSET ?")).
 		WithArgs(int64(1), int64(3), int64(5), 20, 0).
 		WillReturnRows(sqlmock.NewRows(childCols).
 			AddRow(3, "Ayu", 8, false, "SD 1", "Ibu A", "+628111", nil, nil, nil, true, fixedTS).
@@ -155,7 +155,8 @@ func TestSchoolFASScopedChildrenList(t *testing.T) {
 }
 
 // TestSchoolFASChildScopeHelper pins the helper semantics directly:
-// non-facilitators unrestricted, FAS restricted to own-group children.
+// non-facilitators unrestricted; FASILITATOR → every child of their school
+// (tenant-scoped, no session requirement).
 func TestSchoolFASChildScopeHelper(t *testing.T) {
 	s, mock := newTestServer(t)
 	ctx := t.Context()
@@ -165,13 +166,13 @@ func TestSchoolFASChildScopeHelper(t *testing.T) {
 	require.False(t, scoped)
 	require.Nil(t, ids)
 
-	mock.ExpectQuery(q("SELECT DISTINCT sm.child_id FROM session_members sm")).
-		WithArgs(int64(3), int64(1)).
-		WillReturnRows(sqlmock.NewRows([]string{"child_id"}).AddRow(3).AddRow(5))
+	mock.ExpectQuery(q("SELECT id FROM children WHERE school_id = ?")).
+		WithArgs(int64(1)).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(3).AddRow(5))
 	ids, scoped, err = s.fasChildScope(ctx, "FASILITATOR", 3, 1)
 	require.NoError(t, err)
 	require.True(t, scoped)
-	require.Equal(t, []int64{3, 5}, ids, "DISTINCT children in own groups")
+	require.Equal(t, []int64{3, 5}, ids, "every child of the facilitator's school")
 }
 
 // TestSchoolFASForeignSessionDetailIsNotFound: session detail visibility

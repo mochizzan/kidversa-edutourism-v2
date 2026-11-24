@@ -88,8 +88,10 @@ func TestStreamAuthenticatedFilterMatrix(t *testing.T) {
 			Frame{SchoolID: 1, Entity: "session.changed"}, false},
 		{"FAS own child frame", ScopeSnapshot{Role: "FASILITATOR", SchoolID: 1, ChildIDs: []int64{30}},
 			Frame{SchoolID: 1, Entity: "child.changed", EntityID: 30}, true},
-		{"FAS foreign child frame", ScopeSnapshot{Role: "FASILITATOR", SchoolID: 1, ChildIDs: []int64{30}},
-			Frame{SchoolID: 1, Entity: "child.changed", EntityID: 40}, false},
+		{"FASILITATOR receives same-school child frames", ScopeSnapshot{Role: "FASILITATOR", SchoolID: 1, ChildIDs: []int64{30}},
+			Frame{SchoolID: 1, Entity: "child.changed", EntityID: 40}, true},
+		{"FASILITATOR child frames from another school dropped", ScopeSnapshot{Role: "FASILITATOR", SchoolID: 1, ChildIDs: []int64{30}},
+			Frame{SchoolID: 2, Entity: "child.changed", EntityID: 40}, false},
 		{"FAS skips masters/users frames", ScopeSnapshot{Role: "FASILITATOR", SchoolID: 1},
 			Frame{SchoolID: 1, Entity: "user.changed", EntityID: 40}, false},
 	}
@@ -146,12 +148,38 @@ func TestStreamPublicFilterMatrix(t *testing.T) {
 }
 
 func TestStreamScopeRefreshOnMembershipEvents(t *testing.T) {
-	for _, entity := range []string{"member.changed", "group.changed", "child.changed"} {
+	for _, entity := range []string{"member.changed", "group.changed", "child.changed", "session.changed"} {
 		require.Truef(t, scopeRefreshOn(entity), "%s must refresh the FAS scope", entity)
 	}
-	for _, entity := range []string{"session.changed", "program.changed", "stats.changed"} {
+	for _, entity := range []string{"program.changed", "stats.changed"} {
 		require.Falsef(t, scopeRefreshOn(entity), "%s must not refresh the FAS scope", entity)
 	}
+}
+
+// TestStreamRefreshesFAScopeOnSessionChange: a session.changed frame
+// (published on facilitator assignment and session create) triggers the FAS
+// scope refresh BEFORE the filter — a facilitator who just became assigned
+// to the session receives the frame and their open pages refetch.
+func TestStreamRefreshesFAScopeOnSessionChange(t *testing.T) {
+	s, _ := newTestServer(t)
+	calls := 0
+	s.registerScopeProvider(func(_ context.Context, userID int64, role string, schoolID int64) (ScopeSnapshot, error) {
+		calls++
+		// The refreshed snapshot sees the new session (5).
+		return ScopeSnapshot{Role: role, SchoolID: schoolID, UserID: userID,
+			OwnedSessionIDs: []int64{2, 5}}, nil
+	})
+
+	sub := s.subscribe(ScopeSnapshot{Role: "FASILITATOR", SchoolID: 1, UserID: 3,
+		OwnedSessionIDs: []int64{2}}, "3.3.3.4")
+	defer s.unsubscribe(sub)
+
+	fresh := int64(5)
+	s.publish(1, Frame{Entity: "session.changed", EntityID: fresh, SessionID: &fresh, Action: "created"})
+	require.Equal(t, 1, calls, "session frames must refresh the FAS scope")
+	require.Len(t, sub.ch, 1, "refreshed scope owns session 5 → frame delivered")
+	delivered := <-sub.ch
+	require.Equal(t, "session.changed", delivered.Entity)
 }
 
 // TestStreamLinkRevokedClosesMatchingSubscriber: terminal delivery flips
@@ -723,9 +751,9 @@ func TestStreamReplayFilteringAndAuthExpiring(t *testing.T) {
 	mock.ExpectQuery(q("SELECT id, session_id FROM session_groups WHERE facilitator_id = ?")).
 		WithArgs(int64(3), int64(1)).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "session_id"}).AddRow(10, own))
-	mock.ExpectQuery(q("SELECT DISTINCT sm.child_id FROM session_members sm")).
-		WithArgs(int64(3), int64(1)).
-		WillReturnRows(sqlmock.NewRows([]string{"child_id"}).AddRow(30))
+	mock.ExpectQuery(q("SELECT id FROM children WHERE school_id = ?")).
+		WithArgs(int64(1)).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(30))
 	mock.ExpectQuery(sqlActiveRefreshSession()).WithArgs(int64(3)).
 		WillReturnRows(sqlRefreshAliveRows())
 	resp3, events3 := connectSSE(t, base, mintAccess(t, s, fasUserRow()), "1", "0")

@@ -13,7 +13,8 @@
     "filterHint": "Search covers the session name.",
     "empty": "No sessions yet.",
     "groups": "Groups",
-    "members": "Members"
+    "members": "Members",
+    "myAssignment": "My Assignment"
   },
   "wizard": {
     "title": "Create a new session",

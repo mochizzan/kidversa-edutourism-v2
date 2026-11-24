@@ -27,7 +27,7 @@
 // The SAME helpers feed REST scoping and the SSE ScopeSnapshot (decision 24 —
 // one predicate, never duplicated): fasSessionScope (own groups + owned
 // sessions, used by GET /api/sessions FAS filtering) + B1's fasChildScope
-// (children in own groups, shared with GET /api/children).
+// (school-wide children, shared with GET /api/children).
 //
 // # Spec interpretations (reported to the orchestrator)
 //
@@ -119,19 +119,20 @@ func fmtTS(t time.Time) string { return t.UTC().Format(time.RFC3339) }
 // ---------------------------------------------------------------------------
 
 type sessionItem struct {
-	ID          int64   `json:"id"`
-	ProgramID   int64   `json:"program_id"`
-	ProgramName string  `json:"program_name"`
-	Name        string  `json:"name"`
-	Description *string `json:"description"`
-	Date        string  `json:"date"`
-	StartTime   *string `json:"start_time"`
-	EndTime     *string `json:"end_time"`
-	Location    string  `json:"location"`
-	Status      string  `json:"status"`
-	GroupCount  int     `json:"group_count"`
-	MemberCount int     `json:"member_count"`
-	CreatedAt   string  `json:"created_at"`
+	ID           int64   `json:"id"`
+	ProgramID    int64   `json:"program_id"`
+	ProgramName  string  `json:"program_name"`
+	Name         string  `json:"name"`
+	Description  *string `json:"description"`
+	Date         string  `json:"date"`
+	StartTime    *string `json:"start_time"`
+	EndTime      *string `json:"end_time"`
+	Location     string  `json:"location"`
+	Status       string  `json:"status"`
+	GroupCount   int     `json:"group_count"`
+	MemberCount  int     `json:"member_count"`
+	CreatedAt    string  `json:"created_at"`
+	MyAssignment bool    `json:"my_assignment"` // FASILITATOR only: ≥1 own group in the session
 }
 
 // sessionJSON is the detail/patch `session` object (contracts).
@@ -419,7 +420,9 @@ var sessionSortAllow = map[string]string{
 }
 
 // handleSessionList — paged GET /api/sessions (FAS: own ≥1 group only;
-// default sort date DESC).
+// default sort date DESC). FASILITATOR rows carry `my_assignment` (true
+// when the session holds one of the caller's own groups) so the UI can show
+// the "My Assignment" badge.
 func (s *Server) handleSessionList(c fiber.Ctx) error {
 	u, _ := c.Locals(kvUser).(*userRow)
 	school, _ := c.Locals(kvSchool).(int64)
@@ -438,23 +441,30 @@ func (s *Server) handleSessionList(c fiber.Ctx) error {
 	ctx, cancel := dbCtx(c)
 	defer cancel()
 
+	// FASILITATOR: the own-session list computed once — the row filter
+	// below AND the per-row `my_assignment` flag both read it.
+	var ownSessions []int64
+	if u.Role == "FASILITATOR" {
+		_, own, err := s.fasSessionScope(ctx, u.ID, school)
+		if err != nil {
+			return failDB(c, err)
+		}
+		ownSessions = own
+		if len(own) == 0 {
+			return okPaged(c, []sessionItem{}, p.Page, p.PerPage, 0)
+		}
+	}
+
 	where := " WHERE 1=1"
 	var args []any
 	if tcond, targs := schoolCond(school, "s.school_id"); tcond != "" {
 		where += tcond
 		args = append(args, targs...)
 	}
-	if u.Role == "FASILITATOR" {
-		_, own, err := s.fasSessionScope(ctx, u.ID, school)
-		if err != nil {
-			return failDB(c, err)
-		}
-		if len(own) == 0 {
-			return okPaged(c, []sessionItem{}, p.Page, p.PerPage, 0)
-		}
-		ph := placeholders(len(own))
+	if len(ownSessions) > 0 {
+		ph := placeholders(len(ownSessions))
 		where += ` AND s.id IN (` + ph + `)`
-		for _, id := range own {
+		for _, id := range ownSessions {
 			args = append(args, id)
 		}
 	}
@@ -504,6 +514,13 @@ func (s *Server) handleSessionList(c fiber.Ctx) error {
 		it.EndTime = fromNull(endT)
 		it.Date = fmtDate(date)
 		it.CreatedAt = fmtTS(createdAt)
+		if u.Role == "FASILITATOR" {
+			// The "My Assignment" badge: this session holds one of the
+			// caller's own groups (fasSessionScope returns, per session,
+			// every session with ≥1 own group; the list WHERE already
+			// restricts rows to own sessions).
+			it.MyAssignment = slices.Contains(ownSessions, it.ID)
+		}
 		out = append(out, it)
 	}
 	if err := rows.Err(); err != nil {
@@ -1838,6 +1855,11 @@ func (s *Server) handleGroupCreate(c fiber.Ctx) error {
 		Entity: "group.changed", EntityID: gid,
 		SessionID: &sid, Action: "created",
 	})
+	// A facilitator just assigned to the session: publish session.changed so
+	// facilitator-opened pages refetch and see the new assignment immediately.
+	if req.FacilitatorID > 0 {
+		s.publish(school, Frame{Entity: "session.changed", EntityID: sid, SessionID: &sid, Action: "created"})
+	}
 	return ok(c, fiber.Map{"gid": gid, "name": name})
 }
 
@@ -1970,6 +1992,13 @@ func (s *Server) handleGroupPatch(c fiber.Ctx) error {
 		Entity: "group.changed", EntityID: gid,
 		SessionID: &sid, Action: "updated",
 	})
+	// Facilitator assignment changed (owner set or cleared): also publish
+	// session.changed — after the stream scope refresh the frame passes for
+	// the newly assigned facilitator and its open pages refetch (SessionsPage
+	// listens to session.changed).
+	if req.FacilitatorID != nil {
+		s.publish(school, Frame{Entity: "session.changed", EntityID: sid, SessionID: &sid, Action: "updated"})
+	}
 	return ok(c, fiber.Map{"gid": gid, "name": curName})
 }
 

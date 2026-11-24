@@ -4,7 +4,7 @@
  * (soft same-params refetch). No client slicing, no polling.
  */
 import { useState } from 'react'
-import { Alert, Button, Input, Select, Space } from 'antd'
+import { Alert, Button, Input, Select, Space, Tag } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { EyeOutlined, PlusOutlined } from '@ant-design/icons'
 import { Link, useNavigate } from 'react-router'
@@ -46,7 +46,16 @@ export default function SessionsPage() {
       dataIndex: 'name',
       width: 220,
       ellipsis: true,
-      render: (name: string, row) => <Link to={`/sessions/${row.id}`}>{name}</Link>,
+      render: (name: string, row) => (
+        <span className="kv-sessions-name">
+          <Link to={`/sessions/${row.id}`}>{name}</Link>
+          {user?.role === 'FASILITATOR' && row.my_assignment ? (
+            <Tag className="kv-session-mine" color="blue">
+              {t('list.myAssignment')}
+            </Tag>
+          ) : null}
+        </span>
+      ),
     },
     { title: t('list.program'), dataIndex: 'program_name', width: 180, ellipsis: true },
     { title: t('list.date'), dataIndex: 'date', width: 110 },

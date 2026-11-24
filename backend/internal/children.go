@@ -22,16 +22,17 @@ import (
 // masters stay untouched. Activate/deactivate never wipes anything.
 
 // fasChildScope returns the child-id restriction for one caller:
-// non-facilitators → scoped=false (unrestricted); FAS → every child in a
-// group they own (scoped=true, possibly an empty list).
+// non-facilitators → scoped=false (unrestricted); FASILITATOR → every child
+// in their school (scoped=true). Child visibility is tenant-scoped, not
+// session-scoped: a facilitator always sees the school's children whether or
+// not a session exists yet (the old join through session_members/
+// session_groups left facilitators without groups seeing an empty list).
 func (s *Server) fasChildScope(ctx context.Context, role string, userID, schoolID int64) ([]int64, bool, error) {
 	if role != "FASILITATOR" {
 		return nil, false, nil
 	}
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT DISTINCT sm.child_id FROM session_members sm
-		 JOIN session_groups g ON g.id = sm.group_id
-		 WHERE g.facilitator_id = ? AND sm.school_id = ?`, userID, schoolID)
+		`SELECT id FROM children WHERE school_id = ?`, schoolID)
 	if err != nil {
 		return nil, true, err
 	}
@@ -107,7 +108,7 @@ func (s *Server) RegisterChildren(api fiber.Router) {
 }
 
 // listChildren: ?q= (name substring) + ?is_active= (ParseBool, invalid →
-// VALIDATION) + paging/sort per 05 §3; FAS sees only own-group children via
+// VALIDATION) + paging/sort per 05 §3; FAS sees the school's children via
 // the same helper the stream scope uses.
 func (s *Server) listChildren(c fiber.Ctx) error {
 	p, okList := listParams(c, "id", "asc", map[string]string{

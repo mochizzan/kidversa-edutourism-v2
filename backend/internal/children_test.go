@@ -229,9 +229,9 @@ func TestChildrenListFASScopeCombinesWithIsActive(t *testing.T) {
 	app := newTestApp(t, s)
 
 	expectFASAuth(mock)
-	mock.ExpectQuery(q("SELECT DISTINCT sm.child_id FROM session_members sm")).
-		WithArgs(int64(3), int64(1)).
-		WillReturnRows(sqlmock.NewRows([]string{"child_id"}).AddRow(3))
+	mock.ExpectQuery(q("SELECT id FROM children WHERE school_id = ?")).
+		WithArgs(int64(1)).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(3))
 	mock.ExpectQuery(q("SELECT COUNT(*) FROM children WHERE school_id = ? AND id IN (?) AND is_active = ?")).
 		WithArgs(int64(1), int64(3), true).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
@@ -246,27 +246,6 @@ func TestChildrenListFASScopeCombinesWithIsActive(t *testing.T) {
 	require.Len(t, items, 1)
 	require.Equal(t, float64(3), items[0].(map[string]any)["id"])
 	require.Equal(t, float64(1), m["meta"].(map[string]any)["total"])
-}
-
-func TestChildrenListFASEmptyScopeSkipsQueries(t *testing.T) {
-	s, mock := newTestServer(t)
-	app := newTestApp(t, s)
-
-	expectFASAuth(mock)
-	mock.ExpectQuery(q("SELECT DISTINCT sm.child_id FROM session_members sm")).
-		WithArgs(int64(3), int64(1)).
-		WillReturnRows(sqlmock.NewRows([]string{"child_id"})) // owns no children
-	// Deliberately NO COUNT/rows expectations: a stray list query would fail
-	// the mock and the success envelope could not be written.
-
-	res := doReq(t, app, "GET", "/api/children", "", hFAS(t, s))
-	require.Equal(t, 200, res.status)
-	m := envelopeMap(t, res.body)
-	require.Len(t, m, 2, "empty scope still answers the paged envelope: %s", res.body)
-	require.Empty(t, m["data"])
-	require.Equal(t,
-		map[string]any{"page": float64(1), "per_page": float64(20), "total": float64(0)},
-		m["meta"])
 }
 
 // ---------------------------------------------------------------------------
@@ -323,9 +302,9 @@ func TestChildrenGetFASForeignChildIsNotFoundWithoutRowLookup(t *testing.T) {
 	app := newTestApp(t, s)
 
 	expectFASAuth(mock)
-	mock.ExpectQuery(q("SELECT DISTINCT sm.child_id FROM session_members sm")).
-		WithArgs(int64(3), int64(1)).
-		WillReturnRows(sqlmock.NewRows([]string{"child_id"}).AddRow(3))
+	mock.ExpectQuery(q("SELECT id FROM children WHERE school_id = ?")).
+		WithArgs(int64(1)).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(3))
 	// No child-row expectation: a row lookup for the foreign id would fail the
 	// mock — the scope miss must answer NOT_FOUND on its own.
 
@@ -1095,8 +1074,8 @@ func TestChildrenReadFailuresAreDBUnavailable(t *testing.T) {
 		s, mock := newTestServer(t)
 		app := newTestApp(t, s)
 		expectFASAuth(mock)
-		mock.ExpectQuery(q("SELECT DISTINCT sm.child_id FROM session_members sm")).
-			WithArgs(int64(3), int64(1)).
+		mock.ExpectQuery(q("SELECT id FROM children WHERE school_id = ?")).
+			WithArgs(int64(1)).
 			WillReturnError(errors.New("dial tcp: connection refused"))
 		res := doReq(t, app, "GET", "/api/children", "", hFAS(t, s))
 		requireErrEnvelope(t, res, CodeDBUnavailable)
@@ -1107,9 +1086,9 @@ func TestChildrenReadFailuresAreDBUnavailable(t *testing.T) {
 		app := newTestApp(t, s)
 		expectFASAuth(mock)
 		// A child_id that cannot scan into int64 → helper error → failDB.
-		mock.ExpectQuery(q("SELECT DISTINCT sm.child_id FROM session_members sm")).
-			WithArgs(int64(3), int64(1)).
-			WillReturnRows(sqlmock.NewRows([]string{"child_id"}).AddRow(fixedTS))
+		mock.ExpectQuery(q("SELECT id FROM children WHERE school_id = ?")).
+			WithArgs(int64(1)).
+			WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(fixedTS))
 		res := doReq(t, app, "GET", "/api/children", "", hFAS(t, s))
 		requireErrEnvelope(t, res, CodeDBUnavailable)
 	})
@@ -1118,8 +1097,8 @@ func TestChildrenReadFailuresAreDBUnavailable(t *testing.T) {
 		s, mock := newTestServer(t)
 		app := newTestApp(t, s)
 		expectFASAuth(mock)
-		mock.ExpectQuery(q("SELECT DISTINCT sm.child_id FROM session_members sm")).
-			WithArgs(int64(3), int64(1)).
+		mock.ExpectQuery(q("SELECT id FROM children WHERE school_id = ?")).
+			WithArgs(int64(1)).
 			WillReturnError(errors.New("dial tcp: connection refused"))
 		res := doReq(t, app, "GET", "/api/children/4", "", hFAS(t, s))
 		requireErrEnvelope(t, res, CodeDBUnavailable)

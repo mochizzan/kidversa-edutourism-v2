@@ -2045,6 +2045,8 @@ func TestSpxGroupPatchClearsOwnerOnZero(t *testing.T) {
 	f := covNextFrame(t, sub, "group.changed after clear")
 	require.Equal(t, "group.changed", f.Entity)
 	require.Equal(t, "updated", f.Action)
+	f = covNextFrame(t, sub, "session.changed after facilitator clear")
+	require.Equal(t, "session.changed", f.Entity)
 	covNoFrame(t, sub, "one frame per group patch")
 }
 
@@ -4753,16 +4755,16 @@ func TestSpxScopeProviderInstallAndFailures(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"id", "session_id"}).
 				AddRow(10, 2).
 				AddRow(11, 3))
-		mock.ExpectQuery(q("SELECT DISTINCT sm.child_id FROM session_members")).
-			WithArgs(int64(3), int64(1)).
-			WillReturnRows(sqlmock.NewRows([]string{"child_id"}).
+		mock.ExpectQuery(q("SELECT id FROM children WHERE school_id = ?")).
+			WithArgs(int64(1)).
+			WillReturnRows(sqlmock.NewRows([]string{"id"}).
 				AddRow(30).
 				AddRow(31))
 		snap, err := s.scopeProvider(ctx, 3, "FASILITATOR", 1)
 		require.NoError(t, err)
 		require.Equal(t, []int64{10, 11}, snap.OwnGroupIDs)
 		require.Equal(t, []int64{2, 3}, snap.OwnedSessionIDs)
-		require.Equal(t, []int64{30, 31}, snap.ChildIDs)
+		require.Equal(t, []int64{30, 31}, snap.ChildIDs, "school-wide children scope")
 	})
 	t.Run("fas scope read fails", func(t *testing.T) {
 		s, mock := newTestServer(t)
@@ -4779,8 +4781,8 @@ func TestSpxScopeProviderInstallAndFailures(t *testing.T) {
 			WithArgs(int64(3), int64(1)).
 			WillReturnRows(sqlmock.NewRows([]string{"id", "session_id"}).
 				AddRow(10, 2))
-		mock.ExpectQuery(q("SELECT DISTINCT sm.child_id FROM session_members")).
-			WithArgs(int64(3), int64(1)).WillReturnError(SpxErr)
+		mock.ExpectQuery(q("SELECT id FROM children WHERE school_id = ?")).
+			WithArgs(int64(1)).WillReturnError(SpxErr)
 		_, err := s.scopeProvider(ctx, 3, "FASILITATOR", 1)
 		require.Error(t, err)
 	})

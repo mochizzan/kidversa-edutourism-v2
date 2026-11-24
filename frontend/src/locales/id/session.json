@@ -13,7 +13,8 @@
     "filterHint": "Pencarian mencakup nama sesi.",
     "empty": "Belum ada sesi.",
     "groups": "Kelompok",
-    "members": "Anggota"
+    "members": "Anggota",
+    "myAssignment": "Tugas Saya"
   },
   "wizard": {
     "title": "Buat sesi baru",

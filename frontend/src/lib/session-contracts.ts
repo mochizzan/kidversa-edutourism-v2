@@ -24,6 +24,11 @@ export interface SessionListItem {
   group_count: number
   member_count: number
   created_at: string
+  /**
+   * FASILITATOR-only badge flag: true when the session holds one of the
+   * caller's own groups (GET /api/sessions `my_assignment`).
+   */
+  my_assignment?: boolean
 }
 
 export interface SessionActivity {

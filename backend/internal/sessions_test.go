@@ -974,6 +974,45 @@ func TestSessionListPagedShape(t *testing.T) {
 	require.Equal(t, float64(1), meta["total"])
 }
 
+// TestSessionListFASCarriesMyAssignment: FASILITATOR rows carry
+// `my_assignment` — true when the session holds one of the caller's own
+// groups (the badge contract on the Sessions page).
+func TestSessionListFASCarriesMyAssignment(t *testing.T) {
+	s, mock := newTestServer(t)
+	app := newTestApp(t, s)
+	h := assessmentFASHeaders(t, s, mock)
+
+	// FASILITATOR scope: sessions 2 and 7 (own groups 10 and 12).
+	mock.ExpectQuery(q("WHERE facilitator_id = ? AND school_id = ? ORDER BY id")).
+		WithArgs(int64(3), int64(1)).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "session_id"}).
+			AddRow(10, 2).AddRow(12, 7))
+	mock.ExpectQuery(q("COUNT(*) FROM sessions s")).
+		WithArgs(int64(1), int64(2), int64(7)).
+		WillReturnRows(sqlmock.NewRows([]string{"n"}).AddRow(2))
+	mock.ExpectQuery(q("s.date desc, s.id ASC")).
+		WithArgs(int64(1), int64(2), int64(7), 20, 0).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "program_id",
+			"program_name_snap", "name", "description", "date", "start_time",
+			"end_time", "location", "status", "group_count", "member_count",
+			"created_at"}).
+			AddRow(2, 9, "Program A", "Sesi A", nil, fixedTS, nil, nil, "Lab",
+				"OPENED", 1, 2, fixedTS).
+			AddRow(7, 9, "Program A", "Sesi B", nil, fixedTS, nil, nil, "Lab",
+				"DRAFT", 0, 0, fixedTS))
+
+	res := doReq(t, app, "GET", "/api/sessions", "", h)
+	data := requireDataEnvelope(t, res).([]any)
+	require.Len(t, data, 2)
+	byID := map[float64]bool{}
+	for _, raw := range data {
+		item := raw.(map[string]any)
+		byID[item["id"].(float64)] = item["my_assignment"].(bool)
+	}
+	require.True(t, byID[2], "session 2 holds the facilitator's own group → my_assignment")
+	require.True(t, byID[7], "session 7 holds the facilitator's own group → my_assignment")
+}
+
 // TestSessionListRejectsUnknownStatusFilter: the ?status= value must be one
 // of DRAFT/OPENED/FINISHED — validated before any SQL (05 §3).
 func TestSessionListRejectsUnknownStatusFilter(t *testing.T) {
@@ -1194,7 +1233,13 @@ func TestSessionGroupCreateCommitsAndPublishes(t *testing.T) {
 	require.Equal(t, "group.changed", f.Entity)
 	require.Equal(t, int64(101), f.EntityID)
 	require.Equal(t, "created", f.Action)
-	covNoFrame(t, sub, "one frame per group create")
+
+	f = covNextFrame(t, sub, "session.changed after facilitator assignment on create")
+	require.Equal(t, "session.changed", f.Entity)
+	require.Equal(t, int64(2), f.EntityID)
+	require.NotNil(t, f.SessionID)
+	require.Equal(t, int64(2), *f.SessionID)
+	covNoFrame(t, sub, "one session.changed per assignment")
 }
 
 // TestSessionGroupPatchRenamesAndPublishes: name + owner edit in one UPDATE
@@ -1232,6 +1277,12 @@ func TestSessionGroupPatchRenamesAndPublishes(t *testing.T) {
 	f := covNextFrame(t, sub, "group.changed after patch")
 	require.Equal(t, "group.changed", f.Entity)
 	require.Equal(t, "updated", f.Action)
+
+	f = covNextFrame(t, sub, "session.changed after facilitator assignment on patch")
+	require.Equal(t, "session.changed", f.Entity)
+	require.Equal(t, int64(2), f.EntityID)
+	require.NotNil(t, f.SessionID)
+	require.Equal(t, int64(2), *f.SessionID)
 }
 
 // TestSessionGroupDeleteCascadeWipesChildrenScope: option-B cascade (decision

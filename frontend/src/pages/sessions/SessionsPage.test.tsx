@@ -146,6 +146,47 @@ describe('session list role gating', () => {
   })
 })
 
+describe('session list "my assignment" badge', () => {
+  it('shows the badge for FASILITATOR rows with my_assignment', async () => {
+    server.use(
+      http.get('/api/sessions', () =>
+        paged([sessionRow(1, 'Kelas Batik Senin', { my_assignment: true })], {
+          page: 1,
+          per_page: 20,
+          total: 1,
+        }),
+      ),
+    )
+    renderApp(<SessionsPage />, { route: '/sessions', session: FAS_SESSION() })
+
+    await screen.findByText('Kelas Batik Senin')
+    expect(screen.getByText('Tugas Saya')).toBeInTheDocument()
+  })
+
+  it('does not show the badge when the session has no assignment', async () => {
+    server.use(
+      http.get('/api/sessions', () => paged([sessionRow(1, 'Kelas Batik Senin')], { page: 1, per_page: 20, total: 1 })),
+    )
+    renderApp(<SessionsPage />, { route: '/sessions', session: FAS_SESSION() })
+
+    await screen.findByText('Kelas Batik Senin')
+    expect(screen.queryByText('Tugas Saya')).toBeNull()
+  })
+
+  it('ADMIN never sees the badge', async () => {
+    server.use(
+      http.get('/api/sessions', () =>
+        paged([sessionRow(1, 'Kelas Batik Senin', { my_assignment: true })], { page: 1, per_page: 20, total: 1 }),
+      ),
+    )
+    renderApp(<SessionsPage />, { route: '/sessions', session: ADMIN_SESSION() })
+
+    await screen.findByText('Kelas Batik Senin')
+    expect(screen.queryByText('Tugas Saya')).toBeNull()
+    expect(screen.queryByText('My Assignment')).toBeNull()
+  })
+})
+
 describe('session list SSE refetch', () => {
   it('session.changed refetches the SAME params; session.deleted drops the row', async () => {
     useSseFakeTimers()
