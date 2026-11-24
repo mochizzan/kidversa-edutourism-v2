@@ -25,6 +25,7 @@ import PageHeader from '../../components/PageHeader'
 import PageSkeleton from '../../components/PageSkeleton'
 import StarInput from '../../components/StarInput'
 import { api, errorCode, ApiError } from '../../lib/api'
+import { useAuth } from '../../lib/auth'
 import { useCrumbName } from '../../lib/crumbs'
 import { useErrorToast } from '../../lib/errors'
 import { useEventRefetch } from '../../lib/list'
@@ -41,6 +42,7 @@ interface CardValue {
 export default function AssessmentPage() {
   const { t } = useTranslation('assessment')
   const { t: tc } = useTranslation('common')
+  const { user } = useAuth()
   const toast = useErrorToast()
   const navigate = useNavigate()
   const { sid, cid, stid } = useParams()
@@ -233,7 +235,10 @@ export default function AssessmentPage() {
   }
 
   const status = detail.session.status
-  const editable = status === 'OPENED' && !notOwner && !childInactive && rows !== null
+  // Evaluations are written by facilitators only (backend PUT is FAS-gated):
+  // SA/ADMIN may review existing scores but never edit them.
+  const canEvaluate = user?.role === 'FASILITATOR'
+  const editable = canEvaluate && status === 'OPENED' && !notOwner && !childInactive && rows !== null
   const banner = notOwner
     ? t('notOwner')
     : childInactive
@@ -242,7 +247,9 @@ export default function AssessmentPage() {
         ? t('readOnly')
         : status === 'DRAFT'
           ? t('notOpened')
-          : null
+          : !canEvaluate
+            ? t('viewOnly')
+            : null
 
   const done = topic.activities.filter((activity) => (values[activity.said]?.stars ?? null) !== null)
     .length

@@ -20,6 +20,7 @@
   "readOnly": "The session is finished — assessments are read-only.",
   "notOpened": "The session has not opened yet — assessing starts once it opens.",
   "notOwner": "Only this group's facilitator can assess.",
+  "viewOnly": "You can view this assessment, but only facilitators can edit it.",
   "empty": "No activities to assess yet.",
   "topicComplete": "Topic complete",
   "topicIncomplete": "Incomplete"

@@ -53,6 +53,7 @@ function assessmentHandlers(
   ]
 }
 
+const FAS_SESSION = () => makeLoginData({ user: makeUser({ role: 'FASILITATOR' }) })
 const ADMIN_SESSION = () => makeLoginData({ user: makeUser({ role: 'ADMIN' }) })
 
 describe('assessment form save', () => {
@@ -63,7 +64,7 @@ describe('assessment form save', () => {
     renderApp(null, {
       routes: ROUTES,
       route: '/assessment/1/2/3',
-      session: ADMIN_SESSION(),
+      session: FAS_SESSION(),
     })
 
     await screen.findAllByText(/Mengamati motif/)
@@ -90,7 +91,7 @@ describe('assessment form save', () => {
     renderApp(null, {
       routes: ROUTES,
       route: '/assessment/1/2/3',
-      session: ADMIN_SESSION(),
+      session: FAS_SESSION(),
     })
 
     const cards = (await screen.findAllByText(/Mengamati motif/))[0].closest('.ant-card') as HTMLElement
@@ -126,7 +127,7 @@ describe('assessment form save', () => {
     renderApp(null, {
       routes: ROUTES,
       route: '/assessment/1/2/3',
-      session: ADMIN_SESSION(),
+      session: FAS_SESSION(),
     })
 
     const cards = (await screen.findAllByText(/Mengamati motif/))[0].closest('.ant-card') as HTMLElement
@@ -159,7 +160,7 @@ describe('assessment form save', () => {
     renderApp(null, {
       routes: ROUTES,
       route: '/assessment/1/2/3',
-      session: ADMIN_SESSION(),
+      session: FAS_SESSION(),
     })
 
     const cards = (await screen.findAllByText(/Mengamati motif/))[0].closest('.ant-card') as HTMLElement
@@ -181,7 +182,7 @@ describe('assessment form save', () => {
     renderApp(null, {
       routes: ROUTES,
       route: '/assessment/1/2/3',
-      session: ADMIN_SESSION(),
+      session: FAS_SESSION(),
     })
 
     const cards = (await screen.findAllByText(/Mengamati motif/))[0].closest('.ant-card') as HTMLElement
@@ -205,7 +206,7 @@ describe('assessment read-only banners', () => {
     renderApp(null, {
       routes: ROUTES,
       route: '/assessment/1/2/3',
-      session: ADMIN_SESSION(),
+      session: FAS_SESSION(),
     })
 
     await screen.findAllByText(/Mengamati motif/)
@@ -219,10 +220,29 @@ describe('assessment read-only banners', () => {
     renderApp(null, {
       routes: ROUTES,
       route: '/assessment/1/2/3',
-      session: ADMIN_SESSION(),
+      session: FAS_SESSION(),
     })
 
     await screen.findByText('Sesi belum dibuka — penilaian dimulai setelah sesi dibuka.')
+  })
+
+  it('SA/ADMIN can view an OPENED assessment but never edit it', async () => {
+    const capture: PutCapture = { calls: 0, body: null }
+    server.use(...assessmentHandlers(capture, { status: 'OPENED' }))
+    renderApp(null, {
+      routes: ROUTES,
+      route: '/assessment/1/2/3',
+      session: ADMIN_SESSION(),
+    })
+
+    await screen.findAllByText(/Mengamati motif/)
+    await screen.findByText(
+      'Anda dapat melihat penilaian ini, tetapi hanya fasilitator yang dapat mengubahnya.',
+    )
+    const star = screen.getAllByRole('radio', { name: '4 — BSB' })[0]
+    expect(star).toHaveAttribute('aria-disabled', 'true')
+    await userEvent.setup().click(star)
+    expect(capture.calls).toBe(0)
   })
 
   it('NOT_OWNER assessments render the foreign-child banner', async () => {
@@ -260,7 +280,7 @@ describe('assessment read-only banners', () => {
         { path: '/sessions/:sid', element: <div>SESSION DETAIL</div> },
       ],
       route: '/assessment/1/2/99',
-      session: ADMIN_SESSION(),
+      session: FAS_SESSION(),
     })
 
     await screen.findByText('Data tidak ditemukan.')
@@ -285,7 +305,7 @@ describe('assessment header and body states', () => {
     renderApp(null, {
       routes: ROUTES,
       route: '/assessment/1/2/3',
-      session: ADMIN_SESSION(),
+      session: FAS_SESSION(),
     })
 
     // Header decoration only: the page works without the child name…
@@ -311,7 +331,7 @@ describe('assessment header and body states', () => {
     renderApp(null, {
       routes: ROUTES,
       route: '/assessment/1/2/3',
-      session: ADMIN_SESSION(),
+      session: FAS_SESSION(),
     })
 
     await screen.findByText('Belum ada kegiatan untuk dinilai.')
@@ -338,7 +358,7 @@ describe('assessment header and body states', () => {
     renderApp(null, {
       routes: ROUTES,
       route: '/assessment/1/2/3',
-      session: ADMIN_SESSION(),
+      session: FAS_SESSION(),
     })
 
     await screen.findByText('Layanan sedang sibuk. Coba lagi.')
@@ -401,7 +421,7 @@ describe('assessment header and body states', () => {
     renderApp(null, {
       routes: ROUTES,
       route: '/assessment/1/2/3',
-      session: ADMIN_SESSION(),
+      session: FAS_SESSION(),
     })
 
     await waitFor(() => expect(assessmentsCalls).toBe(1))
@@ -429,7 +449,7 @@ describe('assessment header and body states', () => {
     renderApp(null, {
       routes: ROUTES,
       route: '/assessment/1/2/3',
-      session: ADMIN_SESSION(),
+      session: FAS_SESSION(),
     })
 
     const cards = (await screen.findAllByText(/Mengamati motif/))[0].closest('.ant-card') as HTMLElement
@@ -462,7 +482,7 @@ describe('assessment header and body states', () => {
         { path: '/sessions', element: <div>SESSIONS LIST</div> },
       ],
       route: '/assessment/1/2/3',
-      session: ADMIN_SESSION(),
+      session: FAS_SESSION(),
     })
 
     await screen.findByText('Anda tidak punya akses untuk tindakan ini.')
@@ -490,7 +510,7 @@ describe('assessment realtime readiness', () => {
         },
       ],
       route: '/assessment/1/2/3',
-      session: ADMIN_SESSION(),
+      session: FAS_SESSION(),
     })
 
     await until(() => channel.handshakes === 1)
@@ -525,7 +545,7 @@ describe('assessment draft notice (beforeunload)', () => {
     const { unmount } = renderApp(null, {
       routes: ROUTES,
       route: '/assessment/1/2/3',
-      session: ADMIN_SESSION(),
+      session: FAS_SESSION(),
     })
 
     const cards = (await screen.findAllByText(/Mengamati motif/))[0].closest('.ant-card') as HTMLElement
@@ -569,7 +589,7 @@ describe('assessment draft notice (beforeunload)', () => {
     renderApp(null, {
       routes: ROUTES,
       route: '/assessment/1/2/3',
-      session: ADMIN_SESSION(),
+      session: FAS_SESSION(),
     })
 
     const cards = (await screen.findAllByText(/Mengamati motif/))[0].closest('.ant-card') as HTMLElement

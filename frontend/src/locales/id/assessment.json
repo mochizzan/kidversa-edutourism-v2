@@ -20,6 +20,7 @@
   "readOnly": "Sesi sudah selesai — penilaian hanya dapat dilihat.",
   "notOpened": "Sesi belum dibuka — penilaian dimulai setelah sesi dibuka.",
   "notOwner": "Hanya fasilitator kelompok ini yang dapat menilai.",
+  "viewOnly": "Anda dapat melihat penilaian ini, tetapi hanya fasilitator yang dapat mengubahnya.",
   "empty": "Belum ada kegiatan untuk dinilai.",
   "topicComplete": "Topik lengkap",
   "topicIncomplete": "Belum lengkap"
