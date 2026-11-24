@@ -1,8 +1,9 @@
 /**
  * WaStatusBadge (spec F-13 / FL-14): hidden for FAS, event-driven from
  * `wa.changed` SSE frames (immediate value signal — no 300ms refetch
- * window), `GET /api/wa/status` only on popover open with fetch-once
- * caching, `errors.INTERNAL` on failure. Click behaviour is role-gated: an SA
+ * window), seeded once on mount by `GET /api/wa/status` (the server only
+ * publishes transitions), that same endpoint fetched on popover open with
+ * fetch-once caching, `errors.INTERNAL` on failure. Click behaviour is role-gated: an SA
  * click opens the connect modal, an ADMIN click is inert (badge + popover
  * still work), and FAS never sees the badge. Real timers everywhere except
  * the SSE test, which fakes only setTimeout/setInterval per the sessions
@@ -83,19 +84,38 @@ describe('WaStatusBadge visibility and initial state', () => {
     expect(screen.queryByRole('button', { name: /Status WhatsApp/ })).toBeNull()
   })
 
-  it('renders the unknown state without touching the status endpoint', () => {
+  it('resolves the initial state on mount without a wa.changed transition', async () => {
     let waCalls = 0
     server.use(
       http.get('/api/wa/status', () => {
         waCalls += 1
-        return ok({ connected: false })
+        return ok({ connected: true })
+      }),
+    )
+    // No StreamGate and no hover: the server publishes wa.changed only on a
+    // link-state TRANSITION, so a stable link would otherwise leave the badge
+    // on "Checking…" forever.
+    renderApp(<WaStatusBadge />, { session: adminSession() })
+
+    const badge = await screen.findByRole('button', { name: 'Status WhatsApp: Terhubung' })
+    expect(badge).toHaveClass('kv-wa', 'is-on')
+    expect(waCalls).toBe(1) // one seed call, never a poll
+  })
+
+  it('renders the unknown state while the initial status call is pending', async () => {
+    let waCalls = 0
+    server.use(
+      http.get('/api/wa/status', () => {
+        waCalls += 1
+        return new Promise<Response>(() => {}) // never settles: request still in flight
       }),
     )
     renderApp(<WaStatusBadge />, { session: adminSession() })
 
     const badge = screen.getByRole('button', { name: CHECKING_NAME })
     expect(badge).toHaveClass('kv-wa', 'is-unknown')
-    expect(waCalls).toBe(0) // fetched only when the detail popover opens
+    await waitFor(() => expect(waCalls).toBe(1))
+    expect(screen.getByRole('button', { name: CHECKING_NAME })).toHaveClass('kv-wa', 'is-unknown')
   })
 })
 
@@ -104,6 +124,9 @@ describe('WaStatusBadge stream-driven state', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
     const channel = sseChannel('/api/stream')
     server.use(channel.handler)
+    // The mount seed must not race the frames: park it as forever-pending so
+    // only `wa.changed` can move the badge in this test.
+    server.use(http.get('/api/wa/status', () => new Promise<Response>(() => {})))
     renderApp(
       <>
         <StreamGate />
@@ -138,24 +161,37 @@ describe('WaStatusBadge detail popover', () => {
     )
     renderApp(<WaStatusBadge />, { session: adminSession() })
     const badge = screen.getByRole('button', { name: CHECKING_NAME })
-    expect(waCalls).toBe(0)
+
+    // The mount seed resolves the badge itself, not the detail popover.
+    await screen.findByRole('button', { name: 'Status WhatsApp: Terhubung' })
+    expect(waCalls).toBe(1)
 
     const detail = await hoverOpen(badge)
-    expect(waCalls).toBe(1)
+    expect(waCalls).toBe(2) // detail is still fetched on demand
     expect(within(detail).getByText('Terhubung')).toBeInTheDocument()
     expect(within(detail).getByText('Kantor Pusat')).toBeInTheDocument()
 
     await hoverClose(badge)
-    expect(waCalls).toBe(1)
+    expect(waCalls).toBe(2)
 
     await hoverOpen(badge)
-    expect(waCalls).toBe(1) // cached detail — no second GET
+    expect(waCalls).toBe(2) // cached detail — no second GET
   })
 
-  it('resolves the checking state from the on-demand status fetch', async () => {
-    server.use(http.get('/api/wa/status', () => ok({ connected: true })))
+  it('resolves the checking state from the on-demand status fetch when the seed fails', async () => {
+    let waCalls = 0
+    server.use(
+      http.get('/api/wa/status', () => {
+        waCalls += 1
+        return waCalls === 1 ? fail('INTERNAL') : ok({ connected: true })
+      }),
+    )
     renderApp(<WaStatusBadge />, { session: adminSession() })
     const badge = screen.getByRole('button', { name: CHECKING_NAME })
+
+    // The mount seed failed: the badge is still unknown until the popover open.
+    await waitFor(() => expect(waCalls).toBe(1))
+    expect(screen.getByRole('button', { name: CHECKING_NAME })).toHaveClass('kv-wa', 'is-unknown')
 
     const detail = await hoverOpen(badge)
 
@@ -177,9 +213,10 @@ describe('WaStatusBadge detail popover', () => {
     renderApp(<WaStatusBadge />, { session: adminSession() })
     const badge = screen.getByRole('button', { name: CHECKING_NAME })
 
+    await waitFor(() => expect(waCalls).toBe(1)) // mount seed failed silently
     fireEvent.mouseOver(badge)
     await screen.findByText('Terjadi kesalahan tak terduga. Coba lagi.')
-    expect(waCalls).toBe(1)
+    expect(waCalls).toBe(2) // the hover attempt is separate from the seed
   })
 
   it('retries the detail fetch after a failed attempt', async () => {
@@ -187,21 +224,22 @@ describe('WaStatusBadge detail popover', () => {
     server.use(
       http.get('/api/wa/status', () => {
         waCalls += 1
-        return waCalls === 1 ? fail('INTERNAL') : ok({ connected: true })
+        return waCalls <= 2 ? fail('INTERNAL') : ok({ connected: true })
       }),
     )
     renderApp(<WaStatusBadge />, { session: adminSession() })
     const badge = screen.getByRole('button', { name: CHECKING_NAME })
 
+    await waitFor(() => expect(waCalls).toBe(1)) // mount seed failed silently
     fireEvent.mouseOver(badge)
     await screen.findByText('Terjadi kesalahan tak terduga. Coba lagi.')
-    expect(waCalls).toBe(1)
+    expect(waCalls).toBe(2)
 
     fireEvent.mouseOut(badge)
     await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
 
     const detail = await hoverOpen(badge)
-    expect(waCalls).toBe(2)
+    expect(waCalls).toBe(3)
     expect(within(detail).getByText('Terhubung')).toBeInTheDocument()
   })
 
@@ -247,6 +285,7 @@ describe('WaStatusBadge detail popover', () => {
 
   it('SA click opens the connect modal', async () => {
     const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    server.use(http.get('/api/wa/status', () => new Promise<Response>(() => {})))
     renderApp(
       <>
         <WaStatusBadge />
@@ -265,6 +304,7 @@ describe('WaStatusBadge detail popover', () => {
 
   it('ADMIN click does nothing', async () => {
     const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    server.use(http.get('/api/wa/status', () => new Promise<Response>(() => {})))
     renderApp(
       <>
         <WaStatusBadge />

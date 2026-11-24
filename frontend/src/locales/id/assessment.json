@@ -1,0 +1,26 @@
+{
+  "title": "Penilaian",
+  "stars": {
+    "groupLabel": "Penilaian bintang 1–4",
+    "1": "BB",
+    "2": "MB",
+    "3": "BSH",
+    "4": "BSB"
+  },
+  "note": {
+    "placeholder": "Catatan untuk kegiatan ini (maks. 2000 karakter)"
+  },
+  "save": {
+    "saving": "Menyimpan…",
+    "saved": "Tersimpan",
+    "failed": "Gagal menyimpan"
+  },
+  "draftNotice": "Perubahan belum tersimpan — simpan sebelum meninggalkan halaman.",
+  "progress": "Penilaian {{done}}/{{total}}",
+  "readOnly": "Sesi sudah selesai — penilaian hanya dapat dilihat.",
+  "notOpened": "Sesi belum dibuka — penilaian dimulai setelah sesi dibuka.",
+  "notOwner": "Hanya fasilitator kelompok ini yang dapat menilai.",
+  "empty": "Belum ada kegiatan untuk dinilai.",
+  "topicComplete": "Topik lengkap",
+  "topicIncomplete": "Belum lengkap"
+}

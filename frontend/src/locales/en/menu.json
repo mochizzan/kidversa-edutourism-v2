@@ -1,0 +1,39 @@
+{
+  "navLabel": "Main navigation",
+  "openNav": "Open navigation",
+  "collapseNav": "Collapse navigation",
+  "expandNav": "Expand navigation",
+  "language": "Language",
+  "schoolSwitcher": "Switch school",
+  "section": {
+    "overview": "Overview",
+    "academic": "Academic",
+    "data": "Data",
+    "system": "System"
+  },
+  "dashboard": "Dashboard",
+  "schools": "Schools",
+  "users": "Users",
+  "sessions": "Sessions",
+  "allSessions": "All sessions",
+  "masters": "Masters",
+  "programs": "Programs",
+  "topics": "Topics",
+  "activities": "Activities",
+  "missions": "Missions",
+  "frames": "Frames",
+  "children": "Children",
+  "reports": "Reports",
+  "consent": "Consent",
+  "pendingApprovals": "{{count}} pending approvals",
+  "profile": "Profile",
+  "settings": "Settings",
+  "logout": "Log out",
+  "breadcrumb": {
+    "label": "Breadcrumb",
+    "newSession": "New session",
+    "sessionDetail": "Session detail",
+    "gallery": "Gallery",
+    "assessment": "Assessment"
+  }
+}

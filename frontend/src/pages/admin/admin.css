@@ -1,0 +1,18 @@
+/* Shared F2 admin list styles: filter row, inline error. */
+
+.kv-list-filters {
+  margin-bottom: var(--kv-space-4);
+}
+
+.kv-list-error {
+  margin-bottom: var(--kv-space-4);
+}
+
+/* Profile photo card (spec 09): avatar + entry button side by side. */
+
+.kv-profile-photo {
+  display: flex;
+  align-items: center;
+  gap: var(--kv-space-4);
+}
+

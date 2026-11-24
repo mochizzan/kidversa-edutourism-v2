@@ -1,0 +1,70 @@
+/* Table row actions: one compact icon cluster per row (see RowActions.tsx). */
+
+.kv-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.kv-row-actions__divider {
+  width: 1px;
+  height: 16px;
+  margin: 0 5px;
+  background: var(--kv-border-strong);
+}
+
+.kv-row-action__target {
+  display: inline-flex;
+}
+
+/* The extra `.kv-row-actions` step keeps these rules ahead of antd's own
+   text-button variants (hover background + danger color) without !important. */
+.kv-row-actions .kv-row-action.ant-btn {
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  padding: 0;
+  border-radius: 6px;
+  color: var(--kv-text-2);
+  font-size: 14px;
+}
+
+.kv-row-actions .kv-row-action.ant-btn:not(:disabled):hover {
+  background: var(--kv-rail-hover);
+  color: var(--kv-text);
+}
+
+.kv-row-actions .kv-row-action.ant-btn:disabled {
+  color: var(--kv-border-strong);
+  background: transparent;
+}
+
+.kv-row-actions .kv-row-action.ant-btn.kv-row-action--accent:not(:disabled) {
+  color: var(--kv-olive-deep);
+}
+
+.kv-row-actions .kv-row-action.ant-btn.kv-row-action--accent:not(:disabled):hover {
+  background: rgba(226, 47, 128, 0.1);
+  color: var(--kv-olive-deep);
+}
+
+/* Destructive stays quiet until the pointer is on it. */
+.kv-row-actions .kv-row-action.ant-btn.ant-btn-dangerous:not(:disabled) {
+  color: var(--kv-text-2);
+}
+
+.kv-row-actions .kv-row-action.ant-btn.ant-btn-dangerous:not(:disabled):hover {
+  background: rgba(255, 120, 115, 0.14);
+  color: var(--kv-coral);
+}
+
+.kv-row-actions .kv-row-action.ant-btn:focus-visible {
+  outline: 2px solid var(--kv-violet);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kv-row-actions .kv-row-action.ant-btn {
+    transition: none;
+  }
+}

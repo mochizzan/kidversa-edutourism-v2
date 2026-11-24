@@ -1,0 +1,374 @@
+/*
+ * A4 fixed report layout (spec F-12.1) — plain CSS only, no antd inside
+ * `#report-a4`. Paper 210mm × 297mm portrait, 10mm margins (content area
+ * 190mm × 277mm), single page: the content node scales down to fit one page
+ * (JS sets `transform` on `.report-a4__content`); when scaling was required an
+ * overflow notice pill is shown — no auto-pagination. Screen preview keeps the
+ * 1:1.414 aspect because the page box is fixed (preview wrappers scale the
+ * whole node). Palette strictly from the binding DESIGN→project mapping:
+ * canvas #FFFFFF · surface #FCFCFB · border #E8E8E4 · text #20201E /
+ * #777873 · olive #FFCA95 · olive-deep #E22F80 · coral #FF7873 ·
+ * coral-soft rgba(255,120,115,.35) · violet #8140DC. Hairline borders,
+ * compact type, no gradients, no shadows.
+ */
+
+@page {
+  size: A4 portrait;
+  margin: 10mm;
+}
+
+.report-a4 {
+  position: relative;
+  box-sizing: border-box;
+  width: 210mm;
+  height: 297mm;
+  padding: 10mm;
+  overflow: hidden;
+  background: #ffffff;
+  color: #20201e;
+  font-family:
+    system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-size: 11px;
+  line-height: 15px;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.report-a4__sheet {
+  position: relative;
+  height: 100%;
+}
+
+.report-a4__content {
+  display: flow-root;
+  transform-origin: top center;
+}
+
+.report-a4__overflow {
+  position: absolute;
+  right: 10mm;
+  bottom: 3.5mm;
+  z-index: 1;
+  padding: 2px 8px;
+  border: 1px solid #ff7873;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #20201e;
+  font-size: 8px;
+  line-height: 14px;
+}
+
+/* ---------- header: static logo placeholder + session/topic ---------- */
+
+.ra-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e8e8e4;
+}
+
+.ra-logo {
+  box-sizing: border-box;
+  flex: none;
+  width: 54px;
+  height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border: 1px solid #e8e8e4;
+  background: #fcfcfb;
+  color: #777873;
+  font-size: 8px;
+  line-height: 11px;
+  text-align: center;
+}
+
+.ra-head__main {
+  flex: 1;
+  min-width: 0;
+}
+
+.ra-title {
+  margin: 0;
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 600;
+}
+
+.ra-sub {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+}
+
+.ra-meta {
+  margin-top: 2px;
+  font-size: 9px;
+  line-height: 14px;
+  color: #777873;
+  font-variant-numeric: tabular-nums;
+}
+
+.ra-head__topic {
+  flex: none;
+  max-width: 46mm;
+  text-align: right;
+  font-size: 9px;
+  line-height: 14px;
+  color: #777873;
+}
+
+.ra-head__topic b {
+  display: block;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  color: #20201e;
+}
+
+/* ---------- completeness banner (complete === false) ---------- */
+
+.ra-banner {
+  margin-top: 8px;
+  padding: 6px 8px;
+  border: 1px solid #ff7873;
+  background: rgba(255, 120, 115, 0.35);
+  font-size: 10px;
+  line-height: 14px;
+}
+
+/* ---------- sections ---------- */
+
+.ra-section {
+  margin-top: 10px;
+}
+
+.ra-h {
+  margin: 0 0 5px;
+  padding-bottom: 3px;
+  border-bottom: 1px solid #e8e8e4;
+  font-size: 11px;
+  line-height: 15px;
+  font-weight: 600;
+}
+
+.ra-profile {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px 12px;
+  font-size: 10px;
+  line-height: 14px;
+}
+
+.ra-field__label {
+  display: block;
+  font-size: 8px;
+  line-height: 12px;
+  color: #777873;
+}
+
+.ra-narrative {
+  margin: 0;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.ra-missions {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 10px;
+  line-height: 15px;
+}
+
+.ra-missions li {
+  margin-bottom: 3px;
+}
+
+.ra-missions b {
+  font-weight: 600;
+}
+
+/* ---------- outcomes table (activities + stars BB/MB/BSH/BSB + notes) ---------- */
+
+.ra-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 10px;
+  line-height: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ra-table th {
+  padding: 3px 4px;
+  border-bottom: 1px solid #e8e8e4;
+  font-size: 8px;
+  font-weight: 600;
+  color: #777873;
+  text-align: left;
+}
+
+.ra-table td {
+  padding: 4px;
+  border-bottom: 1px solid #e8e8e4;
+  vertical-align: top;
+}
+
+.ra-table .ra-table__star {
+  width: 58px;
+  text-align: center;
+}
+
+.ra-star {
+  display: inline-block;
+  padding: 1px 7px;
+  border: 1px solid #ffca95;
+  border-radius: 999px;
+  background: rgba(255, 202, 149, 0.35);
+  font-size: 9px;
+  line-height: 13px;
+  font-weight: 600;
+  color: #20201e;
+}
+
+.ra-indicator,
+.ra-note {
+  display: block;
+  font-size: 9px;
+  line-height: 13px;
+  color: #777873;
+}
+
+/* ---------- badges + candidate photo ---------- */
+
+.ra-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ra-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border: 1px solid #e8e8e4;
+  border-radius: 8px;
+  font-size: 10px;
+  line-height: 14px;
+}
+
+.ra-badge img {
+  display: block;
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+}
+
+.ra-photos {
+  display: flex;
+  gap: 10px;
+}
+
+.ra-photo img {
+  display: block;
+  width: 79px;
+  height: 140px;
+  object-fit: cover;
+  border: 1px solid #e8e8e4;
+}
+
+.ra-photo__caption {
+  margin-top: 3px;
+  font-size: 8px;
+  line-height: 12px;
+  color: #777873;
+}
+
+/* ---------- gated images: placeholder until onLoad, error → retry ---------- */
+
+.ra-img {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+}
+
+.ra-img img {
+  opacity: 0;
+  transition: opacity 120ms;
+}
+
+.ra-img.is-ready img {
+  opacity: 1;
+}
+
+.ra-img__ph {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  box-sizing: border-box;
+  border: 1px dashed #e8e8e4;
+  background: #fcfcfb;
+  color: #777873;
+  font-size: 8px;
+  line-height: 11px;
+  text-align: center;
+}
+
+.ra-img__ph button {
+  padding: 2px 6px;
+  border: 1px solid #e8e8e4;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #8140dc;
+  font-size: 8px;
+  line-height: 11px;
+  cursor: pointer;
+}
+
+/* ---------- attestation (LIVE owner name + role) ---------- */
+
+.ra-sign {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+  padding-top: 8px;
+  border-top: 1px solid #e8e8e4;
+  text-align: center;
+}
+
+.ra-sign__label {
+  font-size: 8px;
+  line-height: 12px;
+  color: #777873;
+}
+
+.ra-sign__name {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+}
+
+.ra-sign__role {
+  font-size: 9px;
+  line-height: 13px;
+  color: #777873;
+}
+
+/* ---------- print: @page supplies the 10mm margins, node fills the sheet ---------- */
+
+@media print {
+  .report-a4 {
+    width: auto;
+    height: auto;
+    padding: 0;
+    overflow: visible;
+  }
+}

@@ -30,6 +30,10 @@
   --kv-rail-hover: #eaeae6;
   --kv-rail-active: #ffffff;
   --kv-rail-line: #c9c9bd;
+  /* 7.1:1 on the rail ground — nav words clear 4.5:1, not just icons */
+  --kv-rail-text: #51514c;
+  /* 5.9:1 on the rail ground — the 11px category label must still clear 4.5:1 */
+  --kv-rail-section: #5c5c56;
 
   --kv-space-1: 4px;
   --kv-space-2: 8px;
@@ -43,6 +47,12 @@
   --kv-radius-control: 8px;
   --kv-radius-pill: 999px;
   --kv-hover: 150ms;
+
+  /* scrollbars: quiet warm-neutral pill in the same family as the hairlines */
+  --kv-scrollbar-size: 10px;
+  --kv-scrollbar-thumb: #a6a699;
+  --kv-scrollbar-thumb-hover: #8b8b7f;
+  --kv-scrollbar-thumb-active: #717166;
 }
 
 * {
@@ -69,6 +79,74 @@ body {
 :focus-visible {
   outline: 2px solid var(--kv-violet);
   outline-offset: 2px;
+}
+
+/* ---------- scrollbars: 6px warm-neutral pill on a 10px gutter ----------
+   Global so every scroll container (page, rail, tables, menus, drawers,
+   modals, textareas) shares one quiet treatment on both axes. A transparent
+   2px border insets the thumb inside the 10px gutter, so it never touches
+   the content edge, and the hairline family keeps it from competing with
+   the surface. */
+
+*::-webkit-scrollbar {
+  width: var(--kv-scrollbar-size);
+  height: var(--kv-scrollbar-size);
+  background: transparent;
+}
+
+/* the one thing we never want: up/down (or left/right) arrow buttons */
+*::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: var(--kv-radius-pill);
+  background-color: var(--kv-scrollbar-thumb);
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--kv-scrollbar-thumb-hover);
+}
+
+*::-webkit-scrollbar-thumb:active {
+  background-color: var(--kv-scrollbar-thumb-active);
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* antd opts its table into the standard scrollbar properties
+   (`.ant-table { scrollbar-color: … }`), and those inherit. Once Chromium
+   sees a non-auto value on the scroller it renders the stock native bar and
+   ignores the WebKit rules above, so the table's horizontal bar kept the
+   square trough with arrow buttons while the page's vertical bar got the
+   pill. Declaring `auto` on the scrollers wins over the inherited value and
+   hands them back to the WebKit treatment. Firefox skips this block and
+   keeps antd's values, falling through to the thin thumb below. */
+@supports selector(::-webkit-scrollbar) {
+  .ant-table-content,
+  .ant-table-body {
+    scrollbar-color: auto;
+  }
+}
+
+/* Firefox has no WebKit pseudo-elements; the standard properties still give a
+   thin neutral thumb with no arrow buttons. Scoped so it cannot override the
+   WebKit rules in Chromium/Safari, where setting them disables those rules. */
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--kv-scrollbar-thumb) transparent;
+  }
 }
 
 /* ---------- shell: tinted rail + white content sheet ---------- */
@@ -148,6 +226,29 @@ body {
   margin-top: 18px;
 }
 
+/* Collapsed: the label leaves the eye and stays in the a11y tree (it is an
+   h2), and the category becomes a short hairline so icon groups stay apart. */
+.kv-rail.is-collapsed .kv-rail-section-header {
+  padding: 10px 8px 4px;
+}
+
+.kv-rail.is-collapsed .kv-rail-list > .kv-rail-section-header:first-child {
+  padding-top: 0;
+}
+
+.kv-rail.is-collapsed .kv-rail-section-header::before {
+  content: '';
+  display: block;
+  height: 1px;
+  margin: 0 6px 8px;
+  background: var(--kv-rail-line);
+  opacity: 0.6;
+}
+
+.kv-rail.is-collapsed .kv-rail-list > .kv-rail-section-header:first-child::before {
+  display: none;
+}
+
 .kv-rail.is-collapsed .kv-rail-link {
   position: relative;
   justify-content: center;
@@ -155,7 +256,14 @@ body {
   padding: 0;
 }
 
+/* Folded, the child that is current is hidden, so its section parent carries
+   the white pill instead — otherwise the rail shows no "you are here". */
+.kv-rail.is-collapsed .kv-rail-item--group.is-active > .kv-rail-link {
+  background: var(--kv-rail-active);
+}
+
 .kv-rail.is-collapsed .kv-rail-label,
+.kv-rail.is-collapsed .kv-rail-section-label,
 .kv-rail.is-collapsed .kv-rail-brand__name {
   position: absolute;
   width: 1px;
@@ -175,17 +283,17 @@ body {
 
 .kv-rail.is-collapsed .kv-rail-badge {
   position: absolute;
-  top: 3px;
-  right: 3px;
-  min-width: 16px;
-  height: 16px;
+  top: 2px;
+  right: 2px;
+  min-width: 18px;
+  height: 18px;
   margin-left: 0;
   padding: 0 4px;
-  border-radius: 5px;
-  font-size: 9px;
+  border-radius: 6px;
+  font-size: 11px;
 }
 
-.kv-rail.is-collapsed .kv-rail__tenant {
+.kv-rail.is-collapsed .kv-rail__school {
   display: none;
 }
 
@@ -236,6 +344,31 @@ body {
   margin-top: 26px;
 }
 
+/* ---------- nav categories: one quiet label, then its destinations ---------- */
+
+.kv-rail-section-header {
+  padding: 16px 16px 6px;
+}
+
+/* The first label sits 32px under the brand, where the nav's own air was. */
+.kv-rail-list > .kv-rail-section-header:first-child {
+  padding-top: 6px;
+}
+
+.kv-rail-section-label {
+  display: block;
+  margin: 0;
+  overflow: hidden;
+  color: var(--kv-rail-section);
+  font-size: 0.6875rem; /* 11px */
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
 .kv-rail-list {
   display: flex;
   flex-direction: column;
@@ -259,7 +392,7 @@ body {
   border: 0;
   border-radius: 10px;
   background: transparent;
-  color: var(--kv-text-2);
+  color: var(--kv-rail-text);
   font: inherit;
   font-size: 14px;
   font-weight: 500;
@@ -306,11 +439,14 @@ body {
     color var(--kv-hover);
 }
 
-/* open section: darken the parent label, rotate the chevron */
-.kv-rail-item.is-open > .kv-rail-link,
+/* Open says the list is expanded; semibold + ink say the current page is inside. */
 .kv-rail-item--group.is-active > .kv-rail-link {
   color: var(--kv-text);
   font-weight: 600;
+}
+
+.kv-rail-item.is-open > .kv-rail-link {
+  color: var(--kv-text);
 }
 
 .kv-rail-item.is-open > .kv-rail-link .kv-rail-chevron,
@@ -322,14 +458,11 @@ body {
   transform: rotate(180deg);
 }
 
-/* current page: the white pill */
+/* current page: the white pill (tone step only, no shadow on a resting surface) */
 .kv-rail-item.is-current > .kv-rail-link {
   background: var(--kv-rail-active);
   color: var(--kv-text);
   font-weight: 600;
-  box-shadow:
-    0 1px 2px rgba(32, 32, 30, 0.05),
-    0 6px 16px rgba(32, 32, 30, 0.04);
 }
 
 .kv-rail-badge {
@@ -355,6 +488,7 @@ body {
 .kv-rail-subwrap {
   display: grid;
   grid-template-rows: 0fr;
+  overflow: hidden;
   transition: grid-template-rows 240ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -362,10 +496,18 @@ body {
   grid-template-rows: 1fr;
 }
 
+/* A closed section paints nothing. The tree connector is absolutely positioned
+   and escapes the collapsed clip, so it is switched off rather than clipped:
+   a 1.5px spine used to sit under every closed group (Masters showed it). */
+.kv-rail-item:not(.is-open) .kv-rail-subitem::before,
+.kv-rail-item:not(.is-open) .kv-rail-subitem::after {
+  display: none;
+}
+
 .kv-rail-sub {
   position: relative;
   margin: 0;
-  padding: 0 0 4px 38px;
+  padding: 2px 0 4px 38px;
   overflow: hidden;
   list-style: none;
 }
@@ -419,9 +561,9 @@ body {
   gap: var(--kv-space-2);
   width: 100%;
   min-height: 40px;
-  padding: 0 12px;
+  padding: 0 12px 0 8px;
   border-radius: 10px;
-  color: var(--kv-text-2);
+  color: var(--kv-rail-text);
   font-size: 13px;
   font-weight: 500;
   letter-spacing: -0.005em;
@@ -441,12 +583,9 @@ body {
   background: var(--kv-rail-active);
   color: var(--kv-text);
   font-weight: 600;
-  box-shadow:
-    0 1px 2px rgba(32, 32, 30, 0.05),
-    0 4px 12px rgba(32, 32, 30, 0.04);
 }
 
-/* ---------- rail footer: tenant, user, settings ---------- */
+/* ---------- rail footer: school, user, settings ---------- */
 
 .kv-rail__foot {
   display: flex;
@@ -456,11 +595,11 @@ body {
   padding-top: 20px;
 }
 
-.kv-rail__tenant {
+.kv-rail__school {
   padding: 0 2px;
 }
 
-.kv-rail-tenant {
+.kv-rail-school {
   width: 100%;
 }
 
@@ -520,8 +659,8 @@ body {
 
 .kv-rail-user__role {
   overflow: hidden;
-  color: var(--kv-text-2);
-  font-size: 10px;
+  color: var(--kv-rail-section);
+  font-size: 11px;
   line-height: 14px;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -623,6 +762,78 @@ body {
   min-height: 100vh;
 }
 
+/* ---------- top bar: breadcrumb trail ---------- */
+
+/* One quiet strip per authenticated page: wayfinding only, no title and no
+   actions, so it never competes with the PageHeader below. It borrows the
+   sheet's hairline language instead of a fill or a shadow. */
+.kv-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--kv-space-4);
+  min-height: 32px;
+  margin-bottom: var(--kv-space-5);
+  padding-bottom: var(--kv-space-3);
+  border-bottom: 1px solid var(--kv-border);
+}
+
+.kv-topbar .ant-breadcrumb {
+  min-width: 0;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.kv-topbar .ant-breadcrumb ol {
+  align-items: center;
+}
+
+/* Crumbs never shrink into "S…": a tight trail wraps to a second row instead. */
+.kv-topbar .ant-breadcrumb li {
+  flex: none;
+}
+
+/* Long session names truncate rather than shove the trail off the sheet. The
+   cap lives on the crumb box (plain text) and its anchor (text inside a link),
+   so both ellipsize instead of overflowing. */
+.kv-topbar .ant-breadcrumb-link {
+  display: inline-block;
+  max-width: 40ch;
+  overflow: hidden;
+  color: var(--kv-text-2);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+}
+
+.kv-topbar .ant-breadcrumb-link a {
+  display: inline-block;
+  max-width: 40ch;
+  overflow: hidden;
+  color: inherit;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+}
+
+/* antd paints a hover chip behind breadcrumb links; this bar stays flat. */
+.kv-topbar .ant-breadcrumb-link a:hover {
+  background: transparent;
+  color: var(--kv-text);
+}
+
+/* The crumb you are on is the only one in ink. */
+.kv-topbar .ant-breadcrumb li:last-child .ant-breadcrumb-link {
+  color: var(--kv-text);
+  font-weight: 500;
+}
+
+.kv-topbar .ant-breadcrumb-separator {
+  margin-inline: var(--kv-space-2);
+  color: var(--kv-text-2);
+  opacity: 0.45;
+}
+
 /* ---------- mobile: rail becomes a left drawer ---------- */
 
 .kv-mobilebar {
@@ -649,7 +860,7 @@ body {
   margin-top: 24px;
 }
 
-.kv-drawer .kv-rail-tenant {
+.kv-drawer .kv-rail-school {
   width: 100%;
 }
 
@@ -693,6 +904,41 @@ body {
   gap: var(--kv-space-2);
 }
 
+/* List fetch failures replace the table (retry restores it), so the alert
+   keeps the table's slot: directly under the filter tray. */
+.kv-list-error {
+  margin-bottom: var(--kv-space-3);
+}
+
+/* ---------- session create wizard ----------
+   Steps, body, and actions share one column rail so the three wizard
+   stages never drift to different widths; actions close the flow on the
+   sheet's hairline language (same family as the breadcrumb topbar). */
+.kv-wizard {
+  display: flex;
+  flex-direction: column;
+  max-width: 640px;
+}
+
+.kv-wizard__steps {
+  margin-bottom: var(--kv-space-6);
+}
+
+.kv-wizard__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--kv-space-2);
+  margin-top: var(--kv-space-6);
+  padding-top: var(--kv-space-4);
+  border-top: 1px solid var(--kv-border);
+}
+
+.kv-wizard__actions-forward {
+  display: flex;
+  gap: var(--kv-space-2);
+}
+
 .kv-meta {
   font-size: 9px;
   line-height: 14px;
@@ -703,10 +949,37 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* antd Table keeps the editorial density */
+/* antd Table keeps the editorial density; ~10px vertical keeps rows scannable
+   without the cramped 8px that made multi-line cells collide. */
 .ant-table th.ant-table-cell,
 .ant-table td.ant-table-cell {
-  padding: 8px 12px;
+  padding: 10px 12px;
+}
+
+/* Cards float on hairlines, not drop shadows: 1px border + a 2px whisper. */
+.ant-card {
+  border-color: var(--kv-border);
+  box-shadow: 0 1px 2px rgba(32, 32, 30, 0.03);
+}
+
+/* Shared skeleton block (table first-load + dashboard). */
+.kv-skel {
+  display: block;
+  height: 10px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #f0f0ec 25%, #f8f8f5 37%, #f0f0ec 63%);
+  background-size: 400% 100%;
+  animation: kv-skel 1.4s ease infinite;
+}
+
+@keyframes kv-skel {
+  from {
+    background-position: 100% 50%;
+  }
+
+  to {
+    background-position: 0 50%;
+  }
 }
 
 /* ---------- status chip (Draft / Opened / Finished) ---------- */
@@ -732,6 +1005,32 @@ body {
 .kv-status--finished {
   background: var(--kv-olive);
   color: var(--kv-text);
+}
+
+/* ---------- status tones (StatusPill) ----------
+   The lifecycle chip above uses draft/opened/finished. Row facts use tones so
+   "active", "approved" and "eligible" share one look instead of borrowing a
+   lifecycle class or falling back to antd's default blue. */
+
+.kv-status--neutral {
+  background: var(--kv-surface);
+  border-color: var(--kv-border);
+  color: var(--kv-text-2);
+}
+
+.kv-status--positive {
+  background: var(--kv-olive);
+  color: var(--kv-text);
+}
+
+.kv-status--attention {
+  background: var(--kv-coral-soft);
+  color: var(--kv-text);
+}
+
+.kv-status--info {
+  background: var(--kv-violet);
+  color: #ffffff;
 }
 
 /* ---------- star input (antd Rate theming) ---------- */
@@ -868,6 +1167,88 @@ body {
   margin-top: var(--kv-space-4);
 }
 
+/* ---------- filter tray ----------
+   A labelled strip, not a floating card: the hairline and the off-white fill
+   separate filters from the table without adding a shadow. Labels sit above
+   the controls so a chosen value never erases what the control filters by. */
+
+.kv-filterbar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kv-space-2);
+  margin-bottom: var(--kv-space-4);
+  padding: var(--kv-space-3) var(--kv-space-4) 10px;
+  border: 1px solid var(--kv-border);
+  border-radius: var(--kv-radius-card);
+  background: var(--kv-surface);
+}
+
+.kv-filterbar__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--kv-space-3);
+}
+
+.kv-filterbar__hint {
+  margin: 0;
+  color: var(--kv-text-2);
+  font-size: 10px;
+  line-height: 14px;
+}
+
+.kv-filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kv-space-1);
+  min-width: 0;
+}
+
+.kv-filter-field__label {
+  color: var(--kv-text-2);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 14px;
+}
+
+.kv-filter-field .ant-input-search,
+.kv-filter-field .ant-select {
+  width: 100%;
+}
+
+/* The clear action keeps the row's baseline without adding a fifth label. */
+.kv-filterbar__clear.ant-btn {
+  margin-bottom: 1px;
+  padding-inline: 0;
+  font-size: 11px;
+}
+
+/* one labelled field inside a plain (non-antd-Form) stack */
+.kv-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kv-space-1);
+}
+
+.kv-field-label {
+  color: var(--kv-text-2);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 14px;
+}
+
+@media (max-width: 768px) {
+  .kv-filterbar {
+    padding: var(--kv-space-3);
+  }
+
+  .kv-filter-field {
+    width: 100% !important;
+  }
+}
+
 /* ---------- motion ---------- */
 
 @media (prefers-reduced-motion: reduce) {
@@ -941,6 +1322,25 @@ body {
     width: 100%;
   }
 
+  /* the trail stays 11px, but each crumb becomes a full 44px tap target */
+  .kv-topbar {
+    min-height: 44px;
+    margin-bottom: var(--kv-space-4);
+    padding-bottom: 0;
+  }
+
+  .kv-topbar .ant-breadcrumb-link {
+    max-width: 26ch;
+    height: 44px;
+    line-height: 44px;
+  }
+
+  .kv-topbar .ant-breadcrumb-link a {
+    max-width: 26ch;
+    height: 44px;
+    line-height: 44px;
+  }
+
   /* 44×44px minimum touch targets */
   .kv-wa,
   .kv-burger,
@@ -969,3 +1369,39 @@ body {
   }
 }
 
+
+/* ---------- impersonation strip (admin "Login as") ---------- */
+
+.kv-impersonation {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--kv-space-3);
+  margin-bottom: var(--kv-space-4);
+  padding: 10px var(--kv-space-4);
+  border: 1px solid color-mix(in srgb, var(--kv-accent, #d97706) 45%, transparent);
+  border-radius: var(--kv-radius, 10px);
+  background: color-mix(in srgb, var(--kv-accent, #d97706) 12%, var(--kv-surface, #fff));
+  color: var(--kv-text, #1f2937);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.kv-impersonation__text {
+  min-width: 0;
+}
+
+.kv-impersonation__exit {
+  flex: none;
+}
+
+@media (max-width: 768px) {
+  .kv-impersonation {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .kv-impersonation__exit {
+    align-self: flex-end;
+  }
+}

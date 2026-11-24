@@ -1,0 +1,357 @@
+/* Dashboard: compact editorial command-center layout (DESIGN §KPI/§grid).
+   antd supplies the component chrome; this file owns density, hierarchy and
+   the responsive grid. */
+
+.kv-dash {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kv-space-5);
+}
+
+.kv-dash__error {
+  margin-bottom: 0;
+}
+
+/* ---------- compact card chrome ---------- */
+
+.kv-dash .ant-card-head {
+  min-height: 46px;
+  padding: 0 var(--kv-space-5);
+}
+
+.kv-dash .ant-card-head-title {
+  padding: 12px 0;
+}
+
+.kv-dash .ant-card-extra {
+  padding: 9px 0;
+}
+
+/* 20px of internal air: related content sits closer to its own title than to
+   the next card (proximity rule), never wall-to-wall. */
+.kv-dash .ant-card-body {
+  padding: 18px var(--kv-space-5);
+}
+
+/* The card heading must read as a section label (11–13px), not a page title.
+   `.kv-card-title.ant-typography` beats antd's `h2.ant-typography` default. */
+.kv-card-title.ant-typography {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+  letter-spacing: -0.005em;
+}
+
+/* ---------- KPI row ---------- */
+
+.kv-dash__kpis {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--kv-space-4);
+}
+
+.kv-dash__kpis .ant-card {
+  height: 100%;
+}
+
+.kv-dash__kpis .ant-card-body {
+  padding: 16px 18px;
+}
+
+.kv-dash__kpis .ant-statistic-content {
+  font-size: 24px;
+  line-height: 30px;
+}
+
+.kv-dash__kpis .ant-typography-secondary {
+  color: var(--kv-text-2);
+  font-size: 11px;
+}
+
+.kv-dash__attention {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: var(--kv-radius-pill);
+  background: var(--kv-coral-soft);
+  color: var(--kv-text);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+}
+
+/* pending-approvals chip in the page header */
+.kv-dash__pending {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--kv-space-2);
+  min-height: 32px;
+  padding: 0 12px 0 10px;
+  border: 1px solid var(--kv-border);
+  border-radius: var(--kv-radius-pill);
+  color: var(--kv-text);
+  font-size: 11px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: border-color var(--kv-hover);
+}
+
+.kv-dash__pending:hover {
+  border-color: var(--kv-coral);
+  color: var(--kv-text);
+}
+
+.kv-dash__pending .ant-badge {
+  line-height: 1;
+}
+
+/* ---------- per-session progress ---------- */
+
+.kv-progress-row + .kv-progress-row {
+  margin-top: var(--kv-space-3);
+}
+
+.kv-progress-row__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--kv-space-2);
+  margin-bottom: 6px;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.kv-progress-row__head a {
+  color: var(--kv-text);
+  font-weight: 600;
+}
+
+.kv-progress-row__head a:hover {
+  color: var(--kv-violet);
+}
+
+.kv-progress-row__percent {
+  margin-left: auto;
+  font-weight: 600;
+}
+
+.kv-progress-row .ant-progress {
+  margin: 0;
+}
+
+/* ---------- analytics split: wide data card + calm right rail ---------- */
+
+.kv-dash__split {
+  display: grid;
+  grid-template-columns: minmax(0, 2.8fr) minmax(0, 1fr);
+  gap: var(--kv-space-5);
+  align-items: start;
+}
+
+.kv-dash__side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kv-space-5);
+  min-width: 0;
+}
+
+.kv-dash__chart {
+  height: 200px;
+}
+
+.kv-dash__subtitle {
+  margin: var(--kv-space-3) 0 var(--kv-space-2);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  color: var(--kv-text-2);
+}
+
+.kv-dash__subtitle:first-child {
+  margin-top: 0;
+}
+
+/* horizontal data rows: label (+ date) · antd Progress · trailing numeric label */
+.kv-bar-row {
+  display: grid;
+  grid-template-columns: minmax(0, 220px) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--kv-space-2);
+  padding: 5px 0;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+/* The right rail is narrow: let the label take the space it needs instead of
+   reserving the wide analytics column. */
+.kv-dash__side .kv-bar-row {
+  grid-template-columns: minmax(0, 1fr) minmax(64px, 1.1fr) auto;
+}
+
+.kv-bar-row__label {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.kv-bar-row__name {
+  overflow: hidden;
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.kv-bar-row .kv-meta {
+  font-size: 9px;
+  line-height: 12px;
+}
+
+.kv-bar-row .ant-progress {
+  margin: 0;
+}
+
+.kv-bar-row .ant-progress-text {
+  font-size: 10px;
+}
+
+.kv-bar-row__avg {
+  min-width: 44px;
+  text-align: right;
+  color: var(--kv-text-2);
+}
+
+/* ---------- SA per-school summary ---------- */
+
+.kv-dash__schools .ant-card-body {
+  padding-top: 10px;
+}
+
+.kv-dash__schools .ant-table {
+  font-size: 11px;
+}
+
+.kv-dash__schools .ant-table-thead > tr > th {
+  background: var(--kv-surface);
+  color: var(--kv-text-2);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+/* ---------- empty states stay compact ---------- */
+
+.kv-dash .ant-empty {
+  margin: var(--kv-space-2) 0;
+}
+
+.kv-dash .ant-empty-description {
+  font-size: 11px;
+}
+
+/* ---------- first-load skeleton (same footprint as the real dashboard) ---------- */
+
+.kv-dash-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kv-space-5);
+}
+
+.kv-dash-skeleton__kpis {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--kv-space-4);
+}
+
+.kv-dash-skeleton__kpi,
+.kv-dash-skeleton__card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kv-space-3);
+  border: 1px solid var(--kv-border);
+  border-radius: var(--kv-radius-card);
+  background: var(--kv-canvas);
+  box-shadow: 0 1px 2px rgba(32, 32, 30, 0.03);
+}
+
+.kv-dash-skeleton__kpi {
+  gap: var(--kv-space-2);
+  padding: 16px 18px;
+}
+
+.kv-dash-skeleton__card {
+  padding: 18px var(--kv-space-5);
+}
+
+.kv-dash-skeleton__rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kv-space-4);
+}
+
+.kv-dash-skeleton__row {
+  display: flex;
+  align-items: center;
+  gap: var(--kv-space-3);
+}
+
+.kv-dash-skeleton__split {
+  display: grid;
+  grid-template-columns: minmax(0, 2.8fr) minmax(0, 1fr);
+  gap: var(--kv-space-5);
+  align-items: start;
+}
+
+.kv-dash-skeleton__side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kv-space-5);
+}
+
+.kv-dash-skeleton__chart {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-around;
+  height: 180px;
+  padding-bottom: var(--kv-space-2);
+  border-bottom: 1px solid var(--kv-border);
+}
+
+/* ---------- responsive ---------- */
+
+@media (max-width: 1279px) {
+  .kv-dash__kpis,
+  .kv-dash-skeleton__kpis {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1100px) {
+  .kv-dash__split,
+  .kv-dash-skeleton__split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .kv-dash__kpis,
+  .kv-dash-skeleton__kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .kv-bar-row,
+  .kv-dash__side .kv-bar-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .kv-bar-row .ant-progress {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
+
+@media (max-width: 420px) {
+  .kv-dash__kpis,
+  .kv-dash-skeleton__kpis {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

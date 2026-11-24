@@ -1,0 +1,102 @@
+{
+  "title": "Rapor",
+  "readiness": {
+    "title": "Kesiapan rapor",
+    "incomplete": "Rapor belum dapat dikirim — {{count}} kegiatan belum dinilai.",
+    "goAssess": "Buka penilaian",
+    "ready": "Rapor siap dikirim."
+  },
+  "missions": {
+    "title": "Pilih misi (maksimal 4)",
+    "selected": "{{count}}/4 dipilih",
+    "limit": "Maksimal 4 misi.",
+    "empty": "Belum ada misi yang terkait dengan topik ini."
+  },
+  "narrative": {
+    "title": "Narasi AI",
+    "generate": "Buat narasi",
+    "regenerate": "Buat ulang",
+    "edit": "Ubah narasi",
+    "placeholder": "Tulis narasi…",
+    "empty": "—",
+    "nothing": "Belum ada penilaian untuk dinarasi.",
+    "failed": "AI gagal membuat narasi. Narasi lama tetap tersimpan.",
+    "hint": "Maksimal 50 kata dalam satu paragraf."
+  },
+  "links": {
+    "title": "Tautan publik",
+    "create": "Buat tautan",
+    "revoke": "Cabut tautan",
+    "regenerate": "Buat ulang tautan",
+    "copyUrl": "Salin URL",
+    "kindReport": "Rapor",
+    "kindGallery": "Galeri",
+    "revokeTitle": "Cabut tautan ini?",
+    "revoked": "Tautan dicabut. Link lama tidak berlaku lagi.",
+    "created": "Tautan dibuat."
+  },
+  "send": {
+    "single": "Kirim ke WhatsApp",
+    "batch": "Kirim batch (maks. 10)",
+    "sending": "Mengirim…",
+    "sent": "Terkirim",
+    "failed": "Gagal",
+    "retryFailed": "Coba ulang yang gagal",
+    "copyFallback": "Salin URL manual",
+    "toMother": "Ke WhatsApp ibu",
+    "title": "Kirim rapor ke WhatsApp ibu {{child}}?",
+    "batchTitle": "Kirim {{count}} rapor? Status per item muncul setelah selesai.",
+    "done": "Selesai: {{sent}} terkirim, {{failed}} gagal."
+  },
+  "export": {
+    "png": "Unduh PNG",
+    "pdf": "Unduh PDF",
+    "exporting": "Menyiapkan…",
+    "overflow": "Konten melebihi satu halaman A4.",
+    "filenameHint": "Nama berkas: Rapor-Anak-Topik-Tanggal"
+  },
+  "matrix": {
+    "title": "Matriks rapor sesi",
+    "child": "Anak",
+    "topic": "Topik",
+    "complete": "Lengkap",
+    "incomplete": "Belum lengkap",
+    "narrative": "Narasi",
+    "missions": "Misi",
+    "candidatePhoto": "Foto utama",
+    "reportUrl": "URL rapor",
+    "galleryUrl": "URL galeri",
+    "actions": "Aksi"
+  },
+  "public": {
+    "reportTitle": "Rapor {{child}}",
+    "galleryTitle": "Galeri {{child}}",
+    "consentTitle": "Persetujuan orang tua",
+    "invalidLink": "Tautan tidak valid atau sudah dicabut.",
+    "childInactive": "Anak ini sudah dinonaktifkan.",
+    "loading": "Memuat…",
+    "sessionInfo": "Sesi",
+    "date": "Tanggal",
+    "profile": "Profil anak",
+    "summary": "Ringkasan",
+    "missions": "Misi",
+    "attestation": "Ditetapkan oleh",
+    "outcomes": "Hasil kegiatan",
+    "badges": "Badge",
+    "candidatePhoto": "Foto utama",
+    "consentName": "Nama responden",
+    "consentNamePlaceholder": "Nama Anda",
+    "consentApprove": "Setuju",
+    "consentReject": "Tolak",
+    "consentAlready": "Keputusan Anda sudah tercatat: {{decision}}.",
+    "consentRecorded": "Terima kasih, keputusan Anda tercatat.",
+    "consentQuestion": "Apakah Anda mengizinkan foto anak ini digunakan pada rapor dan galeri?",
+    "galleryLocked": "Galeri terkunci sampai persetujuan diberikan.",
+    "galleryDenied": "Persetujuan ditolak — foto tidak ditampilkan.",
+    "galleryEmpty": "Belum ada foto.",
+    "child": "Anak",
+    "school": "Sekolah",
+    "location": "Lokasi",
+    "consentNameRequired": "Nama responden wajib diisi."
+  }
+}

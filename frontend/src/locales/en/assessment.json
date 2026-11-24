@@ -1,0 +1,26 @@
+{
+  "title": "Assessment",
+  "stars": {
+    "groupLabel": "Star rating 1–4",
+    "1": "BB",
+    "2": "MB",
+    "3": "BSH",
+    "4": "BSB"
+  },
+  "note": {
+    "placeholder": "Note for this activity (max 2000 characters)"
+  },
+  "save": {
+    "saving": "Saving…",
+    "saved": "Saved",
+    "failed": "Save failed"
+  },
+  "draftNotice": "Unsaved changes — save before you leave the page.",
+  "progress": "Assessed {{done}}/{{total}}",
+  "readOnly": "The session is finished — assessments are read-only.",
+  "notOpened": "The session has not opened yet — assessing starts once it opens.",
+  "notOwner": "Only this group's facilitator can assess.",
+  "empty": "No activities to assess yet.",
+  "topicComplete": "Topic complete",
+  "topicIncomplete": "Incomplete"
+}

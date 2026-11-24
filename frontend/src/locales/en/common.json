@@ -29,6 +29,9 @@
     "home": "Home",
     "loading": "Loading…"
   },
+  "columns": {
+    "actions": "Actions"
+  },
   "status": {
     "draft": "Draft",
     "opened": "Opened",
@@ -50,6 +53,15 @@
   },
   "pager": {
     "showing": "Showing {{from}}–{{to}} of {{total}}"
+  },
+  "filters": {
+    "region": "Filters",
+    "clear": "Clear filters ({{count}})",
+    "allPrograms": "All programs",
+    "allTopics": "All topics",
+    "allStatuses": "All statuses",
+    "allRoles": "All roles",
+    "allDecisions": "All decisions"
   },
   "wa": {
     "title": "WhatsApp status",
@@ -81,15 +93,43 @@
     "adminOnly": "Only superadmins can connect WhatsApp."
   },
   "empty": "No data",
+  "emptyState": {
+    "hint": "Nothing to show yet. Add your first row or change the filters.",
+    "first": "Add your first entry"
+  },
   "pageNotFound": "Page not found.",
+  "feedback": {
+    "entity": {
+      "program": "Program",
+      "topic": "Topic",
+      "activity": "Activity",
+      "mission": "Mission",
+      "frame": "Frame",
+      "child": "Child",
+      "user": "User",
+      "school": "School",
+      "session": "Session",
+      "group": "Group",
+      "photo": "Photo",
+      "reset": "Reset code"
+    },
+    "created": "{{entity}} “{{name}}” created",
+    "saved": "{{entity}} “{{name}}” saved",
+    "deleted": "{{entity}} “{{name}}” deleted",
+    "activated": "{{entity}} “{{name}}” activated",
+    "deactivated": "{{entity}} “{{name}}” deactivated",
+    "approved": "{{entity}} “{{name}}” approved",
+    "rejected": "{{entity}} “{{name}}” rejected",
+    "revoked": "{{entity}} “{{name}}” revoked"
+  },
   "errors": {
     "VALIDATION": "Invalid data. Please check your input.",
     "EMAIL_TAKEN": "This email is already in use.",
     "INVALID_CREDENTIALS": "Wrong email or password.",
     "INVALID_TOKEN": "Your session expired. Please sign in again.",
     "ACCOUNT_INACTIVE": "Your account is awaiting approval or has been deactivated. Contact your admin.",
-    "TENANT_INACTIVE": "This tenant is disabled.",
-    "TENANT_MISMATCH": "Tenant changed, reloading…",
+    "SCHOOL_INACTIVE": "This school is disabled.",
+    "SCHOOL_MISMATCH": "School changed, reloading…",
     "FORBIDDEN_ROLE": "You do not have access to this action.",
     "NOT_OWNER": "This is not your group or child.",
     "SESSION_LOCKED": "The session is locked for this change.",

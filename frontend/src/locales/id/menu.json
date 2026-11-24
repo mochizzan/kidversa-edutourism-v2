@@ -1,0 +1,39 @@
+{
+  "navLabel": "Navigasi utama",
+  "openNav": "Buka navigasi",
+  "collapseNav": "Ciutkan navigasi",
+  "expandNav": "Bentangkan navigasi",
+  "language": "Bahasa",
+  "schoolSwitcher": "Ganti sekolah",
+  "section": {
+    "overview": "Utama",
+    "academic": "Akademik",
+    "data": "Data",
+    "system": "Sistem"
+  },
+  "dashboard": "Dasbor",
+  "schools": "Sekolah",
+  "users": "Pengguna",
+  "sessions": "Sesi",
+  "allSessions": "Semua Sesi",
+  "masters": "Master",
+  "programs": "Program",
+  "topics": "Topik",
+  "activities": "Kegiatan",
+  "missions": "Misi",
+  "frames": "Frame",
+  "children": "Anak",
+  "reports": "Rapor",
+  "consent": "Persetujuan",
+  "pendingApprovals": "{{count}} persetujuan menunggu",
+  "profile": "Profil",
+  "settings": "Pengaturan",
+  "logout": "Keluar",
+  "breadcrumb": {
+    "label": "Jejak navigasi",
+    "newSession": "Sesi baru",
+    "sessionDetail": "Detail sesi",
+    "gallery": "Galeri",
+    "assessment": "Penilaian"
+  }
+}

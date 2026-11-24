@@ -1,0 +1,78 @@
+/**
+ * Spec catalogue pins (finding 005b / 005c). Deliberately independent,
+ * hand-maintained copies of `docs/spec/06-ERRORS-AND-EDGE-CASES.md` §1
+ * and `docs/spec/02-ARCHITECTURE.md` §2c — the backend pins the SAME
+ * lists in `backend/internal/catalog_test.go`. Never generate this file
+ * from either side; when the spec grows, update BOTH pins.
+ */
+
+/** 06 §1 error taxonomy: E1..E32 + EX — 33 envelope codes. */
+export const PINNED_ERROR_CODES: readonly string[] = [
+  'VALIDATION',
+  'EMAIL_TAKEN',
+  'INVALID_CREDENTIALS',
+  'INVALID_TOKEN',
+  'ACCOUNT_INACTIVE',
+  'SCHOOL_INACTIVE',
+  'SCHOOL_MISMATCH',
+  'FORBIDDEN_ROLE',
+  'NOT_OWNER',
+  'SESSION_LOCKED',
+  'STATE_CONFLICT',
+  'CHILD_DUPLICATE',
+  'PROGRAM_INCOMPLETE',
+  'GROUP_WITHOUT_FACILITATOR',
+  'PHOTO_LIMIT',
+  'CONSENT_LOCKED',
+  'REPORT_INCOMPLETE',
+  'NOTHING_TO_NARRATE',
+  'MISSION_LIMIT',
+  'AI_FAILED',
+  'WA_FAILED',
+  'MAIL_FAILED',
+  'RATE_LIMITED',
+  'TOKEN_INVALID',
+  'RESET_EXPIRED',
+  'RESET_USED',
+  'DB_UNAVAILABLE',
+  'CAMERA_DENIED',
+  'PHOTO_MISSING',
+  'NOT_FOUND',
+  'HAS_OPEN_GROUPS',
+  'CHILD_INACTIVE',
+  'INTERNAL',
+]
+
+/** 02 §2c SSE event catalogue: 29 Frame entity names + auth.expiring. */
+export const PINNED_SSE_EVENTS: readonly string[] = [
+  'program.changed',
+  'topic.changed',
+  'activity.changed',
+  'mission.changed',
+  'frame.changed',
+  'child.changed',
+  'session.changed',
+  'session.status',
+  'session.deleted',
+  'group.changed',
+  'member.changed',
+  'assessment.changed',
+  'photo.changed',
+  'narrative.changed',
+  'mission-pick.changed',
+  'readiness.changed',
+  'copy.completed',
+  'consent.changed',
+  'report-link.changed',
+  'user.changed',
+  'pending.changed',
+  'reset.changed',
+  'school.changed',
+  'stats.changed',
+  'wa.changed',
+  'auth.expiring',
+  'report.changed',
+  'gallery.changed',
+  'consent.ack',
+  'link.revoked',
+]

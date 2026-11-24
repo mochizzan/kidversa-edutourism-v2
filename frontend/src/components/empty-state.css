@@ -1,0 +1,49 @@
+/* Empty state: quiet art + one title + one explanation + at most one action. */
+
+.kv-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: var(--kv-space-6) var(--kv-space-4);
+}
+
+.kv-empty--table {
+  padding: var(--kv-space-5) var(--kv-space-4);
+}
+
+.kv-empty__art {
+  flex: none;
+  width: 72px;
+  height: 48px;
+  margin-bottom: var(--kv-space-3);
+  /* Quiet, but actually perceptible: an illustration, not a blank box. */
+  color: var(--kv-text-2);
+  opacity: 0.45;
+}
+
+.kv-empty--card .kv-empty__art {
+  width: 96px;
+  height: 64px;
+}
+
+.kv-empty__title {
+  margin: 0;
+  color: var(--kv-text);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.kv-empty__desc {
+  max-width: 42ch;
+  margin: var(--kv-space-1) 0 0;
+  color: var(--kv-text-2);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.kv-empty__action {
+  margin-top: var(--kv-space-4);
+}

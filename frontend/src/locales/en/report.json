@@ -1,0 +1,102 @@
+{
+  "title": "Report",
+  "readiness": {
+    "title": "Report readiness",
+    "incomplete": "The report cannot be sent yet — {{count}} activities are not assessed.",
+    "goAssess": "Open assessment",
+    "ready": "The report is ready to send."
+  },
+  "missions": {
+    "title": "Pick missions (max 4)",
+    "selected": "{{count}}/4 selected",
+    "limit": "Maximum 4 missions.",
+    "empty": "No missions are linked to this topic yet."
+  },
+  "narrative": {
+    "title": "AI narrative",
+    "generate": "Generate narrative",
+    "regenerate": "Regenerate",
+    "edit": "Edit narrative",
+    "placeholder": "Write the narrative…",
+    "empty": "—",
+    "nothing": "No assessments to narrate yet.",
+    "failed": "The AI failed. The previous narrative is kept.",
+    "hint": "Max 50 words in one paragraph."
+  },
+  "links": {
+    "title": "Public links",
+    "create": "Create link",
+    "revoke": "Revoke link",
+    "regenerate": "Regenerate link",
+    "copyUrl": "Copy URL",
+    "kindReport": "Report",
+    "kindGallery": "Gallery",
+    "revokeTitle": "Revoke this link?",
+    "revoked": "Link revoked. The old URL no longer works.",
+    "created": "Link created."
+  },
+  "send": {
+    "single": "Send to WhatsApp",
+    "batch": "Send batch (max 10)",
+    "sending": "Sending…",
+    "sent": "Sent",
+    "failed": "Failed",
+    "retryFailed": "Retry failed items",
+    "copyFallback": "Copy URL manually",
+    "toMother": "To the mother's WhatsApp",
+    "title": "Send the report to {{child}}'s mother on WhatsApp?",
+    "batchTitle": "Send {{count}} reports? Per-item status appears when done.",
+    "done": "Done: {{sent}} sent, {{failed}} failed."
+  },
+  "export": {
+    "png": "Download PNG",
+    "pdf": "Download PDF",
+    "exporting": "Preparing…",
+    "overflow": "Content exceeds one A4 page.",
+    "filenameHint": "Filename: Rapor-Child-Topic-Date"
+  },
+  "matrix": {
+    "title": "Session report matrix",
+    "child": "Child",
+    "topic": "Topic",
+    "complete": "Complete",
+    "incomplete": "Incomplete",
+    "narrative": "Narrative",
+    "missions": "Missions",
+    "candidatePhoto": "Cover photo",
+    "reportUrl": "Report URL",
+    "galleryUrl": "Gallery URL",
+    "actions": "Actions"
+  },
+  "public": {
+    "reportTitle": "Report — {{child}}",
+    "galleryTitle": "Gallery — {{child}}",
+    "consentTitle": "Parental consent",
+    "invalidLink": "This link is invalid or has been revoked.",
+    "childInactive": "This child has been deactivated.",
+    "loading": "Loading…",
+    "sessionInfo": "Session",
+    "date": "Date",
+    "profile": "Child profile",
+    "summary": "Summary",
+    "missions": "Missions",
+    "attestation": "Certified by",
+    "outcomes": "Activity outcomes",
+    "badges": "Badges",
+    "candidatePhoto": "Cover photo",
+    "consentName": "Respondent name",
+    "consentNamePlaceholder": "Your name",
+    "consentApprove": "Approve",
+    "consentReject": "Reject",
+    "consentAlready": "Your decision is already recorded: {{decision}}.",
+    "consentRecorded": "Thank you, your decision is recorded.",
+    "consentQuestion": "Do you allow this child's photos to be used in the report and gallery?",
+    "galleryLocked": "The gallery is locked until consent is given.",
+    "galleryDenied": "Consent declined — photos are not shown.",
+    "galleryEmpty": "No photos yet.",
+    "child": "Child",
+    "school": "School",
+    "location": "Location",
+    "consentNameRequired": "Respondent name is required."
+  }
+}

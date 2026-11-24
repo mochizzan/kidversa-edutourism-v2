@@ -29,6 +29,9 @@
     "home": "Beranda",
     "loading": "Memuat…"
   },
+  "columns": {
+    "actions": "Tindakan"
+  },
   "status": {
     "draft": "Draf",
     "opened": "Dibuka",
@@ -50,6 +53,15 @@
   },
   "pager": {
     "showing": "Menampilkan {{from}}–{{to}} dari {{total}}"
+  },
+  "filters": {
+    "region": "Filter",
+    "clear": "Hapus filter ({{count}})",
+    "allPrograms": "Semua program",
+    "allTopics": "Semua topik",
+    "allStatuses": "Semua status",
+    "allRoles": "Semua peran",
+    "allDecisions": "Semua keputusan"
   },
   "wa": {
     "title": "Status WhatsApp",
@@ -81,15 +93,43 @@
     "adminOnly": "Hanya superadmin yang dapat menghubungkan WhatsApp."
   },
   "empty": "Tidak ada data",
+  "emptyState": {
+    "hint": "Belum ada yang ditampilkan. Tambahkan data pertama atau ubah filter.",
+    "first": "Tambahkan data pertama"
+  },
   "pageNotFound": "Halaman tidak ditemukan.",
+  "feedback": {
+    "entity": {
+      "program": "Program",
+      "topic": "Topik",
+      "activity": "Kegiatan",
+      "mission": "Misi",
+      "frame": "Frame",
+      "child": "Anak",
+      "user": "Pengguna",
+      "school": "Sekolah",
+      "session": "Sesi",
+      "group": "Kelompok",
+      "photo": "Foto",
+      "reset": "Kode reset"
+    },
+    "created": "{{entity}} “{{name}}” dibuat",
+    "saved": "{{entity}} “{{name}}” disimpan",
+    "deleted": "{{entity}} “{{name}}” dihapus",
+    "activated": "{{entity}} “{{name}}” diaktifkan",
+    "deactivated": "{{entity}} “{{name}}” dinonaktifkan",
+    "approved": "{{entity}} “{{name}}” disetujui",
+    "rejected": "{{entity}} “{{name}}” ditolak",
+    "revoked": "{{entity}} “{{name}}” dicabut"
+  },
   "errors": {
     "VALIDATION": "Data tidak valid. Periksa kembali isian Anda.",
     "EMAIL_TAKEN": "Email sudah digunakan.",
     "INVALID_CREDENTIALS": "Email atau kata sandi salah.",
     "INVALID_TOKEN": "Sesi berakhir. Silakan masuk kembali.",
     "ACCOUNT_INACTIVE": "Akun menunggu persetujuan atau dinonaktifkan. Hubungi admin.",
-    "TENANT_INACTIVE": "Tenant dinonaktifkan.",
-    "TENANT_MISMATCH": "Tenant berubah, memuat ulang…",
+    "SCHOOL_INACTIVE": "Sekolah dinonaktifkan.",
+    "SCHOOL_MISMATCH": "Sekolah berubah, memuat ulang…",
     "FORBIDDEN_ROLE": "Anda tidak punya akses untuk tindakan ini.",
     "NOT_OWNER": "Ini bukan kelompok atau anak Anda.",
     "SESSION_LOCKED": "Sesi terkunci untuk perubahan ini.",

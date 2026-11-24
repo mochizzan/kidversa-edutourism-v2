@@ -5,7 +5,7 @@
  *   `{error:{code,message}}` (HTTP 500 only for unhandled faults, same
  *   envelope shape). We branch on the envelope, NEVER on HTTP status.
  * - Access token lives in MEMORY (module var); auth context sets it.
- * - X-Tenant-ID is read from localStorage `kv-tenant` on every
+ * - X-School-ID is read from localStorage `kv-school` on every
  *   authenticated call; /public/* gets neither auth header.
  * - X-Idempotency-Key is auto-generated (crypto.randomUUID) for POSTs
  *   unless the caller supplies one.
@@ -81,7 +81,7 @@ interface CallOptions {
 }
 
 let accessToken: string | null = null
-let sessionTenantId: number | null = null
+let sessionSchoolId: number | null = null
 let sessionExpiredHandler: (() => void) | null = null
 let refreshInFlight: Promise<string | null> | null = null
 
@@ -93,9 +93,9 @@ export function getAccessToken(): string | null {
   return accessToken
 }
 
-/** Canonical tenant id of the current session (spec 06 E7: TENANT_MISMATCH recovery). */
-export function setSessionTenant(tenantId: number | null): void {
-  sessionTenantId = tenantId
+/** Canonical school id of the current session (spec 06 E7: SCHOOL_MISMATCH recovery). */
+export function setSessionSchool(schoolId: number | null): void {
+  sessionSchoolId = schoolId
 }
 
 /** Invoked when the session is unrecoverable (refresh got INVALID_TOKEN / ACCOUNT_INACTIVE). */
@@ -113,15 +113,15 @@ export function notifySessionExpired(): void {
 }
 
 /**
- * Spec 06 E7 self-heal: `kv-tenant` drifted from the session's canonical
- * tenant — restore it. Returns true iff a drift was repaired (false when the
- * header already matches, or there is no session tenant to heal towards).
+ * Spec 06 E7 self-heal: `kv-school` drifted from the session's canonical
+ * school — restore it. Returns true iff a drift was repaired (false when the
+ * header already matches, or there is no session school to heal towards).
  * Shared by the REST retry path and the SSE handshake path.
  */
-export function healTenantHeader(): boolean {
-  if (sessionTenantId === null) return false
-  if (localStorage.getItem('kv-tenant') === String(sessionTenantId)) return false
-  localStorage.setItem('kv-tenant', String(sessionTenantId))
+export function healSchoolHeader(): boolean {
+  if (sessionSchoolId === null) return false
+  if (localStorage.getItem('kv-school') === String(sessionSchoolId)) return false
+  localStorage.setItem('kv-school', String(sessionSchoolId))
   return true
 }
 
@@ -140,12 +140,12 @@ function buildHeaders(method: string, path: string, opts: CallOptions): Headers 
   const headers = new Headers({ Accept: 'application/json' })
   if (opts.json !== undefined) headers.set('Content-Type', 'application/json')
   // Authenticated = every /api call except refresh (W1 pin: cookie-only, no
-  // Authorization/X-Tenant-ID); /public/* carries neither header.
+  // Authorization/X-School-ID); /public/* carries neither header.
   const authenticated = !path.startsWith('/public') && path !== '/api/auth/refresh'
   if (authenticated) {
     if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`)
-    const tenant = localStorage.getItem('kv-tenant')
-    if (tenant) headers.set('X-Tenant-ID', tenant)
+    const school = localStorage.getItem('kv-school')
+    if (school) headers.set('X-School-ID', school)
   }
   if (method === 'POST') {
     headers.set('X-Idempotency-Key', opts.idempotencyKey ?? crypto.randomUUID())
@@ -203,10 +203,10 @@ async function call<T>(method: string, path: string, opts: CallOptions = {}): Pr
       if (token) return call<T>(method, path, { ...opts, skipAuthRefresh: true })
       throw err // refresh was fatal: session already cleared
     }
-    if (code === 'TENANT_MISMATCH' && healTenantHeader()) {
-      // Spec 06 E7: the header drifted from the session tenant — healTenantHeader
+    if (code === 'SCHOOL_MISMATCH' && healSchoolHeader()) {
+      // Spec 06 E7: the header drifted from the session school — healSchoolHeader
       // restored it; retry once (self-terminating: the header now equals the
-      // canonical tenant). No drift / no session tenant → terminal as before.
+      // canonical school). No drift / no session school → terminal as before.
       return call<T>(method, path, { ...opts })
     }
     if (code === 'ACCOUNT_INACTIVE') sessionExpiredHandler?.()
@@ -290,4 +290,98 @@ function upload<T>(path: string, form: FormData, idempotencyKey: string): Promis
   return send<T>('POST', path, { form, idempotencyKey })
 }
 
-export const api = { get, post, put, patch, del, list, upload }
+/**
+ * XHR upload with real-time progress (spec 09: the photo POST's transport —
+ * fetch() cannot report upload progress). Same envelope + token +
+ * idempotency semantics as `upload()`: Bearer/X-School-ID/X-Idempotency-Key
+ * headers, branch on `{data}`/`{error:{code}}` (never on HTTP status),
+ * refresh-once on INVALID_TOKEN then retry exactly once, no loop.
+ * onProgress fires with 0–100 during upload; the final 100 is pinned at
+ * load before the promise settles. Used by PhotoEditorModal only.
+ */
+function uploadWithProgress<T>(
+  path: string,
+  form: FormData,
+  idempotencyKey: string,
+  onProgress?: (percent: number) => void,
+): Promise<T> {
+  const attempt = (skipRefresh: boolean): Promise<T> =>
+    new Promise<T>((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      let settled = false
+      const settle = (run: () => void): void => {
+        if (settled) return
+        settled = true
+        onProgress?.(100) // the load indication: the body has been received
+        run()
+      }
+
+      xhr.onload = (): void => {
+        let payload: unknown
+        try {
+          payload = JSON.parse(xhr.responseText) as unknown
+        } catch {
+          settle(() => reject(new ApiError('INTERNAL', 'non-JSON response')))
+          return
+        }
+        const env = payload as {
+          data?: unknown
+          error?: { code?: unknown; message?: unknown } & Record<string, unknown>
+        } | null
+        if (env && typeof env === 'object' && env.error) {
+          const { code: rawCode, message: rawMessage, ...extraKeys } = env.error
+          const code = typeof rawCode === 'string' ? rawCode : 'INTERNAL'
+          const message = typeof rawMessage === 'string' ? rawMessage : code
+          const details = Object.keys(extraKeys).length > 0 ? extraKeys : undefined
+          const err = new ApiError(code, message, undefined, details)
+
+          if (code === 'INVALID_TOKEN' && !skipRefresh && accessToken) {
+            // Refresh once, then retry exactly once (no loop) — same deal as
+            // the fetch path; a dead session has already been reported.
+            refreshAccessToken()
+              .then((token) => {
+                settle(() => {
+                  if (token) {
+                    attempt(true).then(resolve, reject)
+                  } else {
+                    reject(err)
+                  }
+                })
+              })
+              .catch((refreshError: unknown) => settle(() => reject(refreshError)))
+            return
+          }
+          settle(() => reject(err))
+          return
+        }
+        if (env && typeof env === 'object' && 'data' in env) {
+          settle(() => resolve(env.data as T))
+          return
+        }
+        settle(() => reject(new ApiError('INTERNAL', 'response is not a valid envelope')))
+      }
+
+      xhr.onerror = (): void => {
+        settle(() => reject(new ApiError('INTERNAL', 'network request failed')))
+      }
+
+      if (onProgress && xhr.upload) {
+        xhr.upload.onprogress = (e: ProgressEvent): void => {
+          if (e.total > 0) {
+            onProgress(Math.min(100, Math.max(0, Math.floor((e.loaded / e.total) * 100))))
+          }
+        }
+      }
+
+      xhr.open('POST', path)
+      xhr.setRequestHeader('Accept', 'application/json')
+      if (accessToken) xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`)
+      const school = localStorage.getItem('kv-school')
+      if (school) xhr.setRequestHeader('X-School-ID', school)
+      xhr.setRequestHeader('X-Idempotency-Key', idempotencyKey)
+      xhr.send(form)
+    })
+  return attempt(false)
+}
+
+export const api = { get, post, put, patch, del, list, upload, uploadWithProgress }

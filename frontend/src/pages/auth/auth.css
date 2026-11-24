@@ -1,0 +1,955 @@
+/*
+ * Public auth pages — a two-column entry card: compact form on the left,
+ * route-aligned promo carousel on the right. The template's geometry is kept,
+ * but every colour comes from the Kidversa mapping in index.css:
+ *   paper #F2F2EF · violet #8140DC · pink #E22F80 · olive #FFCA95 ·
+ *   coral #FF7873 · ink #20201E
+ * White surfaces, one soft ambient shadow, 8px rhythm, ink pill CTA.
+ */
+
+.kv-auth {
+  position: relative;
+  display: grid;
+  place-items: center;
+  /* Lock the entry screen to one viewport: no page scrollbars at 1366x768. */
+  height: 100vh;
+  height: 100dvh;
+  padding: clamp(16px, 3.2vh, 40px) clamp(16px, 3vw, 40px);
+  overflow: hidden;
+  background: #f2f2ef;
+}
+
+/* ---------- angled paper geometry behind the card ---------- */
+
+.kv-auth__ground {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.kv-auth__block {
+  position: absolute;
+  display: block;
+}
+
+.kv-auth__block--a {
+  top: -18vh;
+  left: -12vw;
+  width: min(46vw, 520px);
+  aspect-ratio: 1;
+  border-radius: 42%;
+  background: #e9ddf7;
+  transform: rotate(-20deg);
+}
+
+.kv-auth__block--b {
+  right: -14vw;
+  bottom: -20vh;
+  width: min(42vw, 480px);
+  aspect-ratio: 1;
+  border-radius: 38%;
+  background: #ffe7d1;
+  transform: rotate(16deg);
+}
+
+.kv-auth__block--c {
+  top: -68px;
+  right: 18%;
+  width: 170px;
+  height: 170px;
+  border-radius: 38px;
+  background: #ffe0de;
+  opacity: 0.55;
+  transform: rotate(28deg);
+}
+
+/* ---------- card ---------- */
+
+.kv-auth__stage {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+}
+
+.kv-auth__card {
+  display: grid;
+  grid-template-columns: minmax(340px, 420px) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  width: 100%;
+  max-width: 940px;
+  max-height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--kv-canvas);
+  border: 1px solid rgba(232, 232, 228, 0.9);
+  border-radius: 24px;
+  box-shadow:
+    0 24px 60px rgba(32, 32, 30, 0.13),
+    0 2px 6px rgba(32, 32, 30, 0.05);
+}
+
+.kv-auth__panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: 42px 42px 26px;
+}
+
+/* ---------- header ---------- */
+
+.kv-auth__head {
+  text-align: center;
+}
+
+.kv-auth__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin: -4px -6px 18px;
+  padding: 4px 6px;
+  border-radius: 12px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.kv-auth__brand:hover {
+  color: inherit;
+}
+
+.kv-auth__logo {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  overflow: hidden;
+  border-radius: 10px;
+  background: var(--kv-canvas);
+  box-shadow:
+    0 0 0 1px var(--kv-border),
+    0 4px 10px rgba(32, 32, 30, 0.06);
+}
+
+.kv-auth__logo img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.kv-auth__wordmark {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 24px;
+  letter-spacing: -0.03em;
+  color: var(--kv-violet);
+}
+
+.kv-auth__title {
+  margin: 0;
+  color: var(--kv-text);
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 30px;
+  letter-spacing: -0.03em;
+}
+
+.kv-auth__subtitle {
+  max-width: 300px;
+  margin: 8px auto 0;
+  color: var(--kv-text-2);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+/* ---------- sign-in / sign-up toggle ---------- */
+
+.kv-auth__tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
+  margin-top: 24px;
+  padding: 3px;
+  background: var(--kv-surface);
+  border: 1px solid #f0f0ec;
+  border-radius: 10px;
+}
+
+.kv-auth__tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  border-radius: 7px;
+  color: var(--kv-text-2);
+  font-size: 11px;
+  font-weight: 500;
+  text-decoration: none;
+  transition:
+    background var(--kv-hover),
+    color var(--kv-hover),
+    box-shadow var(--kv-hover);
+}
+
+.kv-auth__tab:hover {
+  color: var(--kv-text);
+}
+
+.kv-auth__tab.is-active {
+  color: var(--kv-text);
+  background: var(--kv-canvas);
+  box-shadow: 0 1px 2px rgba(32, 32, 30, 0.07);
+}
+
+/* ---------- form body ---------- */
+
+.kv-auth__body {
+  margin-top: 24px;
+}
+
+.kv-auth .ant-form-item {
+  margin-bottom: 14px;
+}
+
+.kv-auth .ant-form-item-label {
+  padding: 0 0 6px;
+}
+
+.kv-auth .ant-form-item-label > label {
+  height: auto;
+  color: #5c5c57;
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 14px;
+}
+
+.kv-auth .ant-form-item-extra {
+  margin-top: 4px;
+  color: var(--kv-text-2);
+  font-size: 10px;
+  line-height: 14px;
+}
+
+.kv-auth .ant-input,
+.kv-auth .ant-input-affix-wrapper,
+.kv-auth .ant-select-selector {
+  background: var(--kv-canvas);
+  border-color: #efefec;
+  border-radius: 8px;
+  box-shadow: none;
+  font-size: 12px;
+}
+
+.kv-auth .ant-input {
+  height: 38px;
+  padding: 0 12px;
+}
+
+.kv-auth .ant-input::placeholder {
+  color: #9c9c96;
+}
+
+.kv-auth .ant-input-affix-wrapper {
+  min-height: 38px;
+  padding: 0 11px;
+}
+
+.kv-auth .ant-input-affix-wrapper > input.ant-input {
+  height: auto;
+  padding: 0;
+}
+
+.kv-auth .ant-input-password-icon {
+  color: #75756f;
+  font-size: 14px;
+}
+
+.kv-auth .ant-select-single,
+.kv-auth .ant-select-single .ant-select-selector {
+  height: 38px;
+}
+
+.kv-auth .ant-select-single .ant-select-selector {
+  align-items: center;
+  padding: 0 11px;
+}
+
+.kv-auth .ant-select-selection-item,
+.kv-auth .ant-select-selection-placeholder {
+  font-size: 12px;
+  line-height: 36px;
+}
+
+.kv-auth .ant-input:focus,
+.kv-auth .ant-input-focused,
+.kv-auth .ant-input-affix-wrapper-focused,
+.kv-auth .ant-select-focused .ant-select-selector {
+  border-color: var(--kv-violet);
+  box-shadow: 0 0 0 3px rgba(129, 64, 220, 0.12);
+}
+
+.kv-auth .ant-form-item-has-error .ant-input,
+.kv-auth .ant-form-item-has-error .ant-input-affix-wrapper,
+.kv-auth .ant-form-item-has-error .ant-select-selector {
+  border-color: var(--kv-coral);
+}
+
+.kv-auth .ant-form-item-explain-error {
+  margin-top: 3px;
+  color: #b83a35;
+  font-size: 10px;
+  line-height: 14px;
+}
+
+/* Compact role radio: two touching capsules, ink when selected. */
+.kv-auth .ant-radio-group {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+}
+
+.kv-auth .ant-radio-button-wrapper {
+  flex: 1;
+  height: 34px;
+  padding: 0 10px;
+  color: var(--kv-text-2);
+  background: var(--kv-canvas);
+  border: 1px solid #efefec;
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 32px;
+  text-align: center;
+}
+
+.kv-auth .ant-radio-button-wrapper::before {
+  display: none;
+}
+
+.kv-auth .ant-radio-button-wrapper:hover {
+  color: var(--kv-text);
+  border-color: var(--kv-border-strong);
+}
+
+.kv-auth .ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled) {
+  color: var(--kv-canvas);
+  background: var(--kv-text);
+  border-color: var(--kv-text);
+  box-shadow: none;
+}
+
+.kv-auth .ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled):hover {
+  color: var(--kv-canvas);
+  background: #000000;
+  border-color: #000000;
+}
+
+.kv-auth .ant-alert {
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.kv-auth .ant-alert .ant-alert-message {
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.kv-auth__alert.ant-alert {
+  margin-bottom: 14px;
+}
+
+/* ---------- utility row ---------- */
+
+.kv-auth__utility {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 2px 0 16px;
+}
+
+.kv-auth__remember {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #3f3f3a;
+  font-size: 10.5px;
+  line-height: 14px;
+  cursor: pointer;
+}
+
+.kv-auth .ant-switch.ant-switch-checked {
+  background: var(--kv-violet);
+}
+
+.kv-auth__utility a,
+.kv-auth__footer a,
+.kv-auth__success a {
+  color: var(--kv-violet);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.kv-auth__utility a {
+  font-size: 10.5px;
+  line-height: 14px;
+}
+
+.kv-auth__utility a:hover,
+.kv-auth__footer a:hover,
+.kv-auth__success a:hover {
+  text-decoration: underline;
+}
+
+/* ---------- actions ---------- */
+
+.kv-auth__submit.ant-btn {
+  width: 100%;
+  height: 40px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  box-shadow: none;
+}
+
+.kv-auth .kv-auth__submit.ant-btn-primary {
+  background: var(--kv-text);
+  border-color: var(--kv-text);
+  box-shadow: 0 10px 20px rgba(32, 32, 30, 0.14);
+}
+
+.kv-auth .kv-auth__submit.ant-btn-primary:not(:disabled):hover {
+  background: #000000;
+  border-color: #000000;
+}
+
+.kv-auth .kv-auth__submit.ant-btn-primary:not(:disabled):active {
+  transform: translateY(1px);
+  box-shadow: 0 6px 12px rgba(32, 32, 30, 0.14);
+}
+
+.kv-auth .kv-auth__submit .ant-btn-loading-icon {
+  color: var(--kv-canvas);
+}
+
+.kv-auth__footer {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid #f2f2ef;
+  color: var(--kv-text-2);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+/* ---------- language switch (replaces the template's social button) ---------- */
+
+.kv-auth__lang {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: auto;
+  padding-top: 22px;
+}
+
+.kv-auth__lang-label {
+  color: var(--kv-text-2);
+  font-size: 10px;
+  letter-spacing: 0.01em;
+}
+
+.kv-auth__lang-switch {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--kv-surface);
+  border: 1px solid #f0f0ec;
+  border-radius: 999px;
+}
+
+.kv-auth__lang-btn {
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--kv-text-2);
+  font: inherit;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 14px;
+  cursor: pointer;
+  transition:
+    background var(--kv-hover),
+    color var(--kv-hover),
+    box-shadow var(--kv-hover);
+}
+
+.kv-auth__lang-btn[aria-pressed='true'] {
+  color: var(--kv-text);
+  background: var(--kv-canvas);
+  box-shadow: 0 1px 2px rgba(32, 32, 30, 0.08);
+}
+
+/* ---------- success states ---------- */
+
+.kv-auth__success {
+  text-align: center;
+}
+
+.kv-auth__success p {
+  margin: 12px 0 18px;
+  color: var(--kv-text-2);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+/* ---------- right promo panel ---------- */
+
+.kv-auth__promo {
+  position: relative;
+  margin: 18px;
+  overflow: hidden;
+  background: #f4eefb;
+  border: 1px solid #ebe2f5;
+  border-radius: 20px;
+}
+
+.kv-auth__promo-frame {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.kv-auth__waves {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  width: 100%;
+  height: 300px;
+  fill: none;
+  stroke: #8140dc;
+  stroke-width: 22;
+  stroke-linecap: round;
+  opacity: 0.07;
+}
+
+.kv-auth__slide {
+  position: relative;
+  display: grid;
+  flex: 1;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  height: 100%;
+  animation: kv-auth-slide-in 460ms cubic-bezier(0.22, 0.8, 0.28, 1) both;
+}
+
+@keyframes kv-auth-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.kv-auth__promo-copy {
+  max-width: 390px;
+  margin: 0 auto;
+  padding: 46px 36px 0;
+  text-align: center;
+}
+
+.kv-auth__promo-copy h2 {
+  margin: 0;
+  color: var(--kv-text);
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 28px;
+  letter-spacing: -0.02em;
+}
+
+.kv-auth__promo-copy > p {
+  margin: 12px 0 0;
+  color: #55554f;
+  font-size: 12px;
+  line-height: 19px;
+}
+
+.kv-auth__promo-copy .kv-auth__tagline {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 18px;
+  color: var(--kv-text);
+  font-size: 12px;
+  font-weight: 500;
+  font-style: italic;
+  line-height: 18px;
+}
+
+.kv-auth__spark {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  color: var(--kv-coral);
+}
+
+.kv-auth__dots {
+  display: flex;
+  justify-content: center;
+  margin-top: 20px;
+}
+
+.kv-auth__dot {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.kv-auth__dot::before {
+  content: '';
+  width: 22px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 0 0 1px rgba(129, 64, 220, 0.08);
+  transition:
+    background var(--kv-hover),
+    transform var(--kv-hover);
+}
+
+.kv-auth__dot:hover::before {
+  background: #ffffff;
+  transform: scaleY(1.5);
+}
+
+.kv-auth__dot.is-active::before {
+  background: var(--kv-violet);
+  box-shadow: 0 0 0 1px rgba(129, 64, 220, 0.12);
+}
+
+.kv-auth__art {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  padding: 0 24px;
+}
+
+.kv-auth__art img {
+  display: block;
+  /* The height attribute is a fallback only: without `height:auto` the img
+     stays 640px tall and inflates the whole card past the viewport. */
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: clamp(240px, 46vh, 440px);
+  object-fit: contain;
+}
+
+/* ---------- compact desktop: 1366x768 and other short viewports ---------- */
+
+@media (max-height: 820px) and (min-width: 921px) {
+  .kv-auth__panel {
+    padding: 28px 38px 18px;
+  }
+
+  .kv-auth__brand {
+    margin-bottom: 10px;
+  }
+
+  .kv-auth__title {
+    font-size: 22px;
+    line-height: 28px;
+  }
+
+  .kv-auth__subtitle {
+    margin-top: 6px;
+  }
+
+  .kv-auth__tabs {
+    margin-top: 16px;
+  }
+
+  .kv-auth__body {
+    margin-top: 18px;
+  }
+
+  .kv-auth .ant-form-item {
+    margin-bottom: 10px;
+  }
+
+  .kv-auth .ant-form-item-label {
+    padding-bottom: 4px;
+  }
+
+  .kv-auth .ant-input {
+    height: 36px;
+  }
+
+  .kv-auth .ant-input-affix-wrapper {
+    min-height: 36px;
+  }
+
+  .kv-auth .ant-select-single,
+  .kv-auth .ant-select-single .ant-select-selector {
+    height: 36px;
+  }
+
+  .kv-auth .ant-select-selection-item,
+  .kv-auth .ant-select-selection-placeholder {
+    line-height: 34px;
+  }
+
+  .kv-auth .ant-select-single .ant-select-selection-item,
+  .kv-auth .ant-select-single .ant-select-selection-placeholder {
+    line-height: 34px;
+  }
+
+  .kv-auth__lang {
+    padding-top: 12px;
+  }
+
+  .kv-auth__promo-copy {
+    padding-top: 36px;
+  }
+
+  .kv-auth__promo-copy h2 {
+    font-size: 20px;
+    line-height: 26px;
+  }
+
+  .kv-auth__promo-copy > p {
+    margin-top: 10px;
+  }
+
+  .kv-auth__art img {
+    max-height: clamp(220px, 40vh, 340px);
+  }
+}
+
+/* Register has six fields; pair them on desktop so the form fits one screen
+   without scrolling, at every window height. */
+@media (min-width: 921px) {
+  .kv-auth__form--pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+    column-gap: 14px;
+  }
+
+  .kv-auth__form--pair > .ant-btn,
+  .kv-auth__form--pair > .ant-alert {
+    grid-column: 1 / -1;
+  }
+}
+
+/* ---------- tablet: one column, promo becomes a short strip ---------- */
+
+@media (max-width: 920px) {
+  .kv-auth {
+    height: auto;
+    min-height: 100dvh;
+    padding: 28px 20px;
+  }
+
+  .kv-auth__card {
+    grid-template-columns: 1fr;
+    max-width: 520px;
+    max-height: none;
+    min-height: auto;
+  }
+
+  .kv-auth__panel {
+    padding: 34px 34px 24px;
+  }
+
+  .kv-auth__promo {
+    order: 2;
+    margin: 0 16px 16px;
+    border-radius: 16px;
+  }
+
+  .kv-auth__promo-frame {
+    height: 170px;
+    min-height: 170px;
+  }
+
+  .kv-auth__waves {
+    height: 190px;
+  }
+
+  .kv-auth__promo-copy {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 58%;
+    padding: 20px 20px 0;
+    text-align: left;
+  }
+
+  .kv-auth__promo-copy h2 {
+    font-size: 15px;
+    line-height: 20px;
+  }
+
+  .kv-auth__promo-copy > p,
+  .kv-auth__promo-copy .kv-auth__tagline {
+    display: none;
+  }
+
+  .kv-auth__dots {
+    position: absolute;
+    bottom: 12px;
+    left: 20px;
+    z-index: 2;
+    margin: 0;
+  }
+
+  .kv-auth__art {
+    position: absolute;
+    right: 4px;
+    bottom: -8px;
+    width: 42%;
+    height: 156px;
+    margin: 0;
+    padding: 0;
+  }
+
+  .kv-auth__art img {
+    max-height: 156px;
+  }
+}
+
+/* ---------- phones: full-bleed card, touch-sized controls ---------- */
+
+@media (max-width: 560px) {
+  .kv-auth {
+    display: block;
+    padding: 0;
+    background: #f2f2ef;
+  }
+
+  .kv-auth__stage {
+    display: block;
+  }
+
+  .kv-auth__card {
+    max-width: none;
+    min-height: auto;
+    border: 0;
+    border-radius: 0 0 20px 20px;
+    box-shadow: none;
+  }
+
+  .kv-auth__panel {
+    padding: 28px 20px 20px;
+  }
+
+  .kv-auth__promo {
+    margin: 0;
+    border-radius: 0;
+  }
+
+  .kv-auth__promo-frame {
+    height: 150px;
+    min-height: 150px;
+  }
+
+  .kv-auth__promo-copy {
+    width: 60%;
+    padding: 18px 18px 0;
+  }
+
+  .kv-auth__promo-copy h2 {
+    font-size: 14px;
+    line-height: 19px;
+  }
+
+  .kv-auth__dots {
+    bottom: 8px;
+    left: 14px;
+  }
+
+  .kv-auth__art {
+    right: 0;
+    height: 138px;
+  }
+
+  .kv-auth__art img {
+    max-height: 138px;
+  }
+
+  .kv-auth__tabs {
+    margin-top: 20px;
+  }
+
+  .kv-auth .ant-input,
+  .kv-auth .ant-input-affix-wrapper,
+  .kv-auth .ant-select-single,
+  .kv-auth .ant-select-single .ant-select-selector,
+  .kv-auth .ant-radio-button-wrapper {
+    min-height: 44px;
+  }
+
+  .kv-auth .ant-input {
+    height: 44px;
+  }
+
+  .kv-auth .ant-select-single .ant-select-selection-item,
+  .kv-auth .ant-select-single .ant-select-selection-placeholder {
+    line-height: 42px;
+  }
+
+  .kv-auth .ant-radio-button-wrapper {
+    line-height: 42px;
+  }
+
+  .kv-auth .kv-auth__submit.ant-btn {
+    height: 46px;
+  }
+}
+
+@media (max-width: 380px) {
+  .kv-auth__panel {
+    padding: 24px 16px 18px;
+  }
+
+  .kv-auth__title {
+    font-size: 22px;
+    line-height: 28px;
+  }
+
+  .kv-auth__promo-copy {
+    width: 62%;
+  }
+
+  .kv-auth__art {
+    width: 38%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kv-auth__slide {
+    animation: none;
+  }
+}
