@@ -116,7 +116,9 @@ export default function GalleryPage() {
   const group = detail?.groups.find((entry) => entry.gid === gid) ?? null
   const members: SessionMember[] = group?.members ?? []
   const member = members.find((entry) => entry.child_id === cid) ?? null
-  const consent = member?.consent ?? 'PENDING'
+  // No consent row yet is NOT the same as a pending request: keep null so the
+  // tag and lock message say "Not yet submitted" instead of "Pending".
+  const consent = member?.consent ?? ''
   const unlocked = consent === 'SETUJU'
 
   const onCapture = async (file: File) => {
@@ -190,10 +192,8 @@ export default function GalleryPage() {
   return (
     <>
       <PageHeader
-        title={`${t('gallery.title')} — ${detail.session.name}`}
-        description={
-          <Link to={`/sessions/${sid}`}>{`${tc('actions.back')} · ${detail.session.name}`}</Link>
-        }
+        title={t('gallery.title')}
+        description={`${detail.session.name} · ${detail.session.date}`}
       />
 
       <FilterBar>

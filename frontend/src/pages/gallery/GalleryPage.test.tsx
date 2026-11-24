@@ -123,6 +123,30 @@ describe('admin gallery consent gate', () => {
     expect(screen.queryByRole('button', { name: /Kirim ulang/ })).toBeNull()
   })
 
+  it('a member with no consent row reads "not yet submitted", not "pending"', async () => {
+    server.use(
+      http.get('/api/sessions/1', () =>
+        ok(
+          (() => {
+            const detail = detailFixture({ status: 'OPENED' })
+            detail.groups[0].members = [
+              { child_id: 2, name: 'Aisyah Putri', age: 8, school: 'SD Cendekia', consent: null },
+            ]
+            detail.groups[0].member_count = 1
+            return detail
+          })(),
+        ),
+      ),
+      framesHandler(),
+      photosHandler('2', { photos: [] }),
+    )
+    renderGallery()
+
+    await screen.findByText('Galeri terkunci sampai orang tua menyetujui.')
+    screen.getByText('Persetujuan: Belum diserahkan')
+    expect(screen.queryByText('Persetujuan: Menunggu')).toBeNull()
+  })
+
   it('FAS never sees the consent send action', async () => {
     server.use(
       http.get('/api/sessions/1', () => ok(detailFixture({ status: 'OPENED' }))),

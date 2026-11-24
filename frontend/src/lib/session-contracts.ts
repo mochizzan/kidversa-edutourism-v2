@@ -52,8 +52,8 @@ export interface SessionMember {
   name: string
   age: number
   school: string
-  /** Consent status for this child in this session (member rows may predate the send). */
-  consent: string
+  /** Consent status for this child in this session; null = no request sent yet. */
+  consent: string | null
 }
 
 /** Shared keys of both group shapes (FAS wire pin F-B17). */
