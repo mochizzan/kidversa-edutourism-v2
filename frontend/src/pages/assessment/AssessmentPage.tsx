@@ -129,11 +129,14 @@ export default function AssessmentPage() {
 
   useEffect(() => {
     let alive = true
-    api.get<{ id: number; name: string; is_active: boolean }>(`/api/children/${childId}`).then(
-      (data) => {
+    api
+      .get<{ child: { id: number; name: string; is_active: boolean } }>(
+        `/api/children/${childId}`,
+      )
+      .then((data) => {
         if (alive) {
-          setChildName(data.name)
-          setChildInactive(!data.is_active)
+          setChildName(data.child.name)
+          setChildInactive(!data.child.is_active)
         }
       },
       () => undefined, // header decoration only; page works without it

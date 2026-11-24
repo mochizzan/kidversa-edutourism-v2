@@ -44,7 +44,7 @@ function assessmentHandlers(
     http.get('/api/sessions/1/topics/3/children/2/readiness', () =>
       ok({ complete: false, missing: [{ said: 10, name: 'Mengamati motif' }] }),
     ),
-    http.get('/api/children/2', () => ok({ id: 2, name: 'Aisyah Putri', is_active: true })),
+    http.get('/api/children/2', () => ok({ child: { id: 2, name: 'Aisyah Putri', is_active: true } })),
     http.put('/api/sessions/1/topics/3/children/2/activities/10', async ({ request }) => {
       capture.calls += 1
       capture.body = await request.json()
@@ -234,7 +234,7 @@ describe('assessment read-only banners', () => {
       http.get('/api/sessions/1/topics/3/children/2/readiness', () =>
         ok({ complete: false, missing: [] }),
       ),
-      http.get('/api/children/2', () => ok({ id: 2, name: 'Aisyah Putri', is_active: true })),
+      http.get('/api/children/2', () => ok({ child: { id: 2, name: 'Aisyah Putri', is_active: true } })),
     )
     renderApp(null, {
       routes: ROUTES,
@@ -248,7 +248,7 @@ describe('assessment read-only banners', () => {
   it('unknown stid renders the translated NOT_FOUND guard', async () => {
     server.use(
       http.get('/api/sessions/1', () => ok(detailFixture({ status: 'OPENED' }))),
-      http.get('/api/children/2', () => ok({ id: 2, name: 'Aisyah Putri', is_active: true })),
+      http.get('/api/children/2', () => ok({ child: { id: 2, name: 'Aisyah Putri', is_active: true } })),
       http.get('/api/sessions/1/topics/99/children/2/assessments', () => ok([])),
       http.get('/api/sessions/1/topics/99/children/2/readiness', () =>
         ok({ complete: false, missing: [] }),
@@ -306,7 +306,7 @@ describe('assessment header and body states', () => {
       http.get('/api/sessions/1/topics/3/children/2/readiness', () =>
         ok({ complete: false, missing: [] }),
       ),
-      http.get('/api/children/2', () => ok({ id: 2, name: 'Aisyah Putri', is_active: true })),
+      http.get('/api/children/2', () => ok({ child: { id: 2, name: 'Aisyah Putri', is_active: true } })),
     )
     renderApp(null, {
       routes: ROUTES,
@@ -332,7 +332,7 @@ describe('assessment header and body states', () => {
       http.get('/api/sessions/1/topics/3/children/2/readiness', () =>
         ok({ complete: false, missing: [] }),
       ),
-      http.get('/api/children/2', () => ok({ id: 2, name: 'Aisyah Putri', is_active: true })),
+      http.get('/api/children/2', () => ok({ child: { id: 2, name: 'Aisyah Putri', is_active: true } })),
     )
     const user = userEvent.setup()
     renderApp(null, {
@@ -372,7 +372,7 @@ describe('assessment header and body states', () => {
       http.get('/api/sessions/1/topics/4/children/2/readiness', () =>
         ok({ complete: true, missing: [] }),
       ),
-      http.get('/api/children/2', () => ok({ id: 2, name: 'Aisyah Putri', is_active: true })),
+      http.get('/api/children/2', () => ok({ child: { id: 2, name: 'Aisyah Putri', is_active: true } })),
     )
     const user = userEvent.setup()
     renderApp(null, { routes: ROUTES, route: '/assessment/1/2/3', session: ADMIN_SESSION() })
@@ -396,7 +396,7 @@ describe('assessment header and body states', () => {
       http.get('/api/sessions/1/topics/3/children/2/readiness', () =>
         ok({ complete: false, missing: [] }),
       ),
-      http.get('/api/children/2', () => ok({ id: 2, name: 'Aisyah Putri', is_active: true })),
+      http.get('/api/children/2', () => ok({ child: { id: 2, name: 'Aisyah Putri', is_active: true } })),
     )
     renderApp(null, {
       routes: ROUTES,
@@ -453,7 +453,7 @@ describe('assessment header and body states', () => {
       http.get('/api/sessions/1', () =>
         HttpResponse.json({ error: { code: 'FORBIDDEN_ROLE', message: 'nope' } }),
       ),
-      http.get('/api/children/2', () => ok({ id: 2, name: 'Aisyah Putri', is_active: true })),
+      http.get('/api/children/2', () => ok({ child: { id: 2, name: 'Aisyah Putri', is_active: true } })),
     )
     const user = userEvent.setup()
     renderApp(null, {
