@@ -246,9 +246,11 @@ export function fmtDateTime(iso: string | null | undefined): string {
 
 /** Consent status → translated label (kept lockstep with ConsentTag). */
 export function consentStatusLabel(t: TFunction, status: string): string {
+  if (!status) return t('consent.notYetSubmitted')
   if (status === 'SETUJU') return t('consent.approved')
   if (status === 'DITOLAK') return t('consent.rejected')
-  return t('consent.pending')
+  if (status === 'PENDING') return t('consent.pending')
+  return t('consent.notYetSubmitted')
 }
 
 /** Best-effort clipboard copy with an "already copied" feedback contract. */

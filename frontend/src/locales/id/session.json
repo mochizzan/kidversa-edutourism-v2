@@ -152,11 +152,11 @@
   "consent": {
     "title": "Persetujuan",
     "send": "Kirim persetujuan",
-    "resend": "Kirim ulang",
     "copyUrl": "Salin tautan",
     "pending": "Menunggu",
     "approved": "Disetujui",
     "rejected": "Ditolak",
+    "notYetSubmitted": "Belum diserahkan",
     "sendTitle": "Kirim persetujuan ke WhatsApp ibu {{child}}?",
     "urlWhilePending": "Tautan tersedia selama masih menunggu.",
     "readOnly": "Hanya dapat dilihat.",
@@ -241,6 +241,14 @@
     "noChildrenTitle": "Belum ada anak di sesi ini",
     "noChildrenDesc": "Rapor disusun per anak. Tambahkan anak ke kelompok sesi ini dulu — matriks di bawah terisi setelah ada yang bisa dilaporkan.",
     "noTopicTitle": "Belum ada topik di sesi ini",
-    "noTopicDesc": "Rapor mengikuti topik. Setelah sesi ini punya topik, matriks di bawah terisi."
+    "noTopicDesc": "Rapor mengikuti topik. Setelah sesi ini punya topik, matriks di bawah terisi.",
+    "topicsTitle": "Topik sesi",
+    "openTopic": "Buka topik",
+    "participantsTitle": "Peserta",
+    "backToTopics": "Kembali ke topik",
+    "participantsEmpty": "Belum ada peserta",
+    "participantName": "Nama",
+    "participantSchool": "Sekolah",
+    "groupFilter": "Saring berdasarkan kelompok"
   }
 }

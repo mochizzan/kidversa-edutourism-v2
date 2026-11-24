@@ -149,11 +149,12 @@ describe('consent tag and form error', () => {
 
     expect(screen.getByText('Disetujui')).toBeInTheDocument()
     expect(screen.getByText('Ditolak')).toBeInTheDocument()
-    // PENDING + the unknown status both fall back to the pending label.
-    expect(screen.getAllByText('Menunggu')).toHaveLength(2)
-    // Unknown status falls back to the neutral tone — never unstyled.
+    // PENDING still falls back to the pending label; the unknown status now
+    // falls back to not-yet-submitted.
+    expect(screen.getAllByText('Menunggu')).toHaveLength(1)
+    expect(screen.getAllByText('Belum diserahkan')).toHaveLength(1)
     expect(container.querySelectorAll('.kv-status')).toHaveLength(4)
-    const fallback = screen.getAllByText('Menunggu').at(-1) as HTMLElement
+    const fallback = screen.getAllByText('Belum diserahkan').at(-1) as HTMLElement
     expect(fallback.closest('.kv-status')).toHaveClass('kv-status--neutral')
   })
 

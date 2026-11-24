@@ -42,7 +42,9 @@ describe('session shared helpers', () => {
     expect(consentStatusLabel(t, 'SETUJU')).toBe('Disetujui')
     expect(consentStatusLabel(t, 'DITOLAK')).toBe('Ditolak')
     expect(consentStatusLabel(t, 'PENDING')).toBe('Menunggu')
-    expect(consentStatusLabel(t, 'WEIRD')).toBe('Menunggu')
+    // Missing/unknown status → "not yet submitted" (member rows may predate the send).
+    expect(consentStatusLabel(t, '')).toBe('Belum diserahkan')
+    expect(consentStatusLabel(t, 'WEIRD')).toBe('Belum diserahkan')
   })
 
   it('reports clipboard copy success and failure', async () => {

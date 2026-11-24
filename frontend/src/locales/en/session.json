@@ -152,11 +152,11 @@
   "consent": {
     "title": "Consent",
     "send": "Send consent request",
-    "resend": "Resend",
     "copyUrl": "Copy link",
     "pending": "Pending",
     "approved": "Approved",
     "rejected": "Rejected",
+    "notYetSubmitted": "Not yet submitted",
     "sendTitle": "Send the consent request to {{child}}'s mother on WhatsApp?",
     "urlWhilePending": "The link is available while still pending.",
     "readOnly": "View only.",
@@ -241,6 +241,14 @@
     "noChildrenTitle": "No children in this session yet",
     "noChildrenDesc": "Reports are composed per child. Add children to this session's groups first — the batch matrix below fills in once there is anyone to report on.",
     "noTopicTitle": "No topic in this session yet",
-    "noTopicDesc": "Reports follow topics. Once this session has a topic, its batch matrix fills in below."
+    "noTopicDesc": "Reports follow topics. Once this session has a topic, its batch matrix fills in below.",
+    "topicsTitle": "Session topics",
+    "openTopic": "Open topic",
+    "participantsTitle": "Participants",
+    "backToTopics": "Back to topics",
+    "participantsEmpty": "No participants yet",
+    "participantName": "Name",
+    "participantSchool": "School",
+    "groupFilter": "Filter by group"
   }
 }
