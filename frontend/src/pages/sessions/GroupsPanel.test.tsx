@@ -82,7 +82,7 @@ describe('groups panel render', () => {
     expect(assessLinks[0]).toHaveAttribute('href', '/assessment/1/2/3')
     expect(assessLinks[1]).toHaveAttribute('href', '/assessment/1/3/3')
     const galleryLinks = within(card).getAllByRole('link', { name: 'Galeri' })
-    expect(galleryLinks[0]).toHaveAttribute('href', '/sessions/1/gallery?gid=5&cid=2')
+    expect(galleryLinks[0]).toHaveAttribute('href', '/sessions/1/gallery/children/2')
     expect(within(card).getByText('8 · SD Cendekia')).toBeInTheDocument()
   })
 

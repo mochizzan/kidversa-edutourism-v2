@@ -378,7 +378,7 @@ export default function AssessmentPage() {
         <Button
           type="link"
           size="small"
-          onClick={() => navigate(`/sessions/${sid}/gallery?cid=${childId}&stid=${topicId}`)}
+          onClick={() => navigate(`/sessions/${sid}/gallery/children/${childId}?stid=${topicId}`)}
         >
           {tc('actions.view')}
         </Button>

@@ -54,13 +54,22 @@ function buildCrumbs(pathname: string, names: CrumbNames, t: TFunction<'menu'>):
         return [{ ...list, to: '/sessions' }, { key: 'new', label: t('breadcrumb.newSession') }]
       }
       if (!third) return [{ ...list, to: '/sessions' }, { key: 'session', label: session }]
-      return [
+      const ancestors: Crumb[] = [
         { ...list, to: '/sessions' },
         { key: 'session', label: session, to: `/sessions/${second}` },
-        third === 'gallery'
-          ? { key: 'gallery', label: t('breadcrumb.gallery') }
-          : { key: 'reports', label: t('reports') },
       ]
+      if (third === 'gallery') {
+        // A child gallery nests one leaf deeper: Session → Gallery → child.
+        if (parts[3] === 'children') {
+          return [
+            ...ancestors,
+            { key: 'gallery', label: t('breadcrumb.gallery'), to: `/sessions/${second}/gallery` },
+            { key: 'childGallery', label: names.cid ?? t('breadcrumb.childGallery') },
+          ]
+        }
+        return [...ancestors, { key: 'gallery', label: t('breadcrumb.gallery') }]
+      }
+      return [...ancestors, { key: 'reports', label: t('reports') }]
     }
     // The URL is flat, but the hierarchy is not: assessment always belongs to
     // one session, so the session crumb links back to its detail page.

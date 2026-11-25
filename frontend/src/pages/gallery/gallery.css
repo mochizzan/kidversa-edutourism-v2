@@ -1,0 +1,132 @@
+/* Gallery index + child gallery.
+   Two surfaces, one language: the index is a hairline table whose rows are
+   doors; the child page puts the capture tray beside the photo field. Both
+   stay on the sheet's warm-neutral palette — no new shadows, no new radii. */
+
+/* ---------- index: the whole row is the door ---------- */
+
+.kv-gallery-row {
+  cursor: pointer;
+}
+
+.kv-gallery-row > td {
+  transition: background var(--kv-hover);
+}
+
+.kv-gallery-row:hover > td,
+.kv-gallery-row:focus-within > td {
+  background: var(--kv-surface);
+}
+
+.kv-gallery-child-link {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--kv-text);
+  font-weight: 600;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+.kv-gallery-child-link:hover {
+  color: var(--kv-olive-deep);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* The row action states its verb; the arrow only leans in on hover. */
+.kv-gallery-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--kv-text-2);
+  font-size: 12px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.kv-gallery-open .anticon {
+  font-size: 10px;
+  transition: transform var(--kv-hover);
+}
+
+.kv-gallery-open:hover {
+  color: var(--kv-olive-deep);
+}
+
+.kv-gallery-open:hover .anticon {
+  transform: translateX(2px);
+}
+
+/* ---------- child page: capture tray beside the photo field ---------- */
+
+.kv-gallery-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  gap: var(--kv-space-5);
+  align-items: start;
+}
+
+.kv-gallery-capture {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: var(--kv-space-3);
+  border: 1px solid var(--kv-border);
+  border-radius: var(--kv-radius-card);
+  background: var(--kv-surface);
+}
+
+.kv-gallery-capture .kv-capture {
+  border-radius: var(--kv-radius-control);
+}
+
+.kv-gallery-frame {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kv-space-1);
+  margin-top: var(--kv-space-3);
+}
+
+.kv-gallery-frame .ant-select {
+  width: 100%;
+}
+
+.kv-gallery-upload-error {
+  margin-top: var(--kv-space-2);
+}
+
+.kv-gallery-photos {
+  min-width: 0;
+}
+
+/* A section rail, not a card: the photos are the surface. */
+.kv-gallery-photos__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--kv-space-2);
+  margin-bottom: var(--kv-space-3);
+  padding-bottom: var(--kv-space-2);
+  border-bottom: 1px solid var(--kv-border);
+}
+
+.kv-gallery-photos__count {
+  flex: none;
+  color: var(--kv-text-2);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  line-height: 14px;
+}
+
+@media (max-width: 1024px) {
+  .kv-gallery-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .kv-gallery-capture {
+    max-width: 460px;
+  }
+}

@@ -228,7 +228,7 @@ export default function GroupsPanel({
                     )
                   }
                   actions.push(
-                    <Link key="gallery" to={`/sessions/${sid}/gallery?gid=${group.gid}&cid=${member.child_id}`}>
+                    <Link key="gallery" to={`/sessions/${sid}/gallery/children/${member.child_id}`}>
                       <Button type="link" size="small">{t('group.gallery')}</Button>
                     </Link>,
                   )

@@ -1,182 +1,103 @@
 /**
- * Gallery `/sessions/:sid/gallery` (F-10 / FL-10): nav Session → Topic →
- * Group → Child (prefillable from the detail page via ?gid=&cid=&stid=).
+ * Gallery index `/sessions/:sid/gallery` (F-10 / FL-10): a directory of the
+ * session's children, scoped by one group filter (default: all groups).
  *
- * Consent gate: member consent !== SETUJU → locked panel with the status and
- * a link to `/consent/:sid` (the send/resend action lives on the consent
- * page; FL-11's `resent` vs already-decided envelope is handled there).
+ * This page deliberately fetches no photos and opens no camera: the gallery
+ * itself lives on the dedicated child page
+ * (`/sessions/:sid/gallery/children/:cid`), which keeps the consent gate and
+ * the capture workflow next to the photos they belong to.
  *
- * Upload/capture: `PhotoCapture` (camera or file fallback) → the ONE shared
- * client pre-check `isAcceptedImage` (jpg/jpeg/png ≤50 MB, spec 09
- * 2026-11-10) → `api.upload` multipart field `file` (+ optional `frame_id`) → the
- * transient preview exists only while `uploading`; after the server 200 the
- * item appears ONLY via `photo.changed` → refetch (honest-file rule — no
- * optimistic gallery row, no success toast before 200). 11th photo →
- * PHOTO_LIMIT shown inline. Frames: program-linked frame list (SSE
- * `frame.changed`), optional overlay fused at capture.
+ * Legacy deep links from the old picker (`?gid=&cid=&stid=`) redirect to the
+ * child route; `stid` rides along so an old topic link still lands on the right
+ * topic.
  */
-import { useCallback, useEffect, useState } from 'react'
-import { Alert, App as AntApp, Button, Select, Space, Typography } from 'antd'
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
+import { useEffect, useMemo, useState } from 'react'
+import { Alert, Select } from 'antd'
+import type { ColumnsType } from 'antd/es/table'
+import { ArrowRightOutlined } from '@ant-design/icons'
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router'
 import { useTranslation } from 'react-i18next'
+import DataTable from '../../components/DataTable'
+import EmptyState from '../../components/EmptyState'
+import FilterBar, { FilterField } from '../../components/FilterBar'
 import PageHeader from '../../components/PageHeader'
 import PageSkeleton from '../../components/PageSkeleton'
-import PhotoCapture from '../../components/PhotoCapture'
-import FilterBar, { FilterField } from '../../components/FilterBar'
-import { api, errorCode } from '../../lib/api'
+import RefreshButton from '../../components/RefreshButton'
+import { errorCode } from '../../lib/api'
 import { useCrumbName } from '../../lib/crumbs'
-import { useErrorToast } from '../../lib/errors'
-import { useEventRefetch, useListLoader } from '../../lib/list'
-import { isAcceptedImage } from '../masters/shared'
-import { consentStatusLabel, pPrefix, type PhotoItem, type SessionMember } from '../../lib/session-contracts'
+import type { SessionMember } from '../../lib/session-contracts'
 import { ConsentTag } from '../sessions/controls'
 import { useSessionDetail } from '../sessions/shared'
-import PhotoGrid from './PhotoGrid'
+import './gallery.css'
 
-interface FrameRow {
-  id: number
-  name: string
-  image_url: string
+interface GalleryChild extends SessionMember {
+  gid: number
+  group_name: string
 }
+
+/** Sentinel for the one filter: every own group in the session. */
+const ALL_GROUPS = 'ALL'
 
 export default function GalleryPage() {
   const { t } = useTranslation('session')
   const { t: tc } = useTranslation('common')
-  const { message } = AntApp.useApp()
-  const toast = useErrorToast()
   const { sid } = useParams()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const { detail, error: detailError, reload: reloadDetail } = useSessionDetail(sid)
+  const { detail, error, deleted, reload } = useSessionDetail(sid)
 
   // The breadcrumb bar shows the session's name instead of "Detail sesi".
   useCrumbName('sid', detail?.session.name)
 
-  const [stid, setStid] = useState<number | null>(Number(searchParams.get('stid')) || null)
-  const [gid, setGid] = useState<number | null>(Number(searchParams.get('gid')) || null)
-  const [cid, setCid] = useState<number | null>(Number(searchParams.get('cid')) || null)
-  const [photos, setPhotos] = useState<PhotoItem[] | null>(null)
-  const [photoError, setPhotoError] = useState<unknown>(null)
-  const [uploading, setUploading] = useState(false)
-  const [uploadError, setUploadError] = useState<string | null>(null)
-  const [frameId, setFrameId] = useState<number | null>(null)
-
-  // Defaults: first topic, first group with members, first member of the group.
-  useEffect(() => {
-    if (!detail) return
-    const validStid = detail.topics.some((topic) => topic.stid === stid) ? stid : detail.topics[0]?.stid ?? null
-    const groupWithMembers = detail.groups.find(
-      (group) => group.members !== undefined && (gid === null || group.gid === gid),
-    )
-    const activeGid = groupWithMembers?.gid ?? gid
-    const activeGroup = detail.groups.find((group) => group.gid === activeGid)
-    const members = activeGroup?.members ?? []
-    const validCid = members.some((member) => member.child_id === cid) ? cid : members[0]?.child_id ?? null
-    setStid(validStid)
-    setGid(activeGid)
-    setCid(validCid)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [detail])
-
-  const prefix = sid !== undefined && stid !== null && cid !== null ? pPrefix(sid, stid, cid) : null
-
-  const loadPhotos = useCallback(() => {
-    if (!prefix) return
-    api.get<PhotoItem[]>(`${prefix}/photos`).then(
-      (data) => {
-        setPhotos(data)
-        setPhotoError(null)
-      },
-      (failure: unknown) => setPhotoError(failure),
-    )
-  }, [prefix])
+  const [gid, setGid] = useState<number | typeof ALL_GROUPS>(ALL_GROUPS)
 
   useEffect(() => {
-    if (!prefix) return
-    setPhotos(null)
-    setPhotoError(null)
-    loadPhotos()
-  }, [prefix, loadPhotos])
+    if (deleted) navigate('/sessions', { replace: true })
+  }, [deleted, navigate])
 
-  useEventRefetch(['photo.changed', 'copy.completed'], loadPhotos)
-  useEventRefetch(['consent.changed'], reloadDetail)
-
-  const programId = detail?.session.program_id ?? null
-  // Frame overlay is decoration (capture works without it): errors are
-  // simply never surfaced; the list refetches on `frame.changed`.
-  const { rows: frames } = useListLoader<FrameRow>(
-    programId === null ? null : '/api/frames',
-    { program_id: programId ?? undefined, page: 1, per_page: 1000 },
-    ['frame.changed'],
+  // Own groups only: FAS foreign groups arrive reduced (no members), so they
+  // must never appear as an empty row in this directory.
+  const groups = useMemo(
+    () => detail?.groups.filter((group) => group.own && group.members !== undefined) ?? [],
+    [detail],
   )
-  useEffect(() => {
-    if (frameId === null && frames.length > 0) setFrameId(frames[0].id)
-  }, [frames, frameId])
 
-  const group = detail?.groups.find((entry) => entry.gid === gid) ?? null
-  const members: SessionMember[] = group?.members ?? []
-  const member = members.find((entry) => entry.child_id === cid) ?? null
-  // No consent row yet is NOT the same as a pending request: keep null so the
-  // tag and lock message say "Not yet submitted" instead of "Pending".
-  const consent = member?.consent ?? ''
-  const unlocked = consent === 'SETUJU'
+  const children = useMemo<GalleryChild[]>(
+    () =>
+      groups
+        .flatMap((group) =>
+          (group.members ?? []).map((member) => ({
+            ...member,
+            gid: group.gid,
+            group_name: group.name,
+          })),
+        )
+        .sort(
+          (a, b) =>
+            a.group_name.localeCompare(b.group_name, 'id') ||
+            a.name.localeCompare(b.name, 'id'),
+        ),
+    [groups],
+  )
 
-  const onCapture = async (file: File) => {
-    if (!prefix) return
-    // Client-side pre-check — the ONE shared upload gate (spec 09, 2026-11-10):
-    // jpg/jpeg/png only, ≤50 MB, blocked BEFORE the FormData is built.
-    if (!isAcceptedImage(file)) {
-      setUploadError(t('gallery.badFormat'))
-      return
-    }
-    setUploading(true)
-    setUploadError(null)
-    try {
-      const selectedFrame = frames.find((frame) => frame.id === frameId) ?? null
-      const form = new FormData()
-      form.append('file', file)
-      if (selectedFrame) form.append('frame_id', String(selectedFrame.id))
-      await api.upload(`${prefix}/photos`, form, crypto.randomUUID())
-      // Server 200: drop the transient preview; the item appears only after
-      // `photo.changed` → refetch (honest-file rule — no success toast).
-    } catch (failure: unknown) {
-      const code = errorCode(failure)
-      setUploadError(code === 'PHOTO_LIMIT' ? t('gallery.max') : tc(`errors.${code}`))
-    } finally {
-      setUploading(false)
-    }
+  const visible = gid === ALL_GROUPS ? children : children.filter((child) => child.gid === gid)
+
+  // Old gallery links carried the child (and topic) in the query string.
+  const legacyCid = Number(searchParams.get('cid')) || null
+  if (legacyCid !== null) {
+    const legacyStid = Number(searchParams.get('stid')) || null
+    const suffix = legacyStid === null ? '' : `?stid=${legacyStid}`
+    return <Navigate to={`/sessions/${sid}/gallery/children/${legacyCid}${suffix}`} replace />
   }
 
-  const setCandidate = async (photoId: number) => {
-    if (!prefix) return
-    try {
-      await api.patch(`${prefix}/photos/${photoId}`, { is_candidate: true })
-      loadPhotos() // own-200 refetch; other tabs follow `photo.changed`
-      message.success(t('gallery.candidateSet'))
-    } catch (failure: unknown) {
-      toast(failure)
-    }
-  }
-
-  const deletePhoto = async (photoId: number) => {
-    if (!prefix) return
-    try {
-      await api.del(`${prefix}/photos/${photoId}`)
-      loadPhotos()
-      message.success(t('gallery.deleted'))
-    } catch (failure: unknown) {
-      toast(failure)
-    }
-  }
-
-  if (detailError) {
+  if (error) {
     return (
       <>
         <PageHeader title={t('gallery.title')} />
         <Alert
           type="error"
           showIcon
-          message={tc(`errors.${errorCode(detailError)}`)}
+          message={tc(`errors.${errorCode(error)}`)}
           action={<Link to="/sessions">{tc('actions.back')}</Link>}
         />
       </>
@@ -187,123 +108,97 @@ export default function GalleryPage() {
     return <PageSkeleton />
   }
 
-  const consentLabel = consentStatusLabel(t, consent)
+  const childPath = (childId: number) => `/sessions/${sid}/gallery/children/${childId}`
+
+  const columns: ColumnsType<GalleryChild> = [
+    {
+      title: t('gallery.child'),
+      dataIndex: 'name',
+      width: 220,
+      ellipsis: true,
+      render: (name: string, row) => (
+        <Link className="kv-gallery-child-link" to={childPath(row.child_id)} title={name}>
+          {name}
+        </Link>
+      ),
+    },
+    { title: t('gallery.group'), dataIndex: 'group_name', width: 190, ellipsis: true },
+    { title: t('gallery.school'), dataIndex: 'school', ellipsis: true },
+    {
+      title: t('consent.statusLabel'),
+      key: 'consent',
+      width: 170,
+      render: (_, row) => <ConsentTag status={row.consent ?? ''} />,
+    },
+    {
+      title: tc('columns.actions'),
+      key: 'actions',
+      width: 126,
+      fixed: 'right',
+      render: (_, row) => (
+        <Link className="kv-gallery-open" to={childPath(row.child_id)}>
+          {t('gallery.open')}
+          <ArrowRightOutlined aria-hidden="true" />
+        </Link>
+      ),
+    },
+  ]
 
   return (
     <>
       <PageHeader
         title={t('gallery.title')}
         description={`${detail.session.name} · ${detail.session.date}`}
+        actions={<RefreshButton onRefresh={reload} />}
       />
 
-      <FilterBar>
-        {detail.topics.length > 1 ? (
-          <FilterField label={t('gallery.topic')} htmlFor="gallery-topic" width={240}>
+      {children.length > 0 ? (
+        <FilterBar
+          activeCount={gid === ALL_GROUPS ? 0 : 1}
+          onClear={() => setGid(ALL_GROUPS)}
+          hint={t('gallery.indexHint')}
+        >
+          <FilterField label={t('gallery.group')} htmlFor="gallery-group" width={240}>
             <Select
-              id="gallery-topic"
-              value={stid ?? undefined}
-              onChange={setStid}
-              options={detail.topics.map((topic) => ({ value: topic.stid, label: topic.name }))}
-              aria-label={t('gallery.topic')}
-              placeholder={t('gallery.pickTopic')}
+              id="gallery-group"
+              value={gid}
+              onChange={setGid}
+              options={[
+                { value: ALL_GROUPS, label: t('gallery.allGroups') },
+                ...groups.map((group) => ({ value: group.gid, label: group.name })),
+              ]}
+              aria-label={t('gallery.group')}
             />
           </FilterField>
-        ) : null}
-        <FilterField label={t('gallery.group')} htmlFor="gallery-group" width={220}>
-          <Select
-            id="gallery-group"
-            value={gid ?? undefined}
-            onChange={(next) => {
-              setGid(next)
-              setCid(null)
-            }}
-            options={detail.groups
-              .filter((entry) => entry.members !== undefined)
-              .map((entry) => ({ value: entry.gid, label: entry.name }))}
-            aria-label={t('gallery.group')}
-            placeholder={t('gallery.pickGroup')}
-          />
-        </FilterField>
-        <FilterField label={t('gallery.child')} htmlFor="gallery-child" width={260}>
-          <Select
-            id="gallery-child"
-            value={cid ?? undefined}
-            onChange={setCid}
-            options={members.map((entry) => ({
-              value: entry.child_id,
-              label: `${entry.name} · ${entry.school}`,
-            }))}
-            aria-label={t('gallery.child')}
-            placeholder={t('gallery.pickChild')}
-          />
-        </FilterField>
-      </FilterBar>
+        </FilterBar>
+      ) : null}
 
-      <Space style={{ marginBottom: 12 }} wrap>
-        {member ? <ConsentTag status={consent} /> : null}
-        <Button type="link" size="small" onClick={() => navigate(`/consent/${sid}`)}>
-          {t('consent.title')}
-        </Button>
-      </Space>
-
-      {!member || stid === null ? (
-        <Alert type="info" showIcon message={t('gallery.pickPrompt')} />
-      ) : !unlocked ? (
-        <Alert
-          type="warning"
-          showIcon
-          message={t('gallery.consentLocked')}
-          description={t('gallery.consentLabel', { status: consentLabel })}
-          action={
-            <Button type="link" size="small" onClick={() => navigate(`/consent/${sid}`)}>
-              {tc('actions.view')}
-            </Button>
-          }
-        />
-      ) : (
-        <>
-          <div style={{ maxWidth: 420, marginBottom: 16 }}>
-            <PhotoCapture
-              onCapture={(file) => void onCapture(file)}
-              uploading={uploading}
-              frameUrl={frames.find((frame) => frame.id === frameId)?.image_url ?? null}
+      <DataTable<GalleryChild>
+        rowKey="child_id"
+        columns={columns}
+        dataSource={visible}
+        pagination={false}
+        scroll={{ x: 880 }}
+        onRow={(row) => ({
+          className: 'kv-gallery-row',
+          onClick: (event) => {
+            // The name link and the row action already navigate; a click on
+            // either must not count twice.
+            if ((event.target as HTMLElement).closest('a, button')) return
+            navigate(childPath(row.child_id))
+          },
+        })}
+        empty={
+          children.length === 0 ? (
+            <EmptyState
+              title={t('gallery.noChildrenTitle')}
+              description={t('gallery.noChildrenDesc')}
             />
-            <Space style={{ marginTop: 8 }} wrap>
-              <Typography.Text type="secondary">{t('gallery.frame')}</Typography.Text>
-              <Select
-                size="small"
-                style={{ width: 220 }}
-                value={frameId ?? undefined}
-                onChange={setFrameId}
-                options={[
-                  { value: -1, label: t('gallery.noFrame') },
-                  ...frames.map((frame) => ({ value: frame.id, label: frame.name })),
-                ]}
-                placeholder={t('gallery.noFrame')}
-              />
-            </Space>
-            {uploadError ? (
-              <Alert
-                style={{ marginTop: 8 }}
-                type="error"
-                showIcon
-                closable
-                message={uploadError}
-                onClose={() => setUploadError(null)}
-              />
-            ) : null}
-          </div>
-
-          <PhotoGrid
-            photos={photos}
-            loading={photos === null && photoError === null}
-            error={photoError}
-            onRetry={loadPhotos}
-            onCandidate={(photoId) => void setCandidate(photoId)}
-            onDelete={(photoId) => void deletePhoto(photoId)}
-          />
-        </>
-      )}
+          ) : (
+            <EmptyState title={t('gallery.groupEmpty')} />
+          )
+        }
+      />
     </>
   )
 }

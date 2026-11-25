@@ -88,4 +88,26 @@ describe('breadcrumb top bar', () => {
     )
     expect(within(nav).getByText('Galeri')).toHaveAttribute('aria-current', 'page')
   })
+
+  it('nests a child gallery under the gallery trail', () => {
+    function NamedBar() {
+      useCrumbName('sid', 'Kunjungan SDN 3')
+      useCrumbName('cid', 'Aisyah Putri')
+      return <Breadcrumbs />
+    }
+
+    renderApp(
+      <CrumbNamesProvider>
+        <NamedBar />
+      </CrumbNamesProvider>,
+      { route: '/sessions/12/gallery/children/2' },
+    )
+    const nav = screen.getByRole('navigation', { name: 'Jejak navigasi' })
+    expect(within(nav).getByRole('link', { name: 'Galeri' })).toHaveAttribute(
+      'href',
+      '/sessions/12/gallery',
+    )
+    expect(within(nav).getByText('Aisyah Putri')).toHaveAttribute('aria-current', 'page')
+    expect(within(nav).queryByRole('link', { name: 'Aisyah Putri' })).toBeNull()
+  })
 })

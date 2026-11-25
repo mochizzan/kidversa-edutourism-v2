@@ -1,49 +1,30 @@
 /**
- * Admin gallery (F-10 / FL-10): the consent gate locks the gallery and the
- * gallery offers no consent-sending action (the send/resend lives on the
- * consent page), the honest-file upload flow (multipart contract, transient
- * preview only, item appears solely via `photo.changed` → refetch),
- * PHOTO_LIMIT inline, the client pre-check that blocks oversize (>50 MB) and
- * wrong-format photos before send, candidate toggling and deletion, plus the
- * `copy.completed` photo refetch (the open gallery tab follows copy jobs like
- * `photo.changed`).
+ * Gallery index (`/sessions/:sid/gallery`): a group filter that defaults to all
+ * groups, a clickable children table with consent status, the dedicated child
+ * route as the row's destination, and the legacy `?cid=&stid=` redirect.
+ *
+ * The page is a directory: it must never fetch photos or frames — that work
+ * belongs to the child gallery.
  */
-import { describe, expect, it, vi } from 'vitest'
-import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
-import userEvent, { type UserEvent } from '@testing-library/user-event'
-import { delay, http, HttpResponse } from 'msw'
-import StreamGate from '../../components/StreamGate'
+import { describe, expect, it } from 'vitest'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { http } from 'msw'
 import GalleryPage from './GalleryPage'
+import ChildGalleryPage from './ChildGalleryPage'
 import { emitSignal } from '../../lib/stream'
 import { renderApp } from '../../test/render'
 import { server } from '../../test/setup'
-import { makeLoginData, makeUser, ok, paged, sseChannel } from '../../test/handlers'
-import {
-  detailFixture,
-  photoItem,
-  pushFrame,
-  until,
-  useSseFakeTimers,
-} from '../../test/helpers.cov-session'
-import type { PhotoItem } from '../../lib/session-contracts'
+import { makeLoginData, makeUser, ok, paged } from '../../test/handlers'
+import { detailFixture } from '../../test/helpers.cov-session'
 import type { RouteObject } from 'react-router'
 
-const GALLERY_ROUTE = (gate = false): RouteObject[] => [
-  {
-    path: '/sessions/:sid/gallery',
-    element: gate ? (
-      <>
-        <StreamGate />
-        <GalleryPage />
-      </>
-    ) : (
-      <GalleryPage />
-    ),
-  },
+const GALLERY_ROUTES: RouteObject[] = [
+  { path: '/sessions/:sid/gallery', element: <GalleryPage /> },
+  { path: '/sessions/:sid/gallery/children/:cid', element: <ChildGalleryPage /> },
 ]
 
 const ADMIN_SESSION = () => makeLoginData({ user: makeUser({ role: 'ADMIN' }) })
-const FAS_SESSION = () => makeLoginData({ user: makeUser({ role: 'FASILITATOR' }) })
 
 function framesHandler() {
   return http.get('/api/frames', () =>
@@ -55,395 +36,139 @@ function framesHandler() {
   )
 }
 
-/** Child 2 (Aisyah) is PENDING, child 3 (Budi) is SETUJU — see detailFixture. */
-function photosHandler(prefix: '2' | '3', photosRef: { photos: PhotoItem[] }) {
-  return http.get(`/api/sessions/1/topics/3/children/${prefix}/photos`, () =>
-    ok(photosRef.photos),
-  )
+function renderGallery(route = '/sessions/1/gallery') {
+  renderApp(null, { routes: GALLERY_ROUTES, route, session: ADMIN_SESSION() })
 }
 
-function renderGallery(
-  session = ADMIN_SESSION(),
-  gate = false,
-  route = '/sessions/1/gallery',
-) {
-  renderApp(null, { routes: GALLERY_ROUTE(gate), route, session })
-}
-
-/** Real-timer picker interaction (userEvent drives antd's open reliably). */
-async function switchToBudi(user: UserEvent): Promise<void> {
-  // Group + child pickers: [0]=group, [1]=child (single topic → no topic select).
-  await screen.findAllByRole('combobox')
-  const [, childPicker] = screen.getAllByRole('combobox')
-  await user.click(childPicker)
-  await user.click(await screen.findByText('Budi Santoso · SD Melati'))
-}
-
-describe('admin gallery consent gate', () => {
-  it('PENDING consent locks the gallery; the send action is gone', async () => {
-    server.use(
-      http.get('/api/sessions/1', () => ok(detailFixture({ status: 'OPENED' }))),
-      framesHandler(),
-      photosHandler('2', { photos: [] }),
-    )
-    renderGallery()
-
-    await screen.findByText('Galeri terkunci sampai orang tua menyetujui.')
-    screen.getByText('Persetujuan: Menunggu')
-    // No upload affordance while locked.
-    expect(document.querySelector('input[type="file"]')).toBeNull()
-    expect(screen.queryByRole('button', { name: /Ambil foto/ })).toBeNull()
-    // The gallery offers no consent sending; the view link stays.
-    expect(screen.queryByRole('button', { name: /Kirim persetujuan/ })).toBeNull()
-    expect(screen.queryByRole('button', { name: /Kirim ulang/ })).toBeNull()
-    screen.getByRole('button', { name: /Lihat/ })
-  })
-
-  it('DITOLAK locks the gallery; no resend is offered', async () => {
-    server.use(
-      http.get('/api/sessions/1', () =>
-        ok(
-          (() => {
-            const detail = detailFixture({ status: 'OPENED' })
-            detail.groups[0].members = [
-              { child_id: 2, name: 'Aisyah Putri', age: 8, school: 'SD Cendekia', consent: 'DITOLAK' },
-            ]
-            detail.groups[0].member_count = 1
-            return detail
-          })(),
-        ),
-      ),
-      framesHandler(),
-      photosHandler('2', { photos: [] }),
-    )
-    renderGallery()
-
-    await screen.findByText('Galeri terkunci sampai orang tua menyetujui.')
-    screen.getByText('Persetujuan: Ditolak')
-    expect(screen.queryByRole('button', { name: /Kirim ulang/ })).toBeNull()
-  })
-
-  it('a member with no consent row reads "not yet submitted", not "pending"', async () => {
-    server.use(
-      http.get('/api/sessions/1', () =>
-        ok(
-          (() => {
-            const detail = detailFixture({ status: 'OPENED' })
-            detail.groups[0].members = [
-              { child_id: 2, name: 'Aisyah Putri', age: 8, school: 'SD Cendekia', consent: null },
-            ]
-            detail.groups[0].member_count = 1
-            return detail
-          })(),
-        ),
-      ),
-      framesHandler(),
-      photosHandler('2', { photos: [] }),
-    )
-    renderGallery()
-
-    await screen.findByText('Galeri terkunci sampai orang tua menyetujui.')
-    screen.getByText('Persetujuan: Belum diserahkan')
-    expect(screen.queryByText('Persetujuan: Menunggu')).toBeNull()
-  })
-
-  it('FAS never sees the consent send action', async () => {
-    server.use(
-      http.get('/api/sessions/1', () => ok(detailFixture({ status: 'OPENED' }))),
-      framesHandler(),
-      photosHandler('2', { photos: [] }),
-    )
-    renderGallery(FAS_SESSION())
-
-    await screen.findByText('Galeri terkunci sampai orang tua menyetujui.')
-    expect(screen.queryByRole('button', { name: /Kirim persetujuan/ })).toBeNull()
-    expect(screen.queryByRole('button', { name: /Kirim ulang/ })).toBeNull()
-  })
-})
-
-describe('admin gallery upload (honest-file rule)', () => {
-  it('uploads multipart, keeps the preview transient, then lands via photo.changed', async () => {
-    useSseFakeTimers()
-    // Grant a fake camera: without it PhotoCapture starts in CAMERA_DENIED
-    // and the transient upload preview (a non-denied-mode branch) never renders.
-    Object.defineProperty(navigator, 'mediaDevices', {
-      configurable: true,
-      value: { getUserMedia: vi.fn(async () => ({ getTracks: () => [] })) },
-    })
-    const captured: { raw: string | null } = { raw: null }
-    const photosRef: { photos: PhotoItem[] } = { photos: [] }
-    const channel = sseChannel('/api/stream')
-    server.use(
-      channel.handler,
-      http.get('/api/sessions/1', () => ok(detailFixture({ status: 'OPENED' }))),
-      framesHandler(),
-      photosHandler('3', photosRef),
-      // NB: request.formData() hits a jsdom-File/undici webidl assertion here —
-      // the multipart contract is asserted on the raw body instead. The
-      // artificial delay keeps `uploading` observable while the response is
-      // still in flight (fake-timer stepped by `until`).
-      http.post('/api/sessions/1/topics/3/children/3/photos', async ({ request }) => {
-        captured.raw = await request.text()
-        await delay(500)
-        return ok({ photo: photoItem(7) })
-      }),
-    )
-    renderGallery(ADMIN_SESSION(), true, '/sessions/1/gallery?gid=5&cid=3&stid=3')
-    await until(() => channel.handshakes === 1)
-    await until(() => screen.queryByText('Belum ada foto.') !== null)
-
-    // Camera is unavailable in jsdom → the fallback picker carries the file input.
-    const input = document.querySelector('input[type="file"]') as HTMLInputElement
-    const file = new File([new Uint8Array(16)], 'foto.jpg', { type: 'image/jpeg' })
-    fireEvent.change(input, { target: { files: [file] } })
-
-    // While the upload is in flight: the transient preview shows, but NO
-    // gallery item exists yet (honest-file rule). NB: asserted via the preview
-    // block's class — PhotoCapture's `capture.*` i18n keys miss (the locale
-    // nests them at `gallery.capture.*`), so its label renders as the raw key.
-    await until(() => captured.raw !== null)
-    expect(document.querySelector('.kv-capture__preview')).not.toBeNull()
-    expect(screen.queryByAltText('/uploads/photos/7.jpg')).toBeNull()
-
-    // Multipart contract: file field name + JPEG type + the default frame
-    // overlay value. (The serialized filename reads "blob" — the jsdom File
-    // name does not survive the undici body bridge; not an app concern.)
-    expect(captured.raw).toContain('name="file"')
-    expect(captured.raw).toContain('Content-Type: image/jpeg')
-    expect(captured.raw).toContain('name="frame_id"')
-    expect(captured.raw).toContain('11')
-
-    // The preview drops with the 200; the grid stays empty.
-    await until(() => document.querySelector('.kv-capture__preview') === null)
-    expect(screen.queryByText('Belum ada foto.')).not.toBeNull()
-
-    // The honest-file rule: the item lands ONLY via photo.changed → refetch.
-    photosRef.photos = [photoItem(7)]
-    pushFrame(channel, 'photo.changed', { rev: 1 })
-    await until(() => screen.queryByAltText('/uploads/photos/7.jpg') !== null)
-  })
-
-  it('the >50 MB client pre-check blocks the request', async () => {
-    let uploadCalls = 0
-    server.use(
-      http.get('/api/sessions/1', () => ok(detailFixture({ status: 'OPENED' }))),
-      framesHandler(),
-      photosHandler('2', { photos: [] }),
-      photosHandler('3', { photos: [] }),
-      http.post('/api/sessions/1/topics/3/children/3/photos', () => {
-        uploadCalls += 1
-        return HttpResponse.json({ error: { code: 'PHOTO_LIMIT', message: 'full' } })
-      }),
-    )
-    const user = userEvent.setup()
-    renderGallery()
-
-    await switchToBudi(user)
-    await screen.findByText('Belum ada foto.')
-    const input = document.querySelector('input[type="file"]') as HTMLInputElement
-
-    const big = new File([new Uint8Array(16)], 'besar.jpg', { type: 'image/jpeg' })
-    Object.defineProperty(big, 'size', { value: 51 * 1024 * 1024 })
-    fireEvent.change(input, { target: { files: [big] } })
-
-    await screen.findByText('Foto harus berformat JPG, JPEG, atau PNG dan maksimal 50 MB.')
-    expect(uploadCalls).toBe(0)
-  })
-
-  it('the wrong-format client pre-check blocks the request', async () => {
-    let uploadCalls = 0
-    server.use(
-      http.get('/api/sessions/1', () => ok(detailFixture({ status: 'OPENED' }))),
-      framesHandler(),
-      photosHandler('2', { photos: [] }),
-      photosHandler('3', { photos: [] }),
-      http.post('/api/sessions/1/topics/3/children/3/photos', () => {
-        uploadCalls += 1
-        return HttpResponse.json({ error: { code: 'PHOTO_LIMIT', message: 'full' } })
-      }),
-    )
-    const user = userEvent.setup()
-    renderGallery()
-
-    await switchToBudi(user)
-    await screen.findByText('Belum ada foto.')
-    const input = document.querySelector('input[type="file"]') as HTMLInputElement
-
-    // A GIF with a plausible size must still be blocked on format.
-    const gif = new File([new Uint8Array(16)], 'animasi.gif', { type: 'image/gif' })
-    fireEvent.change(input, { target: { files: [gif] } })
-
-    await screen.findByText('Foto harus berformat JPG, JPEG, atau PNG dan maksimal 50 MB.')
-    expect(uploadCalls).toBe(0)
-  })
-
-  it('PHOTO_LIMIT renders as the inline limit notice', async () => {
-    let uploadCalls = 0
-    server.use(
-      http.get('/api/sessions/1', () => ok(detailFixture({ status: 'OPENED' }))),
-      framesHandler(),
-      photosHandler('2', { photos: [] }),
-      photosHandler('3', { photos: [] }),
-      http.post('/api/sessions/1/topics/3/children/3/photos', () => {
-        uploadCalls += 1
-        return HttpResponse.json({ error: { code: 'PHOTO_LIMIT', message: 'full' } })
-      }),
-    )
-    const user = userEvent.setup()
-    renderGallery()
-
-    await switchToBudi(user)
-    await screen.findByText('Belum ada foto.')
-    const input = document.querySelector('input[type="file"]') as HTMLInputElement
-
-    fireEvent.change(input, {
-      target: { files: [new File([new Uint8Array(16)], 'oke.jpg', { type: 'image/jpeg' })] },
-    })
-    await screen.findByText('Maksimal 10 foto per anak per topik.')
-    expect(uploadCalls).toBe(1)
-
-    // The limit alert is dismissible — the inline notice clears on close.
-    await user.click(document.querySelector('.ant-alert-close-icon') as HTMLElement)
-    await waitFor(() =>
-      expect(screen.queryByText('Maksimal 10 foto per anak per topik.')).toBeNull(),
-    )
-  })
-
-  it('picking a group resets the child picker (filters re-scope together)', async () => {
-    // Two groups with members (so the second option changes gid) plus one
-    // WITHOUT members — it must be filtered out of the option list.
-    const groups = detailFixture({ status: 'OPENED' }).groups
-    groups.push(
-      {
-        gid: 6,
-        name: 'Kelompok Biru',
-        own: true,
-        owner: { id: 7, name: 'Dewi Lestari' },
-        owner_missing: false,
-        member_count: 0,
-        consent: {},
-        members: [],
-      },
-      { gid: 7, name: 'Tanpa Anggota', own: true, member_count: 0 },
-    )
-    server.use(
-      http.get('/api/sessions/1', () => ok(detailFixture({ status: 'OPENED', groups }))),
-      framesHandler(),
-      photosHandler('2', { photos: [] }),
-      photosHandler('3', { photos: [] }),
-    )
-    const user = userEvent.setup()
-    renderGallery()
-
-    await switchToBudi(user)
-    await screen.findByText('Belum ada foto.')
-
-    const groupPicker = screen.getAllByRole('combobox')[0]
-    await user.click(groupPicker)
-    // The memberless group is not offered; only Merah + Biru are.
-    expect(screen.queryByText('Tanpa Anggota')).toBeNull()
-    const options = screen.getAllByText('Kelompok Biru')
-    await user.click(options[options.length - 1]) // the dropdown option, not a selection item
-
-    // gid changed → setCid(null): the child selection item is gone, the
-    // group now shows the new gid, and the photos unload (prefix null).
-    await waitFor(() => {
-      const items = Array.from(document.querySelectorAll('.ant-select-selection-item'))
-      expect(items.map((item) => item.getAttribute('title'))).not.toContain(
-        'Budi Santoso · SD Melati',
-      )
-      expect(items.map((item) => item.getAttribute('title'))).toContain('Kelompok Biru')
-    })
-  })
-})
-
-describe('admin gallery photo actions', () => {
-  it('candidate toggle PATCHes and refetches through the own-200 path', async () => {
-    let patched: unknown = null
-    const photosRef: { photos: PhotoItem[] } = { photos: [photoItem(7)] }
-    server.use(
-      http.get('/api/sessions/1', () => ok(detailFixture({ status: 'OPENED' }))),
-      framesHandler(),
-      photosHandler('2', { photos: [] }),
-      photosHandler('3', photosRef),
-      http.patch('/api/sessions/1/topics/3/children/3/photos/7', async ({ request }) => {
-        patched = await request.json()
-        photosRef.photos = [photoItem(7, { is_candidate: true })]
-        return ok({ photo: photoItem(7, { is_candidate: true }) })
-      }),
-    )
-    const user = userEvent.setup()
-    renderGallery()
-
-    await switchToBudi(user)
-    const photo = await screen.findByAltText('/uploads/photos/7.jpg')
-    const tile = photo.closest('.ant-card') as HTMLElement
-    await user.click(within(tile).getByRole('button', { name: 'Jadikan foto utama' }))
-
-    expect(patched).toEqual({ is_candidate: true })
-    await waitFor(() =>
-      expect(
-        within(screen.getByAltText('/uploads/photos/7.jpg').closest('.ant-card') as HTMLElement)
-          .getByRole('button', { name: 'Jadikan foto utama' }),
-      ).toHaveClass('ant-btn-primary'),
-    )
-  })
-
-  it('delete asks for confirmation, then DELETEs', async () => {
-    let deleted = 0
-    const photosRef: { photos: PhotoItem[] } = { photos: [photoItem(7)] }
-    server.use(
-      http.get('/api/sessions/1', () => ok(detailFixture({ status: 'OPENED' }))),
-      framesHandler(),
-      photosHandler('2', { photos: [] }),
-      photosHandler('3', photosRef),
-      http.delete('/api/sessions/1/topics/3/children/3/photos/7', () => {
-        deleted += 1
-        photosRef.photos = []
-        return ok({})
-      }),
-    )
-    const user = userEvent.setup()
-    renderGallery()
-
-    await switchToBudi(user)
-    const photo = await screen.findByAltText('/uploads/photos/7.jpg')
-    const tile = photo.closest('.ant-card') as HTMLElement
-    await user.click(within(tile).getByRole('button', { name: 'Hapus foto' }))
-
-    const dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: 'Hapus' }))
-
-    await screen.findByText('Foto dihapus.')
-    await waitFor(() => expect(deleted).toBe(1))
-    await screen.findByText('Belum ada foto.')
-  })
-
-  it('copy.completed refetches the open gallery photos (F-F03)', async () => {
-    // Backend publishes copy.completed (with session_id) after a copy job —
-    // the open gallery tab must refresh its photos like photo.changed does.
+describe('gallery index filter', () => {
+  it('defaults to all groups and lists every child with group, school and consent', async () => {
     let photoCalls = 0
-    const photosRef: { photos: PhotoItem[] } = { photos: [photoItem(7)] }
     server.use(
       http.get('/api/sessions/1', () => ok(detailFixture({ status: 'OPENED' }))),
-      framesHandler(),
-      photosHandler('2', { photos: [] }),
-      http.get('/api/sessions/1/topics/3/children/3/photos', () => {
+      http.get('/api/sessions/1/topics/:stid/children/:cid/photos', () => {
         photoCalls += 1
-        return ok(photosRef.photos)
+        return ok([])
       }),
     )
+    renderGallery()
+
+    await screen.findByText('Aisyah Putri')
+    screen.getByText('Budi Santoso')
+
+    // One filter, and it starts on the whole session.
+    expect(screen.getAllByRole('combobox')).toHaveLength(1)
+    expect(screen.getByTitle('Semua kelompok')).toBeInTheDocument()
+
+    // Group + school + consent are columns, not buried in a picker.
+    expect(screen.getAllByText('Kelompok Merah').length).toBeGreaterThan(0)
+    screen.getByText('SD Cendekia')
+    screen.getByText('SD Melati')
+    screen.getByText('Menunggu')
+    screen.getByText('Disetujui')
+
+    // The row action states its verb and points at the dedicated gallery.
+    const openLinks = screen.getAllByRole('link', { name: 'Buka galeri' })
+    expect(openLinks).toHaveLength(2)
+    expect(openLinks[0]).toHaveAttribute('href', '/sessions/1/gallery/children/2')
+
+    // A directory, not a workspace: no photo request was made.
+    expect(photoCalls).toBe(0)
+  })
+
+  it('filters the table by group and restores every child on clear', async () => {
+    const detail = detailFixture({ status: 'OPENED' })
+    detail.groups.push({
+      gid: 6,
+      name: 'Kelompok Biru',
+      own: true,
+      owner: { id: 7, name: 'Dewi Lestari' },
+      owner_missing: false,
+      member_count: 1,
+      consent: { SETUJU: 1 },
+      members: [
+        { child_id: 4, name: 'Citra Lestari', age: 7, school: 'SD Harapan', consent: 'SETUJU' },
+      ],
+    })
+    server.use(http.get('/api/sessions/1', () => ok(detail)))
     const user = userEvent.setup()
     renderGallery()
 
-    await switchToBudi(user)
-    await screen.findByAltText('/uploads/photos/7.jpg')
-    expect(photoCalls).toBe(1)
+    await screen.findByText('Aisyah Putri')
+    await user.click(screen.getByRole('combobox', { name: 'Kelompok' }))
+    // The table already prints the group name; the dropdown option is last.
+    const options = await screen.findAllByText('Kelompok Biru')
+    await user.click(options[options.length - 1])
 
-    // The copy lands new photos server-side; the refetch pulls them in.
-    photosRef.photos = [photoItem(7), photoItem(8)]
-    act(() => emitSignal('copy.completed', { rev: 1 }))
-    await waitFor(() => expect(photoCalls).toBe(2))
-    await screen.findByAltText('/uploads/photos/8.jpg')
+    await waitFor(() => expect(screen.queryByText('Aisyah Putri')).toBeNull())
+    screen.getByText('Citra Lestari')
+    expect(screen.queryByText('Budi Santoso')).toBeNull()
+
+    // The tray says one filter is on; clearing brings the whole session back.
+    await user.click(screen.getByRole('button', { name: 'Hapus filter (1)' }))
+    await screen.findByText('Aisyah Putri')
+    screen.getByText('Budi Santoso')
+  })
+
+  it('shows the session empty state and no group filter when there are no children', async () => {
+    server.use(http.get('/api/sessions/1', () => ok(detailFixture({ groups: [] }))))
+    renderGallery()
+
+    await screen.findByText('Belum ada anak di sesi ini')
+    expect(screen.queryByRole('combobox')).toBeNull()
+  })
+})
+
+describe('gallery index navigation', () => {
+  it('opens the dedicated child gallery when the row is clicked', async () => {
+    server.use(http.get('/api/sessions/1', () => ok(detailFixture({ status: 'OPENED' }))))
+    renderGallery()
+
+    await screen.findByText('Aisyah Putri')
+    // Click the row itself (a cell that is not the name link or action).
+    fireEvent.click(screen.getByText('SD Cendekia'))
+
+    await screen.findByRole('heading', { name: 'Aisyah Putri' })
+    screen.getByText('Galeri terkunci sampai orang tua menyetujui.')
+  })
+
+  it('redirects a legacy child deep link to the child route with its topic', async () => {
+    let photoPath = ''
+    server.use(
+      http.get('/api/sessions/1', () => ok(detailFixture({ status: 'OPENED' }))),
+      framesHandler(),
+      http.get('/api/sessions/1/topics/:stid/children/:cid/photos', ({ request }) => {
+        photoPath = new URL(request.url).pathname
+        return ok([])
+      }),
+    )
+    renderGallery('/sessions/1/gallery?gid=5&cid=3&stid=3')
+
+    await screen.findByRole('heading', { name: 'Budi Santoso' })
+    await waitFor(() =>
+      expect(photoPath).toBe('/api/sessions/1/topics/3/children/3/photos'),
+    )
+  })
+})
+
+/**
+ * Kept as a regression guard for the old gallery's realtime contract: the
+ * index must not register a photo refetch that would fire on a stray frame.
+ */
+describe('gallery index realtime', () => {
+  it('does not fetch photos when a photo.changed frame arrives', async () => {
+    let photoCalls = 0
+    server.use(
+      http.get('/api/sessions/1', () => ok(detailFixture({ status: 'OPENED' }))),
+      http.get('/api/sessions/1/topics/:stid/children/:cid/photos', () => {
+        photoCalls += 1
+        return ok([])
+      }),
+    )
+    renderGallery()
+
+    await screen.findByText('Aisyah Putri')
+    emitSignal('photo.changed', { rev: 1 })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(photoCalls).toBe(0)
   })
 })
