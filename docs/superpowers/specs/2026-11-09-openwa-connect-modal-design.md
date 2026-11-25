@@ -294,9 +294,20 @@ Update the binding documents so the reversal is not silently contradicted:
 
 - **`OPENWA_SESSION` name vs UUID:** `.env` sets `kidversa`, which looks like a
   name; the OpenWA docs use UUIDs in paths. The new resolver lists sessions and
-  matches by name, falling back to the configured value as an id. `sendText`
-  is left untouched in this iteration; if production sends are already working
-  with the name, no change is needed. Verify at runtime before shipping.
+  matches by name, falling back to the configured value as an id. Runtime
+  verification (2026-11-25) showed that send-text with the name answers
+  `400 Session '<name>' is not active` even while the session is `ready`, so
+  `sendText` now resolves the name through the same UUID path as the connect
+  endpoints before posting.
+- **whatsapp-web.js `sendMessage` returns undefined:** OpenWA 0.8.17 ships
+  whatsapp-web.js 1.34.7. Current WhatsApp Web renames `Message._serialized`
+  to `$1`, so the library's `sendMessage` resolves to `undefined` and OpenWA's
+  adapter throws `TypeError: Cannot read properties of undefined (reading
+  'id')` for every recipient (wwebjs issue #201857, fixed by PR #201832 in
+  1.34.8). `ops/openwa/Dockerfile` derives from OpenWA 0.8.17 and replaces only
+  the `whatsapp-web.js` package with 1.34.8 (identical dependency set); the
+  `wa` service builds from it. Verified end-to-end 2026-11-25: OpenWA returns
+  `{messageId, timestamp}` instead of a 500.
 - **OpenWA version drift:** the contract above is from v0.29.1 docs; the image
   is `openwa-openwa:latest`. If a response shape differs, the handler degrades
   to `status:"unreachable"`/`connected:false` rather than failing the page.

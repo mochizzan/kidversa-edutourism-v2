@@ -1500,7 +1500,12 @@ func (s *Server) deliverReport(ctx context.Context, school, sid, stid, cid int64
 	if messageID != "" {
 		messageArg = messageID
 	}
-	if _, err := s.db.ExecContext(ctx,
+	// The WA call has its own 10 s budget and can outlive the request-scoped
+	// dbCtx (5 s); keep the audit row on a fresh bounded context so a
+	// delivered report is still recorded (same rule as consents).
+	auditCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := s.db.ExecContext(auditCtx,
 		`INSERT INTO wa_outbox
 		 (school_id, kind, target_wa, payload_ref, status, message_id, error, idem_key)
 		 VALUES (?, 'REPORT', ?, ?, ?, ?, ?, ?)`,

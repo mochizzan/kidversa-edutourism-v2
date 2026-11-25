@@ -452,6 +452,9 @@ func (s *Server) sendConsentOne(
 
 	// Outbox audit row (05 §2: payload_ref = consent URL). Best-effort:
 	// a successful send is never turned into a failure by audit trouble.
+	// The WA call has its own 10 s budget and can outlive the request-scoped
+	// dbCtx (5 s), so the audit write gets a fresh bounded context; otherwise
+	// a delivered consent leaves no wa_outbox row (context deadline exceeded).
 	outStatus := "SENT"
 	var outErr any
 	if waErr != nil {
@@ -461,7 +464,9 @@ func (s *Server) sendConsentOne(
 	if messageID != "" {
 		messageArg = messageID
 	}
-	if _, err := s.db.ExecContext(ctx,
+	auditCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := s.db.ExecContext(auditCtx,
 		`INSERT INTO wa_outbox
 		 (school_id, kind, target_wa, payload_ref, status, message_id, error, idem_key)
 		 VALUES (?, 'CONSENT', ?, ?, ?, ?, ?, ?)`,

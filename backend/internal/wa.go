@@ -176,19 +176,26 @@ func (s *Server) RegisterWa(api fiber.Router) {
 }
 
 // sendText posts one text message to OpenWA (01 §7 verified endpoint) with
-// exactly one retry. Returns OpenWA's messageId; any failure is the caller's
-// WA_FAILED (per item — never a top-level envelope here).
+// exactly one retry. OPENWA_SESSION is first resolved to OpenWA's session id:
+// the message route checks the engine registry by id, so a name-based config
+// answers 400 "Session '<name>' is not active" even while the session is
+// ready. Returns OpenWA's messageId; any failure is the caller's WA_FAILED
+// (per item — never a top-level envelope here).
 func (s *Server) sendText(chatID, text string) (string, error) {
 	payload, err := json.Marshal(map[string]string{"chatId": chatID, "text": text})
 	if err != nil {
 		return "", err
 	}
-	url := s.cfg.OpenwaBaseURL + "/api/sessions/" + s.cfg.OpenwaSession + "/messages/send-text"
+	sessionID, err := s.waResolveSession(context.Background())
+	if err != nil {
+		return "", err
+	}
+	endpoint := s.cfg.OpenwaBaseURL + "/api/sessions/" + url.PathEscape(sessionID) + "/messages/send-text"
 
 	var lastErr error
 	for range 2 {
 		ctx, cancel := context.WithTimeout(context.Background(), waTimeout)
-		req, reqErr := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 		if reqErr != nil {
 			cancel()
 			return "", reqErr

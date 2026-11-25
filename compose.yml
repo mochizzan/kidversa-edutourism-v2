@@ -42,7 +42,10 @@ services:
     restart: unless-stopped
 
   wa:
-    image: openwa-openwa:latest
+    # ops/openwa/Dockerfile upgrades whatsapp-web.js to 1.34.8; OpenWA 0.8.17
+    # otherwise ships 1.34.7, whose sendMessage returns undefined on current
+    # WhatsApp Web (see the Dockerfile header).
+    build: ./ops/openwa
     env_file: [.env]
     ports:
       - "8003:2785"

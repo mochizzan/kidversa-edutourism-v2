@@ -289,8 +289,11 @@ jsPDF, open-wa.org.
 ## 7. External services (REQUIRED)
 
 - OpenWA (self-hosted): text-only integration. Verified:
-  `POST {OPENWA_BASE_URL}/api/sessions/{OPENWA_SESSION}/messages/send-text`
-  `{chatId:"628…@c.us", text:"…"}` + `X-API-Key`. OpenWA itself answers
+  `POST {OPENWA_BASE_URL}/api/sessions/{session_id}/messages/send-text`
+  `{chatId:"628…@c.us", text:"…"}` + `X-API-Key`; `session_id` is the UUID
+  resolved from the configured `OPENWA_SESSION` name via `GET /api/sessions`
+  (the message route rejects a name with `400 Session … is not active`).
+  OpenWA itself answers
   HTTP 201 `{messageId, timestamp}` — that is a server-to-server response
   parsed by `wa.go`, NOT our API transport (our endpoints still return
   HTTP 200 envelopes mapping `messageId` into per-item status). No media/file payload
@@ -300,6 +303,12 @@ jsPDF, open-wa.org.
   larger sets). Per-item `wa_outbox` row (`SENT`/`FAILED`, no `QUEUED`).
   Engine default `whatsapp-web.js`, SQLite, local storage; data under
   `/app/data` ← `./data/openwa`. Raw `net/http`, no SDK.
+  Runtime requirement (2026-11-25): whatsapp-web.js **1.34.8+**. OpenWA 0.8.17
+  ships 1.34.7, whose `sendMessage` returns `undefined` on current WhatsApp Web
+  (`Message._serialized` renamed to `$1`; wwebjs #201857, fixed by #201832), so
+  every send fails inside the gateway with `TypeError: Cannot read properties
+  of undefined (reading 'id')`. The `wa` service builds `ops/openwa/Dockerfile`
+  (OpenWA 0.8.17 + wwebjs 1.34.8).
 - Gemini (user-locked 2026-10-08 round 5 from official doc snippet):
   PRIMARY `POST
   https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent`

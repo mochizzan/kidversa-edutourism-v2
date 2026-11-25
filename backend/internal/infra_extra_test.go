@@ -1081,11 +1081,15 @@ func TestInxSendText(t *testing.T) {
 	t.Run("posts the exact payload and returns messageId", func(t *testing.T) {
 		var hits atomic.Int32
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/api/sessions" {
+				io.WriteString(w, `[{"id":"uuid-send","name":"kidversa-unit","status":"ready"}]`)
+				return
+			}
 			hits.Add(1)
 			if r.Method != http.MethodPost {
 				t.Errorf("method = %s, want POST", r.Method)
 			}
-			wantPath := "/api/sessions/" + s.cfg.OpenwaSession + "/messages/send-text"
+			wantPath := "/api/sessions/uuid-send/messages/send-text"
 			if r.URL.Path != wantPath {
 				t.Errorf("path = %s, want %s", r.URL.Path, wantPath)
 			}
@@ -1107,6 +1111,7 @@ func TestInxSendText(t *testing.T) {
 		s.cfg.OpenwaBaseURL = srv.URL
 		s.cfg.OpenwaSession = "kidversa-unit"
 		s.cfg.OpenwaAPIKey = "wa-key-9"
+		s.invalidateWaID()
 
 		id, err := s.sendText("+628111111111@c.us", "Halo <b>semua</b>")
 		require.NoError(t, err)
@@ -1117,6 +1122,10 @@ func TestInxSendText(t *testing.T) {
 	t.Run("retries exactly once after a 5xx", func(t *testing.T) {
 		var hits atomic.Int32
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/api/sessions" {
+				io.WriteString(w, `[{"id":"uuid-send","name":"kidversa-unit","status":"ready"}]`)
+				return
+			}
 			if hits.Add(1) == 1 {
 				http.Error(w, "boom", http.StatusInternalServerError)
 				return
@@ -1126,6 +1135,7 @@ func TestInxSendText(t *testing.T) {
 		}))
 		t.Cleanup(srv.Close)
 		s.cfg.OpenwaBaseURL = srv.URL
+		s.invalidateWaID()
 
 		id, err := s.sendText("1@c.us", "halo")
 		require.NoError(t, err)
@@ -1136,12 +1146,17 @@ func TestInxSendText(t *testing.T) {
 	t.Run("persistent 5xx returns the exact openwa http error", func(t *testing.T) {
 		var hits atomic.Int32
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/api/sessions" {
+				io.WriteString(w, `[{"id":"uuid-send","name":"kidversa-unit","status":"ready"}]`)
+				return
+			}
 			hits.Add(1)
 			w.WriteHeader(http.StatusInternalServerError)
 			io.WriteString(w, "boom")
 		}))
 		t.Cleanup(srv.Close)
 		s.cfg.OpenwaBaseURL = srv.URL
+		s.invalidateWaID()
 
 		id, err := s.sendText("1@c.us", "halo")
 		require.Equal(t, "", id)
@@ -1151,10 +1166,15 @@ func TestInxSendText(t *testing.T) {
 
 	t.Run("2xx without messageId yields empty id and no error", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/api/sessions" {
+				io.WriteString(w, `[{"id":"uuid-send","name":"kidversa-unit","status":"ready"}]`)
+				return
+			}
 			w.WriteHeader(http.StatusAccepted) // 202: no body at all
 		}))
 		t.Cleanup(srv.Close)
 		s.cfg.OpenwaBaseURL = srv.URL
+		s.invalidateWaID()
 
 		id, err := s.sendText("1@c.us", "halo")
 		require.NoError(t, err)
@@ -1164,6 +1184,7 @@ func TestInxSendText(t *testing.T) {
 
 	t.Run("unreachable server fails both attempts", func(t *testing.T) {
 		s.cfg.OpenwaBaseURL = "http://127.0.0.1:1"
+		s.invalidateWaID()
 		id, err := s.sendText("1@c.us", "halo")
 		require.Equal(t, "", id)
 		require.ErrorContains(t, err, "127.0.0.1:1",
@@ -1172,6 +1193,7 @@ func TestInxSendText(t *testing.T) {
 
 	t.Run("unparsable base URL fails before any request", func(t *testing.T) {
 		s.cfg.OpenwaBaseURL = "http://127.0.0.1:1/\nbad"
+		s.invalidateWaID()
 		id, err := s.sendText("1@c.us", "halo")
 		require.Equal(t, "", id)
 		require.ErrorContains(t, err, "invalid control character")

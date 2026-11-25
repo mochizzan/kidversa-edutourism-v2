@@ -54,6 +54,33 @@ func TestWaResolveSessionFallsBackToConfiguredValue(t *testing.T) {
 	require.Equal(t, "kidversa-test", id)
 }
 
+// A name-based OPENWA_SESSION must be resolved to the session UUID before
+// posting send-text: OpenWA checks the engine registry by id, so a name path
+// answers 400 "Session '<name>' is not active" even while the session is ready.
+func TestWaSendTextUsesResolvedSessionID(t *testing.T) {
+	s, _ := newTestServer(t)
+	var listHits, sendHits atomic.Int32
+	waOpenWAStub(t, s, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/sessions":
+			listHits.Add(1)
+			io.WriteString(w, `[{"id":"uuid-42","name":"kidversa-test","status":"ready"}]`)
+		case "/api/sessions/uuid-42/messages/send-text":
+			sendHits.Add(1)
+			io.WriteString(w, `{"messageId":"wamid.OK"}`)
+		default:
+			t.Errorf("unexpected path %q", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	})
+
+	id, err := s.sendText("628111@c.us", "halo")
+	require.NoError(t, err)
+	require.Equal(t, "wamid.OK", id)
+	require.Equal(t, int32(1), listHits.Load(), "a name-based config must list sessions once")
+	require.Equal(t, int32(1), sendHits.Load(), "send-text must use the resolved UUID")
+}
+
 func TestWaSessionStateNotFound(t *testing.T) {
 	s, _ := newTestServer(t)
 	waOpenWAStub(t, s, func(w http.ResponseWriter, r *http.Request) {

@@ -236,16 +236,20 @@ func startWAStub(t *testing.T, sendStatus int) (*waStub, string) {
 	stub := &waStub{}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/sessions", func(rw http.ResponseWriter, _ *http.Request) {
-		_, _ = rw.Write([]byte(`[{"id":"kidversa-test","name":"Kidversa","status":"ready"}]`))
+		// OPENWA_SESSION is the name; OpenWA's message route needs the UUID.
+		_, _ = rw.Write([]byte(`[{"id":"uuid-int","name":"kidversa-test","status":"ready"}]`))
 	})
 	mux.HandleFunc("/api/sessions/", func(rw http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/messages/send-text") {
+			if !strings.HasPrefix(r.URL.Path, "/api/sessions/uuid-int/") {
+				t.Errorf("send-text used %q, want the resolved session UUID", r.URL.Path)
+			}
 			stub.calls.Add(1)
 			rw.WriteHeader(sendStatus)
 			_, _ = rw.Write([]byte(`{"messageId":"msg-1"}`))
 			return
 		}
-		_, _ = rw.Write([]byte(`{"id":"kidversa-test","name":"Kidversa","status":"ready"}`)) // session state probe
+		_, _ = rw.Write([]byte(`{"id":"uuid-int","name":"Kidversa","status":"ready"}`)) // session state probe
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)

@@ -1,23 +1,30 @@
 package internal
 
 import (
+	"context"
 	"database/sql"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/require"
 )
 
-// waStub is a local OpenWA stand-in that records every send-text call.
+// waStub is a local OpenWA stand-in that records every send-text call. The
+// session list is answered separately: sendText resolves the configured
+// session name to OpenWA's UUID before posting.
 type waStub struct {
 	calls atomic.Int64
 }
 
 func (w *waStub) handler(status int) http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("/api/sessions", func(rw http.ResponseWriter, _ *http.Request) {
+		_, _ = rw.Write([]byte(`[{"id":"uuid-wa","name":"kidversa-test","status":"ready"}]`))
+	})
 	mux.HandleFunc("/api/sessions/", func(rw http.ResponseWriter, _ *http.Request) {
 		w.calls.Add(1)
 		rw.WriteHeader(status)
@@ -356,4 +363,43 @@ func TestSendConsentWAFailedEnvelope(t *testing.T) {
 	res := jsonReq(t, app, "POST", consentSendPath, nil, h)
 	requireErrEnvelope(t, res, CodeWAFailed)
 	require.EqualValues(t, 2, stub.calls.Load(), "OpenWA send must retry exactly once")
+}
+
+// TestSendConsentOutboxSurvivesRequestDeadline: the OpenWA send has a 10 s
+// budget, longer than the request-scoped 5 s DB context. When the send
+// outlives the caller's deadline the audit row must still be written on a
+// fresh context; otherwise a delivered consent leaves no wa_outbox record.
+func TestSendConsentOutboxSurvivesRequestDeadline(t *testing.T) {
+	s, mock := newTestServer(t)
+
+	slow := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/sessions" {
+			_, _ = rw.Write([]byte(`[{"id":"uuid-wa","name":"kidversa-test","status":"ready"}]`))
+			return
+		}
+		time.Sleep(300 * time.Millisecond)
+		_, _ = rw.Write([]byte(`{"messageId":"msg-1"}`))
+	}))
+	t.Cleanup(slow.Close)
+	s.cfg.OpenwaBaseURL = slow.URL
+
+	mock.ExpectQuery(q("SELECT EXISTS(SELECT 1 FROM session_members WHERE session_id = ? AND child_id = ?)")).
+		WithArgs(int64(2), int64(30)).
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(1))
+	mock.ExpectQuery(q("SELECT mother_wa, is_active FROM children")).
+		WithArgs(int64(30), int64(1)).
+		WillReturnRows(sqlmock.NewRows([]string{"mother_wa", "is_active"}).
+			AddRow("+628111111111", true))
+	mock.ExpectQuery(q("SELECT id, token, status FROM consent_links")).
+		WithArgs(int64(2), int64(30)).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "token", "status"}).
+			AddRow(7, "tok-30", "PENDING"))
+	mock.ExpectExec(q("INSERT INTO wa_outbox")).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	out, err := s.sendConsentOne(ctx, 1, 2, 30, "OPENED", "idem-deadline")
+	require.NoError(t, err)
+	require.Equal(t, "SENT", out.Status)
 }
