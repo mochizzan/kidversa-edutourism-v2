@@ -38,7 +38,8 @@ decision must be updated with this change.
 ## 3. Non-goals
 
 - No pairing-code (phone-number) flow; QR only for this iteration.
-- No create/delete/logout/stop-session controls in the SPA.
+- No create/delete/stop-session controls in the SPA. Disconnect (logout) was
+  added on 2026-11-25 so an SA can replace the linked number — see §12.
 - No multi-session picker; the configured `OPENWA_SESSION` is the only session.
 - No changes to `send-text`, outbox, consent sending, or report delivery.
 - No new SSE event and no page-level background polling. The modal's refresh
@@ -385,3 +386,66 @@ Deferred deliberately (low risk; revisit if the deployment changes):
 6. **Back keeps the previous state**, so re-entering Connect Directly can
    flash the old QR until the new POST resolves.
 7. **`07-BEFORE-AFTER.md`** was left untouched (historical change log).
+
+## 12. Addendum — Disconnect / replace the linked number (2026-11-25)
+
+### 12.1 Intent
+
+An SA who needs to move the WhatsApp integration to a different phone must be
+able to unlink the current number from the product. OpenWA's `stop` keeps the
+stored credentials (a later start reconnects the same number), and `delete`
+removes the session record itself — neither lets the configured session pair a
+new number. The correct primitive is OpenWA's `logout`: it performs a
+protocol-level unlink, stops the session, clears `phone`, and forces a fresh
+QR scan on the next start.
+
+### 12.2 Backend
+
+| Method | Path | Guard | Purpose |
+|--------|------|-------|---------|
+| `POST` | `/api/wa/session/logout` | `SA` | Unlink the phone, return the post-logout state |
+
+`waLogout(ctx, id)` proxies `POST /api/sessions/{id}/logout` (5 s budget):
+
+- `200` → unlink + local credential cleanup completed.
+- `400` ("session not started", no engine to unlink) and `409` (Baileys has
+  no linked device; it stops locally) are treated as success so repeated
+  disconnects are harmless.
+- Any other upstream failure is not turned into an error envelope. The handler
+  re-reads the session and returns that state; a payload that is still
+  `connected:true` (or `unreachable` / `missing`) tells the modal the unlink
+  did not take effect.
+- The response shape is the same as the other connect endpoints. Logout leaves
+  the session `disconnected` with `phone` cleared; the next
+  `POST /api/wa/session/start` produces a fresh QR for a replacement number.
+- Deliberately not wrapped in `s.idempotent`: a control/proxy action with an
+  ephemeral response, exactly like `start`.
+- The outer deadline covers the worst-case sequence (6 calls: resolve, state,
+  re-resolve after a 404, state, logout, final state re-read).
+
+### 12.3 Frontend (`WaConnectModal.tsx`)
+
+- When the session is connected, the modal shows a danger **Disconnect**
+  button behind an antd `Popconfirm` (title + consequence copy).
+- Confirm → `POST /api/wa/session/logout`. The returned state is authoritative:
+  still connected, `unreachable`, or `missing` → inline failure alert and the
+  linked number stays visible; otherwise the modal shows `disconnected` with
+  the phone removed.
+- A disconnected/created session offers **Connect another number**, which calls
+  the existing start endpoint and renders the fresh QR.
+- The `wa.changed` watcher remains the badge's source of truth; it publishes
+  the ready→not-ready transition within its 5 s tick after logout.
+- Copy lives in the `common` namespace (ID + EN): `wa.disconnect`,
+  `wa.disconnectConfirm`, `wa.disconnectHint`, `wa.disconnectFailed`,
+  `wa.connectAnother`.
+
+### 12.4 Tests
+
+- Go: ready → logout called once and the response is disconnected with no
+  phone; 400/409 → idempotent success; upstream 500 → state still connected
+  and phone retained; unreachable → `status:"unreachable"`; role matrix
+  (SA allowed, ADMIN/FAS `FORBIDDEN_ROLE`).
+- Vitest: connected shows Disconnect; confirming posts the logout and flips to
+  disconnected + **Connect another number**; that button starts a fresh QR;
+  a still-connected payload and a `WA_FAILED` envelope both show the failure
+  alert and keep the phone.

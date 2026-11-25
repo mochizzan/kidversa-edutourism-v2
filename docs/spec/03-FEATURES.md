@@ -430,9 +430,13 @@ Conventions: `[ROLE: SA/ADMIN/FAS]` = who may use. All school-scoped.
   **Open OpenWA** opens the OpenWA dashboard `:8003` in a new tab;
   **Connect Directly** calls SA-only `POST /api/wa/session/start` and
   renders OpenWA's QR from SA-only `GET /api/wa/session` until the
-  session is `ready`, then Connected + linked phone. ADMIN sees the badge
-  and popover but the click is inert. QR pairing is SA-only and lives only
-  in the open modal — never stored, never sent over SSE.
+  session is `ready`, then Connected + linked phone. A connected session
+  also offers **Disconnect** (`POST /api/wa/session/logout`, SA-only,
+  confirm first): OpenWA unlinks the phone and the session becomes
+  `disconnected`; **Connect another number** then starts a fresh QR for a
+  replacement phone. ADMIN sees the badge and popover but the click is
+  inert. QR pairing is SA-only and lives only in the open modal — never
+  stored, never sent over SSE.
 
 ## F-14 Bilingual UI + profile
 

@@ -132,8 +132,9 @@ SSE stream (round 7): publish is best-effort — hub-full/DB-down at
 
 ### 2a. WA connect modal (2026-11-09)
 
-`GET /api/wa/session` and `POST /api/wa/session/start` are SA-only and
-never emit `WA_FAILED`: the connection state is reported inside `data`.
+`GET /api/wa/session`, `POST /api/wa/session/start`, and `POST
+/api/wa/session/logout` are SA-only and never emit `WA_FAILED`: the
+connection state is reported inside `data`.
 
 - OpenWA unreachable / transport timeout → 200 `{data:{connected:false,
   status:"unreachable"}}`; `last_error` stays empty (a Go transport error
@@ -148,6 +149,14 @@ never emit `WA_FAILED`: the connection state is reported inside `data`.
   `action_required` starts only on the modal's explicit Retry.
 - Already `ready` → no start call, Connected + linked phone, no QR, no
   poll.
+- Disconnect (`POST /api/wa/session/logout`, SA-only) never emits a
+  top-level `WA_FAILED`: the post-logout state is the answer. Logout `400`
+  (not started) and `409` (Baileys has no linked device) are idempotent
+  success; a transport/5xx failure leaves the re-read state `ready`, so the
+  modal keeps the phone and shows its failure copy. A confirmed unlink
+  returns `disconnected` with `phone` cleared; the modal offers **Connect
+  another number**, which starts a fresh QR (OpenWA logout invalidates the
+  old credentials).
 - Close / Back / unmount aborts the in-flight poll and clears the timer;
   no timer exists outside the open modal.
 

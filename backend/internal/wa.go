@@ -167,12 +167,34 @@ func (s *Server) waStart(ctx context.Context, id string) error {
 	return nil
 }
 
+// waLogout posts POST /api/sessions/{id}/logout: OpenWA unlinks the phone at
+// the protocol level, then stops the session and clears its phone, so the
+// next start requires a fresh QR. A 400 (not started — no engine to unlink)
+// and a 409 (Baileys has no linked device; it stops locally) mean there is
+// nothing left to do, so both are treated as success and a repeated
+// disconnect stays harmless.
+func (s *Server) waLogout(ctx context.Context, id string) error {
+	code, body, err := s.waDo(ctx, http.MethodPost, "/api/sessions/"+url.PathEscape(id)+"/logout")
+	if err != nil {
+		return err
+	}
+	if code == http.StatusBadRequest || code == http.StatusConflict {
+		return nil
+	}
+	if code < 200 || code >= 300 {
+		return fmt.Errorf("openwa logout http %d: %.200s", code, body)
+	}
+	return nil
+}
+
 // RegisterWa mounts the OpenWA proxy (02 §2b): the status badge stays
-// SA/ADMIN-readable; starting a session and fetching its QR are SA-only.
+// SA/ADMIN-readable; starting/logging out a session and fetching its QR are
+// SA-only.
 func (s *Server) RegisterWa(api fiber.Router) {
 	api.Get("/wa/status", s.authed("ADMIN"), s.handleWaStatus)
 	api.Get("/wa/session", s.authed("SA"), s.handleWaSession)
 	api.Post("/wa/session/start", s.authed("SA"), s.handleWaSessionStart)
+	api.Post("/wa/session/logout", s.authed("SA"), s.handleWaSessionLogout)
 }
 
 // sendText posts one text message to OpenWA (01 §7 verified endpoint) with
@@ -353,6 +375,38 @@ func (s *Server) handleWaSessionStart(c fiber.Ctx) error {
 			}
 		}
 	}
+	return ok(c, s.waStatusFor(ctx, id, sess))
+}
+
+// handleWaSessionLogout answers POST /api/wa/session/logout: unlink the
+// current phone, then re-read the session so the caller receives the
+// post-logout state (stopped, phone cleared). Starting again after this
+// requires a fresh QR, which is what lets an SA replace the number.
+//
+// The re-read is the source of truth, so an upstream logout failure is not
+// turned into an error envelope: a still-connected payload tells the modal
+// the unlink did not take effect. 400/409 from OpenWA are handled inside
+// waLogout as "already disconnected".
+//
+// Deliberately NOT wrapped in s.idempotent: this is a control/proxy action
+// with an ephemeral response (no stored mutation), so the client's automatic
+// X-Idempotency-Key is ignored.
+//
+// The outer deadline covers the worst case: resolve, state, re-resolve after
+// a 404, state again, logout, then the final state re-read (6 calls).
+func (s *Server) handleWaSessionLogout(c fiber.Ctx) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 6*waCallTimeout)
+	defer cancel()
+	id, sess, err := s.waLoadSession(ctx)
+	if err != nil {
+		return ok(c, s.waErrorStatus(err))
+	}
+	_ = s.waLogout(ctx, id)
+	next, err := s.waSessionState(ctx, id)
+	if err != nil {
+		return ok(c, s.waErrorStatus(err))
+	}
+	sess = next
 	return ok(c, s.waStatusFor(ctx, id, sess))
 }
 

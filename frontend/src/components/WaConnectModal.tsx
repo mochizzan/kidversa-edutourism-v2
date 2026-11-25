@@ -1,5 +1,6 @@
 /**
- * OpenWA connect modal (design 2026-11-09 §7.2) — SA-only.
+ * OpenWA connect modal (design 2026-11-09 §7.2, disconnect added
+ * 2026-11-25) — SA-only.
  *
  * Two choices: Open OpenWA (the external dashboard at host:8003) or Connect
  * Directly (start the configured session and pair in-app). Connect Directly
@@ -9,9 +10,14 @@
  * Back/close/unmount abort the in-flight request and clear the timer. A poll
  * that omits the QR keeps the last code on screen so it does not flicker
  * mid-scan; the QR clears when the session becomes ready.
+ *
+ * A connected session also offers Disconnect: `POST /api/wa/session/logout`
+ * unlinks the phone and leaves the session stopped, so the modal then offers
+ * "Connect another number" and a fresh QR. The response state is the source
+ * of truth — a still-connected payload means the unlink did not take effect.
  */
 import { useCallback, useEffect, useState } from 'react'
-import { Alert, Button, Modal, Spin } from 'antd'
+import { Alert, Button, Modal, Popconfirm, Spin } from 'antd'
 import { useTranslation } from 'react-i18next'
 import { api, errorCode } from '../lib/api'
 
@@ -50,6 +56,7 @@ const RETRYABLE = new Set([
   'failed',
   'action_required',
   'disconnected',
+  'created',
 ])
 
 export default function WaConnectModal({ open, onClose }: WaConnectModalProps) {
@@ -57,6 +64,8 @@ export default function WaConnectModal({ open, onClose }: WaConnectModalProps) {
   const [view, setView] = useState<'choice' | 'connect'>('choice')
   const [state, setState] = useState<WaSessionState | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [disconnecting, setDisconnecting] = useState(false)
+  const [disconnectFailed, setDisconnectFailed] = useState(false)
 
   // Every fresh open starts at the choice view with no stale QR/status.
   useEffect(() => {
@@ -64,11 +73,14 @@ export default function WaConnectModal({ open, onClose }: WaConnectModalProps) {
     setView('choice')
     setState(null)
     setError(null)
+    setDisconnecting(false)
+    setDisconnectFailed(false)
   }, [open])
 
   const connect = useCallback(async (retry = false) => {
     setView('connect')
     setError(null)
+    setDisconnectFailed(false)
     try {
       const next = await api.post<WaSessionState>(
         '/api/wa/session/start',
@@ -77,6 +89,24 @@ export default function WaConnectModal({ open, onClose }: WaConnectModalProps) {
       setState(next)
     } catch (cause) {
       setError(errorCode(cause))
+    }
+  }, [])
+
+  const disconnect = useCallback(async () => {
+    setDisconnecting(true)
+    setDisconnectFailed(false)
+    try {
+      const next = await api.post<WaSessionState>('/api/wa/session/logout', {})
+      setState(next)
+      // The post-logout state is authoritative. Still connected, unreachable,
+      // or missing means the phone was not confirmed unlinked.
+      if (next.connected || next.status === 'unreachable' || next.status === 'missing') {
+        setDisconnectFailed(true)
+      }
+    } catch {
+      setDisconnectFailed(true)
+    } finally {
+      setDisconnecting(false)
     }
   }, [])
 
@@ -122,9 +152,12 @@ export default function WaConnectModal({ open, onClose }: WaConnectModalProps) {
   }
 
   const statusKey = state ? (STATUS_KEYS[state.status] ?? 'wa.statusDisconnected') : 'wa.statusInitializing'
-  const busy = state?.status === 'initializing' || state?.status === 'authenticating'
+  const busy =
+    disconnecting || state?.status === 'initializing' || state?.status === 'authenticating'
   const qr = !connected ? state?.qr_code : undefined
   const retryable = error !== null || (state !== null && RETRYABLE.has(state.status))
+  const canConnectAnother =
+    !connected && (state?.status === 'disconnected' || state?.status === 'created')
 
   return (
     <Modal
@@ -155,6 +188,9 @@ export default function WaConnectModal({ open, onClose }: WaConnectModalProps) {
           </div>
 
           {error ? <Alert type="error" showIcon message={t(`errors.${error}`)} /> : null}
+          {disconnectFailed ? (
+            <Alert type="error" showIcon message={t('wa.disconnectFailed')} />
+          ) : null}
 
           {qr ? (
             <div className="kv-wa-status__qr">
@@ -174,7 +210,24 @@ export default function WaConnectModal({ open, onClose }: WaConnectModalProps) {
 
           <div className="kv-wa-status__actions">
             <Button onClick={() => setView('choice')}>{t('wa.back')}</Button>
-            {retryable ? (
+            {connected ? (
+              <Popconfirm
+                title={t('wa.disconnectConfirm')}
+                description={t('wa.disconnectHint')}
+                okText={t('wa.disconnect')}
+                cancelText={t('actions.cancel')}
+                okButtonProps={{ danger: true }}
+                onConfirm={() => void disconnect()}
+              >
+                <Button danger loading={disconnecting}>
+                  {t('wa.disconnect')}
+                </Button>
+              </Popconfirm>
+            ) : canConnectAnother ? (
+              <Button type="primary" onClick={() => void connect(true)}>
+                {t('wa.connectAnother')}
+              </Button>
+            ) : retryable ? (
               <Button type="primary" onClick={() => void connect(true)}>
                 {t('wa.retry')}
               </Button>

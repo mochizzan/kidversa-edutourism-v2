@@ -310,7 +310,9 @@ school_id*, response JSON MEDIUMTEXT, created_at,
   qr_code, last_error, checked_at}}`; `status` is OpenWA's raw status or
   the synthetic `"unreachable"` / `"missing"`; `last_error` is OpenWA's
   own field only (never a Go transport error). `POST
-  /api/wa/session/start` returns the same payload after a permitted start.
+  /api/wa/session/start` returns the same payload after a permitted start;
+  `POST /api/wa/session/logout` returns it after unlinking the phone (OpenWA
+  `400`/`409` are treated as an idempotent success).
 - WA single send (`POST P/send-report`) → 200 `{data:{status:"SENT"|
   FAILED", message_id?, code?}}`. SINGLE-SEND IS NEVER a top-level
   `{error}`: the per-item status is returned INSIDE `data`, so an

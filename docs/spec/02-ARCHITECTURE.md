@@ -375,15 +375,19 @@ session (`GET /api/sessions` → `GET /api/sessions/{id}`, 5 s each) → 200
 `{data:{connected, session, checked_at}}`; `connected` is true only when
 OpenWA's session status is `ready`. OpenWA unreachable → 200
 `{data:{connected:false}}` (status only, never `WA_FAILED`).
-`GET /api/wa/session` and `POST /api/wa/session/start` are SA-ONLY: they
-proxy the session state + QR → 200 `{data:{connected, status, session,
-phone, qr_code, last_error, checked_at}}` so an SA can pair in-app; the
-OpenWA API key never leaves the server. Dashboard `WaStatusBadge`
-(event-driven round 7: renders `wa.changed` `{connected}`, seeded once on
-mount and refined by `GET /api/wa/status` on demand; SA click opens the
-connect modal — Open
-OpenWA opens `http://<host>:8003` in a new tab, Connect Directly starts
-the session and shows the QR; ADMIN click is inert).
+`GET /api/wa/session`, `POST /api/wa/session/start`, and
+`POST /api/wa/session/logout` are SA-ONLY: they proxy the session state +
+QR → 200 `{data:{connected, status, session, phone, qr_code, last_error,
+checked_at}}` so an SA can pair in-app; the OpenWA API key never leaves the
+server. Logout unlinks the phone (OpenWA `logout`) and leaves the session
+`disconnected` with `phone` cleared, so the next start shows a fresh QR for
+a replacement number; 400/409 are idempotent success and an upstream failure
+is reported by the re-read state (`connected:true` still means linked).
+Dashboard `WaStatusBadge` (event-driven round 7: renders `wa.changed`
+`{connected}`, seeded once on mount and refined by `GET /api/wa/status` on
+demand; SA click opens the connect modal — Open OpenWA opens
+`http://<host>:8003` in a new tab, Connect Directly starts the session and
+shows the QR, Disconnect unlinks the current number; ADMIN click is inert).
 
 Public JSON (no auth, limiter, HTTP 200):
 `GET /public/report?token=`, `GET /public/gallery?token=`,
@@ -518,8 +522,8 @@ components/: AppLayout (antd Layout.Header + Drawer; school-switcher SA-only),
   list page),
   WaStatusBadge (antd Badge for SA/ADMIN dashboard; green/red from `wa.changed`
   `{connected}` event, detail via `GET /api/wa/status` on demand;
-  click opens OpenWA `:8003` new tab — round 6, event-driven round 7,
-  no polling),
+  SA click opens the connect modal with in-app QR pairing and Disconnect —
+  round 6, event-driven round 7, no polling),
   PhotoCapture (getUserMedia+canvas 9:16+frame; transient local preview
   only — gallery items render ONLY from server `/uploads/…` after
   200 `{data}` + `photo.changed` → refetch, per honest-file rule),
@@ -604,7 +608,7 @@ report/ReportView.tsx + report.css (PLAIN CSS — the `#report-a4` interior per 
 | Peer | Direction | Auth | Failure stance |
 |---|---|---|---|
 | MariaDB | api↔db TCP | env | boot retry; `/readyz` false until up; runtime err → 200 `DB_UNAVAILABLE` + Retry |
-| OpenWA | api→`http://wa:2785/api…` send-text + `GET /api/wa/status` + SA-only session/QR/start proxy | `X-API-Key` | 1 retry; batch per-item `WA_FAILED`; manual URL copy fallback; QR pairing is SA-only and may happen in the connect modal or the OpenWA `:8003` dashboard (round 6, updated 2026-11-09); key stays server-side |
+| OpenWA | api→`http://wa:2785/api…` send-text + `GET /api/wa/status` + SA-only session/QR/start/logout proxy | `X-API-Key` | 1 retry; batch per-item `WA_FAILED`; manual URL copy fallback; QR pairing and disconnect (logout) are SA-only and may happen in the connect modal or the OpenWA `:8003` dashboard (round 6, updated 2026-11-09 and 2026-11-25); key stays server-side |
 | Gemini | api→`…/v1beta/models/{MODEL}:generateContent` | `x-goog-api-key` | 15 s timeout; 200 `AI_FAILED`; old kept; manual retry |
 | SMTP | api→smtp | env | reset row still created + masked dashboard + reveal/relay fallback |
 | Camera | page→device | prompt | `CAMERA_DENIED` → gallery-upload fallback |

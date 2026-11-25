@@ -425,6 +425,125 @@ func TestWaSessionStartActionRequiredNoRetry(t *testing.T) {
 	require.Equal(t, int32(0), startHits.Load(), "action_required waits for an explicit Retry")
 }
 
+func TestWaSessionLogoutReady(t *testing.T) {
+	s, mock := newTestServer(t)
+	var logoutHits atomic.Int32
+	connected := true
+	waOpenWAStub(t, s, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/sessions":
+			io.WriteString(w, `[{"id":"uuid-1","name":"kidversa-test"}]`)
+		case "/api/sessions/uuid-1":
+			if connected {
+				io.WriteString(w, `{"id":"uuid-1","name":"Kantor Pusat","status":"ready","phone":"628123"}`)
+				return
+			}
+			io.WriteString(w, `{"id":"uuid-1","name":"Kantor Pusat","status":"disconnected"}`)
+		case "/api/sessions/uuid-1/logout":
+			if r.Method != http.MethodPost {
+				t.Errorf("logout method = %s, want POST", r.Method)
+			}
+			logoutHits.Add(1)
+			connected = false
+			io.WriteString(w, `{"id":"uuid-1","status":"disconnected"}`)
+		case "/api/sessions/uuid-1/qr":
+			w.WriteHeader(http.StatusBadRequest)
+		default:
+			t.Errorf("unexpected path %q", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	})
+	app := waConnectApp(t, s)
+	h := hSABare(t, s)
+
+	expectSAAuth(mock, 0)
+	res := doReq(t, app, "POST", "/api/wa/session/logout", "{}", h)
+	data := requireDataEnvelope(t, res).(map[string]any)
+	require.Equal(t, int32(1), logoutHits.Load(), "logout must be proxied exactly once")
+	require.Equal(t, false, data["connected"])
+	require.Equal(t, "disconnected", data["status"])
+	require.NotContains(t, data, "phone", "the unlinked phone must be cleared")
+}
+
+// 400 (not started) and 409 (Baileys has no linked device) both mean there is
+// nothing left to unlink; the endpoint must stay a harmless no-op.
+func TestWaSessionLogoutAlreadyDisconnectedIsIdempotent(t *testing.T) {
+	for _, code := range []int{http.StatusBadRequest, http.StatusConflict} {
+		t.Run(http.StatusText(code), func(t *testing.T) {
+			s, mock := newTestServer(t)
+			var logoutHits atomic.Int32
+			waOpenWAStub(t, s, func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/api/sessions":
+					io.WriteString(w, `[{"id":"uuid-1","name":"kidversa-test"}]`)
+				case "/api/sessions/uuid-1":
+					io.WriteString(w, `{"id":"uuid-1","name":"Kantor Pusat","status":"disconnected"}`)
+				case "/api/sessions/uuid-1/logout":
+					logoutHits.Add(1)
+					w.WriteHeader(code)
+				case "/api/sessions/uuid-1/qr":
+					w.WriteHeader(http.StatusBadRequest)
+				default:
+					t.Errorf("unexpected path %q", r.URL.Path)
+					http.NotFound(w, r)
+				}
+			})
+			app := waConnectApp(t, s)
+			h := hSABare(t, s)
+
+			expectSAAuth(mock, 0)
+			res := doReq(t, app, "POST", "/api/wa/session/logout", "{}", h)
+			data := requireDataEnvelope(t, res).(map[string]any)
+			require.Equal(t, int32(1), logoutHits.Load())
+			require.Equal(t, false, data["connected"])
+			require.Equal(t, "disconnected", data["status"])
+		})
+	}
+}
+
+// A failed unlink is reported through the re-read state, not an error
+// envelope: if the session is still ready the modal knows the action failed.
+func TestWaSessionLogoutUpstreamFailureKeepsConnectedState(t *testing.T) {
+	s, mock := newTestServer(t)
+	var logoutHits atomic.Int32
+	waOpenWAStub(t, s, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/sessions":
+			io.WriteString(w, `[{"id":"uuid-1","name":"kidversa-test"}]`)
+		case "/api/sessions/uuid-1":
+			io.WriteString(w, `{"id":"uuid-1","name":"Kantor Pusat","status":"ready","phone":"628123"}`)
+		case "/api/sessions/uuid-1/logout":
+			logoutHits.Add(1)
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			t.Errorf("unexpected path %q", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	})
+	app := waConnectApp(t, s)
+	h := hSABare(t, s)
+
+	expectSAAuth(mock, 0)
+	res := doReq(t, app, "POST", "/api/wa/session/logout", "{}", h)
+	data := requireDataEnvelope(t, res).(map[string]any)
+	require.Equal(t, int32(1), logoutHits.Load())
+	require.Equal(t, true, data["connected"], "a failed unlink must not claim the phone was removed")
+	require.Equal(t, "628123", data["phone"])
+}
+
+func TestWaSessionLogoutUnreachable(t *testing.T) {
+	s, mock := newTestServer(t)
+	s.cfg.OpenwaBaseURL = "http://127.0.0.1:1"
+	app := waConnectApp(t, s)
+	h := hSABare(t, s)
+
+	expectSAAuth(mock, 0)
+	res := doReq(t, app, "POST", "/api/wa/session/logout", "{}", h)
+	data := requireDataEnvelope(t, res).(map[string]any)
+	require.Equal(t, false, data["connected"])
+	require.Equal(t, "unreachable", data["status"])
+}
+
 func TestWaConnectRoleGuard(t *testing.T) {
 	s, mock := newTestServer(t)
 	app := waConnectApp(t, s)
@@ -458,5 +577,24 @@ func TestWaConnectRoleGuard(t *testing.T) {
 		res := doReq(t, app, "POST", "/api/wa/session/start", "{}", hSABare(t, s))
 		data := requireDataEnvelope(t, res).(map[string]any)
 		require.Equal(t, "unreachable", data["status"])
+	})
+
+	t.Run("POST logout is forbidden for ADMIN", func(t *testing.T) {
+		expectAdminAuth(mock)
+		res := doReq(t, app, "POST", "/api/wa/session/logout", "{}", hAdmin(t, s))
+		requireErrEnvelope(t, res, CodeForbiddenRole)
+	})
+
+	t.Run("POST logout is forbidden for FASILITATOR", func(t *testing.T) {
+		expectFASAuth(mock)
+		res := doReq(t, app, "POST", "/api/wa/session/logout", "{}", hFAS(t, s))
+		requireErrEnvelope(t, res, CodeForbiddenRole)
+	})
+
+	t.Run("POST logout is allowed for SA", func(t *testing.T) {
+		expectSAAuth(mock, 0)
+		res := doReq(t, app, "POST", "/api/wa/session/logout", "{}", hSABare(t, s))
+		data := requireDataEnvelope(t, res).(map[string]any)
+		require.Equal(t, false, data["connected"])
 	})
 }

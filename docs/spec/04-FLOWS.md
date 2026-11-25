@@ -421,8 +421,12 @@ demand (no 30 s client poll) → green (`connected:true`) / red
 OpenWA dashboard `:8003` in a new tab; **Connect Directly** starts the
 session (`POST /api/wa/session/start`, SA-only) and shows the QR (`GET
 /api/wa/session`, SA-only) until `ready`, then Connected + linked phone.
-ADMIN click is inert (badge and popover still work). The OpenWA API key
-never leaves the server; the QR lives only in the open modal.
+A connected session offers **Disconnect** behind a confirmation; it calls
+`POST /api/wa/session/logout` (SA-only) and the modal drops to `disconnected`
+with the phone removed. **Connect another number** then starts a fresh QR
+for a replacement phone (OpenWA logout requires a new scan). ADMIN click is
+inert (badge and popover still work). The OpenWA API key never leaves the
+server; the QR lives only in the open modal.
 
 ## FL-15 Public JSON + pages (no login)
 

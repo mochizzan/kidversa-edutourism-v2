@@ -11,7 +11,7 @@ import { http } from 'msw'
 import WaConnectModal from './WaConnectModal'
 import { renderApp } from '../test/render'
 import { server } from '../test/setup'
-import { makeLoginData, makeUser, ok } from '../test/handlers'
+import { fail, makeLoginData, makeUser, ok } from '../test/handlers'
 
 function saSession() {
   return makeLoginData({ user: makeUser({ role: 'SA' }) })
@@ -169,6 +169,106 @@ describe('WaConnectModal connect view', () => {
 
     await advance(5000)
     expect(gets).toBe(0)
+  })
+
+  it('disconnects a connected number after confirmation and offers a new link', async () => {
+    let logoutCalls = 0
+    server.use(
+      http.post('/api/wa/session/start', () =>
+        ok({ connected: true, status: 'ready', phone: '628123' }),
+      ),
+      http.post('/api/wa/session/logout', () => {
+        logoutCalls += 1
+        return ok({ connected: false, status: 'disconnected' })
+      }),
+    )
+    renderApp(<WaConnectModal open onClose={() => {}} />, { session: saSession() })
+
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Hubungkan Langsung' }))
+    await screen.findByText('Terhubung')
+    expect(screen.getByText('628123')).toBeInTheDocument()
+
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Putuskan' }))
+    const title = await screen.findByText('Putuskan nomor WhatsApp ini?')
+    const pop = within(title.closest('.ant-popover') as HTMLElement)
+    fireEvent.click(pop.getByRole('button', { name: 'Putuskan' }))
+
+    await screen.findByText('Terputus')
+    expect(logoutCalls).toBe(1)
+    expect(screen.queryByText('628123')).toBeNull()
+    expect(
+      within(dialog()).getByRole('button', { name: 'Hubungkan nomor baru' }),
+    ).toBeInTheDocument()
+  })
+
+  it('Connect another number starts a fresh pairing after disconnect', async () => {
+    let starts = 0
+    server.use(
+      http.post('/api/wa/session/start', () => {
+        starts += 1
+        return starts === 1
+          ? ok({ connected: true, status: 'ready', phone: '628123' })
+          : ok({ connected: false, status: 'qr_ready', qr_code: QR_A })
+      }),
+      http.post('/api/wa/session/logout', () => ok({ connected: false, status: 'disconnected' })),
+    )
+    renderApp(<WaConnectModal open onClose={() => {}} />, { session: saSession() })
+
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Hubungkan Langsung' }))
+    await screen.findByText('Terhubung')
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Putuskan' }))
+    const title = await screen.findByText('Putuskan nomor WhatsApp ini?')
+    const pop = within(title.closest('.ant-popover') as HTMLElement)
+    fireEvent.click(pop.getByRole('button', { name: 'Putuskan' }))
+    await screen.findByText('Terputus')
+
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Hubungkan nomor baru' }))
+
+    const img = await screen.findByRole('img', { name: 'Kode QR WhatsApp' })
+    expect(img).toHaveAttribute('src', QR_A)
+    expect(starts).toBe(2)
+  })
+
+  it('a logout that leaves the session connected shows a failure', async () => {
+    server.use(
+      http.post('/api/wa/session/start', () =>
+        ok({ connected: true, status: 'ready', phone: '628123' }),
+      ),
+      http.post('/api/wa/session/logout', () =>
+        ok({ connected: true, status: 'ready', phone: '628123' }),
+      ),
+    )
+    renderApp(<WaConnectModal open onClose={() => {}} />, { session: saSession() })
+
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Hubungkan Langsung' }))
+    await screen.findByText('Terhubung')
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Putuskan' }))
+    const title = await screen.findByText('Putuskan nomor WhatsApp ini?')
+    const pop = within(title.closest('.ant-popover') as HTMLElement)
+    fireEvent.click(pop.getByRole('button', { name: 'Putuskan' }))
+
+    expect(await screen.findByText('Gagal memutuskan nomor. Coba lagi.')).toBeInTheDocument()
+    expect(screen.getByText('628123')).toBeInTheDocument()
+  })
+
+  it('a logout envelope error shows a failure and keeps the linked number', async () => {
+    server.use(
+      http.post('/api/wa/session/start', () =>
+        ok({ connected: true, status: 'ready', phone: '628123' }),
+      ),
+      http.post('/api/wa/session/logout', () => fail('WA_FAILED')),
+    )
+    renderApp(<WaConnectModal open onClose={() => {}} />, { session: saSession() })
+
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Hubungkan Langsung' }))
+    await screen.findByText('Terhubung')
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Putuskan' }))
+    const title = await screen.findByText('Putuskan nomor WhatsApp ini?')
+    const pop = within(title.closest('.ant-popover') as HTMLElement)
+    fireEvent.click(pop.getByRole('button', { name: 'Putuskan' }))
+
+    expect(await screen.findByText('Gagal memutuskan nomor. Coba lagi.')).toBeInTheDocument()
+    expect(screen.getByText('628123')).toBeInTheDocument()
   })
 
   it('unreachable shows the error and Retry', async () => {

@@ -203,17 +203,21 @@ Letak pembaruan di tiap berkas:
 
 ## User decisions locked (2026-10-08 clarification round 6 — WA + copy-data)
 
-19. WA activation (round 6; updated 2026-11-09): an SA may connect
-    WhatsApp from the dashboard connect modal — **Open OpenWA** still
-    opens the OpenWA dashboard at `http://<host>:8003` (QR scan + API-key
-    minting, once; key stored in `.env` as `OPENWA_API_KEY`, `api`
+19. WA activation (round 6; updated 2026-11-09 and 2026-11-25): an SA may
+    connect WhatsApp from the dashboard connect modal — **Open OpenWA**
+    still opens the OpenWA dashboard at `http://<host>:8003` (QR scan +
+    API-key minting, once; key stored in `.env` as `OPENWA_API_KEY`, `api`
     recreated after), and **Connect Directly** starts the configured
-    session and shows the QR in-app. ADMIN sees the badge/popover but the
-    click is inert. `GET /api/wa/status` [SA/ADMIN] reads the configured
-    OpenWA session (list → state, 5 s each) → 200 `{data:{connected,
-    session, checked_at}}`; `connected` = session `ready`; unreachable →
-    200 `{data:{connected:false}}`. `GET /api/wa/session` + `POST
-    /api/wa/session/start` are SA-only and keep the API key server-side.
+    session and shows the QR in-app. A connected session also offers
+    **Disconnect** (`POST /api/wa/session/logout`, SA-only), which unlinks
+    the phone via OpenWA `logout`, leaves the session `disconnected`, and
+    lets **Connect another number** pair a fresh phone. ADMIN sees the
+    badge/popover but the click is inert. `GET /api/wa/status` [SA/ADMIN]
+    reads the configured OpenWA session (list → state, 5 s each) → 200
+    `{data:{connected, session, checked_at}}`; `connected` = session
+    `ready`; unreachable → 200 `{data:{connected:false}}`. `GET
+    /api/wa/session` + `POST /api/wa/session/start` + `POST
+    /api/wa/session/logout` are SA-only and keep the API key server-side.
     Dashboard `WaStatusBadge` is EVENT-DRIVEN round 7 (`wa.changed`,
     seeded once on mount, no 30 s poll). QR pairing remains the only
     manual step.

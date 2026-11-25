@@ -260,6 +260,11 @@ verification items tracked under decision 72). Every API assertion below means H
   Connected + phone). Given ADMIN When clicking the badge Then nothing
   happens (the status popover still works). QR pairing is SA-only and may
   happen in the connect modal; it is never stored or sent over SSE.
+- Given a connected session When the SA confirms **Disconnect** Then
+  `POST /api/wa/session/logout` unlinks the phone, the modal shows
+  `disconnected` without the phone, and **Connect another number** starts a
+  fresh QR for a replacement number. A failed unlink keeps the phone visible
+  and shows a retryable error; `400`/`409` are idempotent success.
 
 ## Realtime SSE — 1 endpoint, signal + refetch (round 7)
 
