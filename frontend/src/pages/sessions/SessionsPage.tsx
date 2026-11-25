@@ -4,7 +4,7 @@
  * (soft same-params refetch). No client slicing, no polling.
  */
 import { useState } from 'react'
-import { Alert, Button, Input, Select, Space, Tag } from 'antd'
+import { Alert, Button, Input, Select, Space, Tooltip } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { EyeOutlined, PlusOutlined } from '@ant-design/icons'
 import { Link, useNavigate } from 'react-router'
@@ -21,6 +21,7 @@ import { errorCode } from '../../lib/api'
 import { useAuth } from '../../lib/auth'
 import { useListLoader } from '../../lib/list'
 import type { SessionListItem } from '../../lib/session-contracts'
+import './sessions.css'
 
 export default function SessionsPage() {
   const { t } = useTranslation('session')
@@ -48,11 +49,16 @@ export default function SessionsPage() {
       ellipsis: true,
       render: (name: string, row) => (
         <span className="kv-sessions-name">
-          <Link to={`/sessions/${row.id}`}>{name}</Link>
+          <Link to={`/sessions/${row.id}`} title={name}>
+            {name}
+          </Link>
           {user?.role === 'FASILITATOR' && row.my_assignment ? (
-            <Tag className="kv-session-mine" color="blue">
-              {t('list.myAssignment')}
-            </Tag>
+            <Tooltip title={t('list.myAssignmentHint')}>
+              <span className="kv-session-mine">
+                <span className="kv-session-mine__dot" aria-hidden="true" />
+                {t('list.myAssignment')}
+              </span>
+            </Tooltip>
           ) : null}
         </span>
       ),

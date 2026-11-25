@@ -1,0 +1,46 @@
+/* Session list: the name cell carries an optional FASILITATOR assignment pill.
+   The pill is a quiet outline, not a coloured Tag, so it sits beside the name
+   without competing with the session's own status chip. The name keeps the
+   row's full width until the pill appears; then it truncates with an ellipsis
+   and a native title tooltip (antd's ellipsis fills the title). */
+
+.kv-sessions-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.kv-sessions-name > a {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kv-session-mine {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  height: 18px;
+  padding: 0 7px;
+  border: 1px solid var(--kv-border-strong);
+  border-radius: var(--kv-radius-pill);
+  background: transparent;
+  color: var(--kv-text-2);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.kv-session-mine__dot {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--kv-violet);
+}

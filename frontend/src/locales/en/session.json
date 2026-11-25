@@ -14,7 +14,8 @@
     "empty": "No sessions yet.",
     "groups": "Groups",
     "members": "Members",
-    "myAssignment": "My Assignment"
+    "myAssignment": "My Assignment",
+    "myAssignmentHint": "You facilitate a group in this session."
   },
   "wizard": {
     "title": "Create a new session",

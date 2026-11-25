@@ -14,7 +14,8 @@
     "empty": "Belum ada sesi.",
     "groups": "Kelompok",
     "members": "Anggota",
-    "myAssignment": "Tugas Saya"
+    "myAssignment": "Tugas Saya",
+    "myAssignmentHint": "Anda fasilitator untuk salah satu kelompok di sesi ini."
   },
   "wizard": {
     "title": "Buat sesi baru",
