@@ -57,6 +57,15 @@ services:
     environment:
       NODE_OPTIONS: --require=/opt/wa-ua.cjs
       WWEBJS_AUTH_TIMEOUT_MS: "120000"
+      # OpenWA's auto-pin can select a wa-version registry snapshot whose
+      # HTML is WhatsApp's logged-out landing page. That page has no QR, so
+      # every start ends in "Engine initialization timed out" and the connect
+      # modal sits on "Setting up…". Pin a verified app build instead; review
+      # this before the registry expiry (~2027-01-23). If a pre-existing
+      # profile still redirects to /login/ ("...Socket is null"), stop wa and
+      # move data/openwa/sessions/session-<OPENWA_SESSION> aside once so a
+      # fresh profile is created.
+      WWEBJS_WEB_VERSION: "${WWEBJS_WEB_VERSION:-2.3000.1055837054-alpha}"
     volumes:
       - ./data/openwa:/app/data
       - ./ops/openwa/wa-ua.cjs:/opt/wa-ua.cjs:ro
