@@ -114,7 +114,8 @@
     "activate": "Aktifkan",
     "deactivate": "Nonaktifkan",
     "inactiveHint": "Anak nonaktif tidak muncul di pemilihan sesi.",
-    "deleteCounts": "{{members}} keanggotaan, {{assessments}} penilaian, {{photos}} foto, {{narratives}} narasi, {{missions}} misi, {{links}} tautan rapor ikut terhapus permanen."
+    "deleteCounts": "{{members}} keanggotaan, {{assessments}} penilaian, {{photos}} foto, {{narratives}} narasi, {{missions}} misi, {{links}} tautan rapor ikut terhapus permanen.",
+    "deleteSessionsWarning": "Anak ini juga terdaftar di sesi non-draf: {{sessions}}. Daftar anggotanya dibekukan, jadi menghapus anak akan mengeluarkannya dari sesi tersebut dan sesi bisa menjadi tidak bisa dibuka lagi."
   },
   "actions": {
     "activate": "Aktifkan",

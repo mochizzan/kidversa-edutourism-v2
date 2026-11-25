@@ -23,7 +23,7 @@ import (
 // independent pin — cross-language parity is asserted per side, never via
 // a shared generated file).
 
-// pinnedErrorCodes is the exact 06 §1 taxonomy: E1..E32 + EX = 33 codes.
+// pinnedErrorCodes is the exact 06 §1 taxonomy: E1..E33 + EX = 34 codes.
 var pinnedErrorCodes = []string{
 	"VALIDATION",                // E1
 	"EMAIL_TAKEN",               // E2
@@ -57,6 +57,7 @@ var pinnedErrorCodes = []string{
 	"NOT_FOUND",                 // E30
 	"HAS_OPEN_GROUPS",           // E31
 	"CHILD_INACTIVE",            // E32
+	"SESSION_ROSTER_LOCKED",     // E33
 	"INTERNAL",                  // EX (HTTP 500 only)
 }
 
@@ -72,7 +73,8 @@ var declaredErrorCodes = []string{
 	CodeNothingToNarrate, CodeMissionLimit, CodeAIFailed, CodeWAFailed,
 	CodeMailFailed, CodeRateLimited, CodeTokenInvalid, CodeResetExpired,
 	CodeResetUsed, CodeDBUnavailable, CodeCameraDenied, CodePhotoMissing,
-	CodeNotFound, CodeHasOpenGroups, CodeChildInactive, CodeInternal,
+	CodeNotFound, CodeHasOpenGroups, CodeChildInactive, CodeSessionRosterLocked,
+	CodeInternal,
 }
 
 // codeConstRe extracts every `Code* = "…"` constant from envelope.go's
@@ -80,13 +82,13 @@ var declaredErrorCodes = []string{
 // catalogue about) fails the parity test too.
 var codeConstRe = regexp.MustCompile(`Code[A-Za-z0-9_]*\s*=\s*"([A-Z0-9_]+)"`)
 
-// TestErrorCatalogueParity pins the 33-code 06 §1 taxonomy from three
+// TestErrorCatalogueParity pins the 34-code 06 §1 taxonomy from three
 // directions: every pinned code exists as a constant (compile-time list),
 // the constant VALUES equal the pin (source scan), and no unpinned Code*
 // constant exists (source scan, catches additions).
 func TestErrorCatalogueParity(t *testing.T) {
-	require.Len(t, pinnedErrorCodes, 33, "06 §1 is E1..E32 + EX")
-	require.Len(t, declaredErrorCodes, 33, "every pinned code must have a declared constant")
+	require.Len(t, pinnedErrorCodes, 34, "06 §1 is E1..E33 + EX")
+	require.Len(t, declaredErrorCodes, 34, "every pinned code must have a declared constant")
 	require.ElementsMatch(t, pinnedErrorCodes, declaredErrorCodes,
 		"declared Code* constants must equal the pinned 06 §1 taxonomy exactly")
 

@@ -138,6 +138,7 @@
     "FORBIDDEN_ROLE": "You do not have access to this action.",
     "NOT_OWNER": "This is not your group or child.",
     "SESSION_LOCKED": "The session is locked for this change.",
+    "SESSION_ROSTER_LOCKED": "Groups and participants can only be changed while the session is a draft.",
     "STATE_CONFLICT": "It changed elsewhere. Please reload the page.",
     "CHILD_DUPLICATE": "This child is already in another group in this session.",
     "PROGRAM_INCOMPLETE": "Program incomplete: every topic needs at least one activity.",

@@ -204,31 +204,40 @@ copy modal can trigger immediately without a second add. Realtime (round 7):
 create publishes `session.changed` (`created`); other tabs' session
 lists refetch.
 
-## FL-08 Lifecycle Draft → Opened → Finished (+reopen/delete)
+## FL-08 Lifecycle Draft → Opened → Finished (+open again/delete)
 
-- Open: `POST /api/sessions/:id/open` allowed from DRAFT only
-  (already-OPENED → 200 `{data:{status:"OPENED", already:true}}`;
-  on FINISHED → 200 `SESSION_LOCKED`); DETERMINISTIC gate order
-  (decision 60): (1) ≥1 group exists AND every group non-empty
-  (else 200 `VALIDATION` + list — empty-group check FIRST) AND (2)
-  every group with an active owner (else 200 `GROUP_WITHOUT_FACILITATOR`
-  + list). Empty Draft must add groups before open.
-  Draft→Opened via `UPDATE … WHERE status='DRAFT'`; loser → 200
-  `STATE_CONFLICT` (publishes nothing). Winner publishes
+- Open: `POST /api/sessions/:id/open` allowed from DRAFT (first start) or
+  FINISHED (start again) and always re-runs the same gates
+  (already-OPENED → 200 `{data:{status:"OPENED", already:true}}`).
+  DETERMINISTIC gate order (decision 60): (1) ≥1 group exists AND every
+  group non-empty (else 200 `VALIDATION` + list — empty-group check FIRST)
+  AND (2) every group with an active owner (else 200
+  `GROUP_WITHOUT_FACILITATOR` + list). Empty Draft must add groups before
+  open. No time-window/date gate exists: a backdated session opens the same
+  way. Draft/Finished→Opened via `UPDATE … WHERE status=<source>`; loser →
+  200 `STATE_CONFLICT` (publishes nothing). Winner publishes
   `session.status` (round 7); other tabs refetch detail + status chip.
-- Opened edits: groups/members/owner only
-  (`PATCH /api/sessions/:id/groups/:gid`; group DELETE =
-  cascade wipe of its members' session data per 02§2b, typed-text modal).
-  Snapshot names/dates/program immutable (200 `SESSION_LOCKED`).
-  Removing assessed child deletes their session assessments silently.
+  A session that reached Opened/Finished with a damaged roster (zero groups
+  or an empty group from before the freeze) cannot repair it: the roster is
+  frozen. Once such a session closes, every reopen fails the gates — it is
+  delete-only.
+- Post-Draft roster freeze: group create/delete and member add/remove are
+  DRAFT-only (Opened/Finished → 200 `SESSION_ROSTER_LOCKED`). The only
+  post-Draft group edits are rename + facilitator replacement
+  (`PATCH /api/sessions/:id/groups/:gid`; an owner can be swapped, never
+  cleared → 200 `VALIDATION`). Snapshot names/dates/program immutable after
+  creation (200 `SESSION_LOCKED`). Removing assessed child deletes their
+  session assessments silently (Draft only, like every roster change).
   Every group/member/owner mutation publishes `group.changed` /
   `member.changed` (round 7); member add AND member remove recompute
   the `copy_available` hint so other tabs' copy modals stay accurate.
-- Finish: `POST /api/sessions/:id/finish` (partial allowed, warn list). Opened→Finished
-  (guarded update; winner publishes `session.status`). Stars/notes frozen; photos free.
-- Reopen (ADMIN/SA): `POST /api/sessions/:id/reopen` → Opened (writes resume; publishes `session.status`).
+- Close: `POST /api/sessions/:id/close` from OPENED (partial assessments
+  allowed — NO completion prerequisites and no warn list). Guarded update;
+  winner publishes `session.status`. Already-FINISHED → 200
+  `{data:{status:"FINISHED", already:true}}`; DRAFT → 200 `SESSION_LOCKED`.
+  Stars/notes frozen after close; photos free.
 - DELETE Draft or Finished only — DELETE on Opened → 200
-  `SESSION_LOCKED` (Finish first, then optionally delete Finished).
+  `SESSION_LOCKED` (close first, then optionally delete Finished).
   (user decisions 2026-10-08: direct wipe, no
   soft-delete, no link-revoke gate, ADMIN+SA may delete, but ALWAYS via
   typed-text ConfirmDialog modal showing scope counts INCLUDING active
@@ -241,7 +250,7 @@ lists refetch.
   `link.revoked` on each revoked token's public stream. Group-DELETE
   cascade wipe publishes the same triple for the affected members' links.
   Cancelling during
-  Opened/Finished is not a state — Finish then optionally delete Finished.
+  Opened/Finished is not a state — Close then optionally delete Finished.
 
 ## FL-09 Assessment [FAS owner (+ADMIN/SA)]
 

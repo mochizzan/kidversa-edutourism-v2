@@ -1,7 +1,7 @@
 /**
  * ONE session-meta rule set (004f): name/location/date required, end > start
  * when both set — consumed by BOTH the create wizard's `validateStep` and the
- * draft editor's `MetaEditModal.save` (predicates are shared, form flow is
+ * draft editor's `SessionMetaModal.save` (predicates are shared, form flow is
  * not). Returns session-namespace i18n keys; callers translate.
  */
 export interface SessionMetaInput {

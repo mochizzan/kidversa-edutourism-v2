@@ -149,14 +149,30 @@ verification items tracked under decision 72). Every API assertion below means H
   `VALIDATION` (+ list) until ≥1 non-empty group with active owner added.
 - Given group without active owner When opening Then 200
   `GROUP_WITHOUT_FACILITATOR` + list.
-- Given Opened When ADMIN adds child/removes group/reassigns Then
-  allowed; removed assessed child loses session assessments silently.
+- Given Opened or Finished When ADMIN adds/removes a group or member Then
+  200 `SESSION_ROSTER_LOCKED`; rename and facilitator replacement stay
+  allowed. Given Draft When removing an assessed child Then their session
+  assessments are deleted silently.
+- Given Opened/Finished When PATCHing a group with `facilitator_id:0` Then
+  200 `VALIDATION` (assign a replacement; an ownerless group could never
+  reopen).
+- Given a session that left Draft with zero/empty groups When closing it
+  Then the roster cannot be repaired and every later open → 200
+  `VALIDATION` with delete-only copy (no reopen path).
 - Given Opened When editing snapshot name/date Then 200 `SESSION_LOCKED`.
 - Given a PATCH `/api/sessions/:id` containing `program_id` Then 200
   `SESSION_LOCKED` (snapshot program is immutable).
 - Given Finished When saving star Then 200 `SESSION_LOCKED` (banner +
-  disabled); photo upload still succeeds 200 `{data}`; reopen restores writes.
-- Given concurrent open/finish When racing Then loser 200
+  disabled); photo upload still succeeds 200 `{data}`; opening it again
+  restores writes through the same open gates.
+- Given Finished When opening again Then 200 `{status:"OPENED"}` after the
+  group/child/active-owner gates pass; a failed gate publishes nothing and
+  leaves it Finished.
+- Given Draft When closing directly Then 200 `SESSION_LOCKED` (open first).
+- Given Opened When closing with incomplete assessments Then 200
+  `{status:"FINISHED"}` — close has no completion prerequisites; closing
+  again → `{status:"FINISHED", already:true}`.
+- Given concurrent open/close When racing Then loser 200
   `STATE_CONFLICT` → reload.
 - Given Draft DELETE / Finished DELETE via typed-text modal (with scope
   counts INCLUDING active report/gallery/consent links) Then session scope

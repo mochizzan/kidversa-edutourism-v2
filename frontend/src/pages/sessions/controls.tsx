@@ -22,6 +22,8 @@ export interface ChildPickerProps {
   /** Children already chosen in another group / already members — disabled with reason. */
   excludeIds?: number[]
   disabled?: boolean
+  /** Accessible name when the picker has no visible <label>. */
+  ariaLabel?: string
 }
 
 export function ChildPicker({
@@ -30,6 +32,7 @@ export function ChildPicker({
   onChange,
   excludeIds = [],
   disabled = false,
+  ariaLabel,
 }: ChildPickerProps) {
   const { t } = useTranslation('session')
   const excluded = new Set(excludeIds)
@@ -38,6 +41,7 @@ export function ChildPicker({
       mode="multiple"
       allowClear
       showSearch
+      aria-label={ariaLabel}
       filterOption={(input, option) =>
         String(option?.label ?? '')
           .toLowerCase()
@@ -63,9 +67,20 @@ export interface OwnerPickerProps {
   onChange: (childId: number | null) => void
   allowClear?: boolean
   disabled?: boolean
+  /** DOM id so a visible <label htmlFor> names the combobox. */
+  id?: string
+  /** Accessible name when no visible <label> is associated. */
+  ariaLabel?: string
 }
 
-export function OwnerPicker({ value, onChange, allowClear = true, disabled = false }: OwnerPickerProps) {
+export function OwnerPicker({
+  value,
+  onChange,
+  allowClear = true,
+  disabled = false,
+  id,
+  ariaLabel,
+}: OwnerPickerProps) {
   const { t } = useTranslation('session')
   const { school } = useAuth()
   const { rows, loading } = useListLoader<FacilitatorRow>('/api/users', {
@@ -77,8 +92,10 @@ export function OwnerPicker({ value, onChange, allowClear = true, disabled = fal
   const own = rows.filter((user) => user.school_id === school?.id)
   return (
     <Select
+      id={id}
       showSearch
       allowClear={allowClear}
+      aria-label={ariaLabel}
       filterOption={(input, option) =>
         String(option?.label ?? '')
           .toLowerCase()

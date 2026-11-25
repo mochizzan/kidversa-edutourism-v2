@@ -2,8 +2,8 @@
  * Session detail (F-08 / FL-08): lifecycle buttons per status (ADMIN/SA only),
  * guarded-transition error contract (STATE_CONFLICT → toast + reload,
  * SESSION_LOCKED → toast + reload, VALIDATION/GROUP_WITHOUT_FACILITATOR →
- * localized gate message + offending group names inline), the finish flow's
- * incomplete-topic list, the draft meta editor
+ * localized gate message + offending group names inline), close as a direct
+ * two-state action with no completion prerequisites, the draft meta editor
  * incl. its SESSION_LOCKED notice, the typed delete dialog fed from
  * `detail.scope`, and the create-with-groups copy-queue wiring (member add →
  * CopyDataModal for the added child) incl. the SSE `copy_available` hint
@@ -52,12 +52,8 @@ function detailHandlers(
       calls.posts.push('open')
       return post()
     }),
-    http.post('/api/sessions/1/finish', () => {
-      calls.posts.push('finish')
-      return post()
-    }),
-    http.post('/api/sessions/1/reopen', () => {
-      calls.posts.push('reopen')
+    http.post('/api/sessions/1/close', () => {
+      calls.posts.push('close')
       return post()
     }),
   ]
@@ -81,14 +77,13 @@ describe('session detail lifecycle buttons', () => {
     })
 
     await screen.findByText('Kelompok Merah')
-    expect(screen.getByRole('button', { name: 'Mulai sesi' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Buka sesi' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Ubah sesi' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Hapus sesi' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Selesaikan sesi' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Buka kembali' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Tutup sesi' })).toBeNull()
   })
 
-  it('OPENED shows finish only — no delete, no edit', async () => {
+  it('OPENED shows close only — no delete, no edit', async () => {
     const calls = newCalls()
     server.use(...detailHandlers(calls, 'OPENED', () => ok({ status: 'FINISHED' })))
     renderApp(null, {
@@ -98,13 +93,13 @@ describe('session detail lifecycle buttons', () => {
     })
 
     await screen.findByText('Kelompok Merah')
-    expect(screen.getByRole('button', { name: 'Selesaikan sesi' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Tutup sesi' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Hapus sesi' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Ubah sesi' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Mulai sesi' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Buka sesi' })).toBeNull()
   })
 
-  it('FINISHED shows reopen + delete', async () => {
+  it('FINISHED shows open again + delete', async () => {
     const calls = newCalls()
     server.use(...detailHandlers(calls, 'FINISHED', () => ok({ status: 'OPENED' })))
     renderApp(null, {
@@ -114,10 +109,9 @@ describe('session detail lifecycle buttons', () => {
     })
 
     await screen.findByText('Kelompok Merah')
-    expect(screen.getByRole('button', { name: 'Buka kembali' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Buka sesi' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Hapus sesi' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Mulai sesi' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Selesaikan sesi' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Tutup sesi' })).toBeNull()
   })
 
   it('FAS sees no lifecycle actions at all', async () => {
@@ -130,7 +124,7 @@ describe('session detail lifecycle buttons', () => {
     })
 
     await screen.findByText('Kelompok Merah')
-    expect(screen.queryByRole('button', { name: 'Mulai sesi' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Buka sesi' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Ubah sesi' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Hapus sesi' })).toBeNull()
   })
@@ -149,7 +143,7 @@ describe('session detail guarded transitions', () => {
 
     await screen.findByText('Kelompok Merah')
     const before = calls.detail
-    await user.click(screen.getByRole('button', { name: 'Mulai sesi' }))
+    await user.click(screen.getByRole('button', { name: 'Buka sesi' }))
 
     await screen.findByText('Sesi dibuka.')
     expect(calls.posts).toEqual(['open'])
@@ -172,7 +166,7 @@ describe('session detail guarded transitions', () => {
 
     await screen.findByText('Kelompok Merah')
     const before = calls.detail
-    await user.click(screen.getByRole('button', { name: 'Mulai sesi' }))
+    await user.click(screen.getByRole('button', { name: 'Buka sesi' }))
 
     await screen.findByText('Data berubah di tempat lain. Muat ulang halaman.')
     await waitFor(() => expect(calls.detail).toBeGreaterThan(before))
@@ -194,7 +188,7 @@ describe('session detail guarded transitions', () => {
 
     await screen.findByText('Kelompok Merah')
     const before = calls.detail
-    await user.click(screen.getByRole('button', { name: 'Mulai sesi' }))
+    await user.click(screen.getByRole('button', { name: 'Buka sesi' }))
 
     await screen.findByText('Sesi terkunci untuk perubahan ini.')
     await waitFor(() => expect(calls.detail).toBeGreaterThan(before))
@@ -217,12 +211,36 @@ describe('session detail guarded transitions', () => {
     })
 
     await screen.findByText('Kelompok Merah')
-    await user.click(screen.getByRole('button', { name: 'Mulai sesi' }))
+    await user.click(screen.getByRole('button', { name: 'Buka sesi' }))
 
     await screen.findByText(
       'Belum ada kelompok. Tambahkan kelompok berisi minimal satu anak sebelum sesi dibuka.',
     )
     expect(screen.queryByText('invalid or missing field')).toBeNull()
+  })
+
+  it('a finished zero-group open failure points to delete-only recovery', async () => {
+    const calls = newCalls()
+    server.use(
+      ...detailHandlers(calls, 'FINISHED', () =>
+        HttpResponse.json({
+          error: { code: 'VALIDATION', message: 'invalid or missing field', groups: [] },
+        }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderApp(null, {
+      routes: ROUTES,
+      route: '/sessions/1',
+      session: ADMIN_SESSION(),
+    })
+
+    await screen.findByText('Kelompok Merah')
+    await user.click(screen.getByRole('button', { name: 'Buka sesi' }))
+
+    await screen.findByText(
+      'Sesi yang sudah ditutup ini tidak punya kelompok, jadi tidak bisa dibuka lagi. Hapus sesi dan buat sesi baru.',
+    )
   })
 
   it('VALIDATION open gate names the empty groups inline', async () => {
@@ -246,7 +264,7 @@ describe('session detail guarded transitions', () => {
     })
 
     await screen.findByText('Kelompok Merah')
-    await user.click(screen.getByRole('button', { name: 'Mulai sesi' }))
+    await user.click(screen.getByRole('button', { name: 'Buka sesi' }))
 
     await screen.findByText(
       'Kelompok berikut belum berisi anak: Kelompok Merah. Tambahkan anak sebelum sesi dibuka.',
@@ -274,7 +292,7 @@ describe('session detail guarded transitions', () => {
     })
 
     await screen.findByText('Kelompok Merah')
-    await user.click(screen.getByRole('button', { name: 'Mulai sesi' }))
+    await user.click(screen.getByRole('button', { name: 'Buka sesi' }))
 
     const message =
       'Kelompok berikut belum punya fasilitator aktif: Kelompok Merah. Tugaskan fasilitator sebelum sesi dibuka.'
@@ -300,7 +318,7 @@ describe('session detail guarded transitions', () => {
 
     await screen.findByText('Kelompok Merah')
     const before = calls.detail
-    await user.click(screen.getByRole('button', { name: 'Mulai sesi' }))
+    await user.click(screen.getByRole('button', { name: 'Buka sesi' }))
 
     await screen.findByText('Terlalu banyak permintaan. Tunggu sebentar lalu coba lagi.')
     // Generic codes do not reload — only the guarded-transition codes do.
@@ -325,25 +343,16 @@ describe('session detail guarded transitions', () => {
   })
 })
 
-describe('session detail finish flow', () => {
-  it('lists the incomplete topics in the confirm dialog, then finishes', async () => {
+describe('session detail close flow', () => {
+  it('closes an OPENED session directly, with no completion prerequisites', async () => {
     const calls = newCalls()
+    let progressCalls = 0
     server.use(
       ...detailHandlers(calls, 'OPENED', () => ok({ status: 'FINISHED' })),
-      http.get('/api/sessions/1/progress', () =>
-        ok({
-          children: [
-            {
-              child_id: 2,
-              name: 'Aisyah Putri',
-              gid: 5,
-              topics: [
-                { stid: 3, topic: 'Batik Nusantara', starred: 0, total: 2, complete: false },
-              ],
-            },
-          ],
-        }),
-      ),
+      http.get('/api/sessions/1/progress', () => {
+        progressCalls += 1
+        return ok({ children: [] })
+      }),
     )
     const user = userEvent.setup()
     renderApp(null, {
@@ -353,27 +362,18 @@ describe('session detail finish flow', () => {
     })
 
     await screen.findByText('Kelompok Merah')
-    await user.click(screen.getByRole('button', { name: 'Selesaikan sesi' }))
+    await user.click(screen.getByRole('button', { name: 'Tutup sesi' }))
 
-    await screen.findByText('Selesaikan sesi Kelas Batik?')
-    await screen.findByText('Penilaian belum lengkap:')
-    await screen.findByText('Aisyah Putri — Batik Nusantara')
-    // Header + dialog share the label; the dialog's confirm is the last one.
-    const confirmButtons = screen.getAllByRole('button', { name: 'Selesaikan sesi' })
-    await user.click(confirmButtons.at(-1) as HTMLElement)
-
-    await screen.findByText('Sesi diselesaikan.')
-    expect(calls.posts).toEqual(['finish'])
+    // No confirm dialog and no progress warn-list read: close is immediate.
+    expect(screen.queryByRole('dialog')).toBeNull()
+    await screen.findByText('Sesi ditutup.')
+    expect(calls.posts).toEqual(['close'])
+    expect(progressCalls).toBe(0)
   })
 
-  it('still finishes when the progress warn-list read fails (best-effort scope)', async () => {
+  it('reopening a FINISHED session POSTs open and re-runs the gates', async () => {
     const calls = newCalls()
-    server.use(
-      ...detailHandlers(calls, 'OPENED', () => ok({ status: 'FINISHED' })),
-      http.get('/api/sessions/1/progress', () =>
-        HttpResponse.json({ error: { code: 'DB_UNAVAILABLE', message: 'down' } }),
-      ),
-    )
+    server.use(...detailHandlers(calls, 'FINISHED', () => ok({ status: 'OPENED' })))
     const user = userEvent.setup()
     renderApp(null, {
       routes: ROUTES,
@@ -382,16 +382,10 @@ describe('session detail finish flow', () => {
     })
 
     await screen.findByText('Kelompok Merah')
-    await user.click(screen.getByRole('button', { name: 'Selesaikan sesi' }))
+    await user.click(screen.getByRole('button', { name: 'Buka sesi' }))
 
-    // The dialog opens with the partial-finish note but no incomplete list.
-    await screen.findByText('Selesaikan sesi Kelas Batik?')
-    expect(screen.queryByText('Penilaian belum lengkap:')).toBeNull()
-    const confirmButtons = screen.getAllByRole('button', { name: 'Selesaikan sesi' })
-    await user.click(confirmButtons.at(-1) as HTMLElement)
-
-    await screen.findByText('Sesi diselesaikan.')
-    expect(calls.posts).toEqual(['finish'])
+    await screen.findByText('Sesi dibuka.')
+    expect(calls.posts).toEqual(['open'])
   })
 })
 
@@ -604,13 +598,14 @@ describe('session detail copy-data queue', () => {
 
     await screen.findByText('Kelompok Merah')
     await user.click(screen.getByRole('button', { name: /Tambah anggota/ }))
+    const modal = await screen.findByRole('dialog', { name: /Tambah anggota/ })
 
     // ChildPicker in the member modal.
-    const picker = document.querySelector('.ant-select .ant-select-selection-search-input') as HTMLElement
+    const picker = modal.querySelector('.ant-select .ant-select-selection-search-input') as HTMLElement
     await openDropdown(picker)
     await chooseOption('Citra Ayu · SD Cendekia')
     await user.keyboard('{Escape}')
-    await user.click(screen.getByRole('button', { name: 'Buat' }))
+    await user.click(within(modal).getByRole('button', { name: 'Tambah anggota' }))
 
     // The copy modal opens for the added child (queue head).
     await screen.findByText('Salin nilai dari Sesi Sesi Lama?')

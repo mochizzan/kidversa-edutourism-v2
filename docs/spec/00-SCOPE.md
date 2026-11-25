@@ -66,7 +66,9 @@ to parents via WhatsApp (text + public links; no file attachments).
   OPTIONAL at create — Draft may start empty, groups added later, gate at
   open), run the
   Draft → Opened → Finished lifecycle (no CANCELED state; Draft/Finished
-  delete = physical wipe, no trace).
+  delete = physical wipe, no trace). Groups/participants are mutable only
+  while Draft; from Opened onward the roster is frozen and only group
+  rename + facilitator replacement remain.
 - Assessment: star rating 1–4 (BB/MB/BSH/BSB) + observation note per child
   per activity, saved per activity, partial save allowed.
 - Photos: max 10 per child per topic per session, 1 report candidate,

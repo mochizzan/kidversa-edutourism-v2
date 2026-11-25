@@ -138,6 +138,7 @@
     "FORBIDDEN_ROLE": "Anda tidak punya akses untuk tindakan ini.",
     "NOT_OWNER": "Ini bukan kelompok atau anak Anda.",
     "SESSION_LOCKED": "Sesi terkunci untuk perubahan ini.",
+    "SESSION_ROSTER_LOCKED": "Kelompok dan peserta hanya bisa diubah saat sesi masih draf.",
     "STATE_CONFLICT": "Data berubah di tempat lain. Muat ulang halaman.",
     "CHILD_DUPLICATE": "Anak sudah berada di kelompok lain pada sesi ini.",
     "PROGRAM_INCOMPLETE": "Program belum lengkap: setiap topik butuh minimal satu kegiatan.",

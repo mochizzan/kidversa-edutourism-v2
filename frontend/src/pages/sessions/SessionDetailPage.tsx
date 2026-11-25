@@ -9,19 +9,20 @@
  *   the groups (`error.groups`, never the generic server default);
  * - transitions reload explicitly on 200 (covers `already:true`, which
  *   publishes nothing) and SSE `session.status` keeps other tabs honest.
+ * Lifecycle is two actions: Open (DRAFT/FINISHED → OPENED, gates on every
+ * start) and Close (OPENED → FINISHED, no completion prerequisites).
  * DELETE = typed-text wipe dialog (scope counts), `session.deleted` closes
  * this page. Copy-data queue (F-15): children added at create (navigate
  * state), by member-add, or hinted by the SSE `copy_available` frame run the
  * modal flow one by one.
  */
 import { useEffect, useState } from 'react'
-import { Alert, App as AntApp, Button, DatePicker, Form, Input, Modal, Space, TimePicker, Typography } from 'antd'
+import { Alert, App as AntApp, Button } from 'antd'
 import { FileTextOutlined, PictureOutlined } from '@ant-design/icons'
 import { Link, useLocation, useNavigate, useParams } from 'react-router'
 import { useTranslation } from 'react-i18next'
 import PageHeader from '../../components/PageHeader'
 import PageSkeleton from '../../components/PageSkeleton'
-import ConfirmDialog from '../../components/ConfirmDialog'
 import StatusChip from '../../components/StatusChip'
 import { api, errorCode, ApiError } from '../../lib/api'
 import { useAuth } from '../../lib/auth'
@@ -29,11 +30,11 @@ import { useCrumbName } from '../../lib/crumbs'
 import dayjs from '../../lib/dayjs'
 import { useErrorToast } from '../../lib/errors'
 import { registerSignal } from '../../lib/stream'
-import type { SessionDetail } from '../../lib/session-contracts'
 import CopyDataModal from './CopyDataModal'
 import DeleteSessionDialog from './DeleteSessionDialog'
 import GroupsPanel from './GroupsPanel'
-import { validateSessionMeta } from './meta'
+import { gateGroupsOf } from './gates'
+import SessionMetaModal from './SessionMetaModal'
 import { useSessionDetail } from './shared'
 import './session-detail.css'
 
@@ -56,21 +57,6 @@ function readCopyChildren(state: unknown): CopyChild[] {
 }
 
 /** One offending group from an open-gate failure (`error.groups`, B11). */
-interface GateGroup {
-  name: string
-}
-
-function gateGroupsOf(failure: unknown): GateGroup[] {
-  if (!(failure instanceof ApiError)) return []
-  const raw = failure.details?.groups
-  if (!Array.isArray(raw)) return []
-  return raw.flatMap((entry) => {
-    if (typeof entry !== 'object' || entry === null) return []
-    const name = (entry as Record<string, unknown>).name
-    return typeof name === 'string' && name.trim() !== '' ? [{ name }] : []
-  })
-}
-
 export default function SessionDetailPage() {
   const { t } = useTranslation('session')
   const { t: tc } = useTranslation('common')
@@ -88,8 +74,6 @@ export default function SessionDetailPage() {
   const [actionError, setActionError] = useState<unknown>(null)
   const [metaOpen, setMetaOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
-  const [finishOpen, setFinishOpen] = useState(false)
-  const [finishItems, setFinishItems] = useState<string[] | null>(null)
   const [copyQueue, setCopyQueue] = useState<CopyChild[]>([])
 
   // copy_available hint (P5): `member.changed` / `session.changed` frames
@@ -131,7 +115,7 @@ export default function SessionDetailPage() {
 
   const canManage = user?.role === 'SA' || user?.role === 'ADMIN'
 
-  const transition = async (action: 'open' | 'finish' | 'reopen') => {
+  const transition = async (action: 'open' | 'close') => {
     setBusy(true)
     setActionError(null)
     try {
@@ -151,25 +135,6 @@ export default function SessionDetailPage() {
       }
     } finally {
       setBusy(false)
-    }
-  }
-
-  const startFinish = async () => {
-    setFinishItems(null)
-    setFinishOpen(true)
-    try {
-      const progress = await api.get<{
-        children: { name: string; topics: { topic: string; complete: boolean }[] }[]
-      }>(`/api/sessions/${sid}/progress`)
-      setFinishItems(
-        progress.children.flatMap((child) =>
-          child.topics
-            .filter((topic) => !topic.complete)
-            .map((topic) => `${child.name} — ${topic.topic}`),
-        ),
-      )
-    } catch {
-      // Warn list unavailable → still allow the (spec-permitted) partial finish.
     }
   }
 
@@ -207,8 +172,13 @@ export default function SessionDetailPage() {
       const groups = gateGroupsOf(actionError)
       const names = groups.map((group) => group.name).join(', ')
       if (code === 'VALIDATION') {
-        return groups.length === 0
-          ? t('detail.openBlockedNoGroups')
+        if (groups.length === 0) {
+          return status === 'FINISHED'
+            ? t('detail.openBlockedNoGroupsFinished')
+            : t('detail.openBlockedNoGroups')
+        }
+        return status === 'FINISHED'
+          ? t('detail.openBlockedEmptyGroupsFinished', { groups: names })
           : t('detail.openBlockedEmptyGroups', { groups: names })
       }
       return names
@@ -220,14 +190,11 @@ export default function SessionDetailPage() {
       : tc(`errors.${code}`)
   })()
 
-  const actionButton = (action: 'open' | 'finish' | 'reopen', label: string, primary = false) => (
+  const actionButton = (action: 'open' | 'close', label: string, primary = false) => (
     <Button
       type={primary ? 'primary' : 'default'}
       loading={busy}
-      onClick={() => {
-        if (action === 'finish') void startFinish()
-        else void transition(action)
-      }}
+      onClick={() => void transition(action)}
     >
       {label}
     </Button>
@@ -262,9 +229,9 @@ export default function SessionDetailPage() {
             </div>
             {canManage ? (
               <div className="kv-session-actions__manage">
-                {status === 'DRAFT' ? actionButton('open', t('detail.open'), true) : null}
-                {status === 'OPENED' ? actionButton('finish', t('detail.finish'), true) : null}
-                {status === 'FINISHED' ? actionButton('reopen', t('detail.reopen')) : null}
+                {status === 'OPENED'
+                  ? actionButton('close', t('detail.close'), true)
+                  : actionButton('open', t('detail.open'), true)}
                 {status === 'DRAFT' ? (
                   <Button onClick={() => setMetaOpen(true)}>{t('detail.edit')}</Button>
                 ) : null}
@@ -355,8 +322,8 @@ export default function SessionDetailPage() {
       </div>
 
       {metaOpen ? (
-        <MetaEditModal
-          detail={detail}
+        <SessionMetaModal
+          session={detail.session}
           onClose={() => setMetaOpen(false)}
           onSaved={() => {
             setMetaOpen(false)
@@ -365,33 +332,6 @@ export default function SessionDetailPage() {
           }}
         />
       ) : null}
-
-      <ConfirmDialog
-        open={finishOpen}
-        title={t('detail.finishTitle', { name: session.name })}
-        loading={busy}
-        confirmLabel={t('detail.finish')}
-        cancelLabel={tc('actions.cancel')}
-        onCancel={() => setFinishOpen(false)}
-        onConfirm={async () => {
-          setFinishOpen(false)
-          await transition('finish')
-        }}
-      >
-        <p>{t('detail.partialFinish')}</p>
-        {finishItems && finishItems.length > 0 ? (
-          <>
-            <Typography.Text type="secondary" style={{ display: 'block' }}>{t('detail.incompleteList')}</Typography.Text>
-            <ul style={{ maxHeight: 200, overflowY: 'auto', margin: 0, paddingLeft: 18 }}>
-              {finishItems.map((item) => (
-                <li key={item} style={{ fontSize: 12 }}>
-                  {item}
-                </li>
-              ))}
-            </ul>
-          </>
-        ) : null}
-      </ConfirmDialog>
 
       <DeleteSessionDialog
         detail={detail}
@@ -418,133 +358,3 @@ export default function SessionDetailPage() {
   )
 }
 
-/** Draft-only snapshot edit (Opened → SESSION_LOCKED server-side; button hidden). */
-function MetaEditModal({
-  detail,
-  onClose,
-  onSaved,
-}: {
-  detail: SessionDetail
-  onClose: () => void
-  onSaved: () => void
-}) {
-  const { t } = useTranslation('session')
-  const { t: tc } = useTranslation('common')
-  const [name, setName] = useState(detail.session.name)
-  const [description, setDescription] = useState(detail.session.description)
-  const [date, setDate] = useState(detail.session.date)
-  const [startTime, setStartTime] = useState(detail.session.start_time?.slice(0, 5) ?? '')
-  const [endTime, setEndTime] = useState(detail.session.end_time?.slice(0, 5) ?? '')
-  const [location, setLocation] = useState(detail.session.location)
-  const [errors, setErrors] = useState<Record<string, string>>({})
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<unknown>(null)
-
-  const save = async () => {
-    const next: Record<string, string> = {}
-    for (const [field, key] of Object.entries(
-      validateSessionMeta({ name, date, location, startTime, endTime }),
-    )) {
-      if (key) next[field] = t(key)
-    }
-    setErrors(next)
-    if (Object.keys(next).length > 0) return
-
-    setBusy(true)
-    setError(null)
-    try {
-      await api.patch(`/api/sessions/${detail.session.id}`, {
-        name: name.trim(),
-        description: description.trim() || undefined,
-        date,
-        start_time: startTime ? `${startTime}:00` : undefined,
-        end_time: endTime ? `${endTime}:00` : undefined,
-        location: location.trim(),
-      })
-      onSaved()
-    } catch (failure: unknown) {
-      setError(failure)
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <Modal
-      open
-      title={t('detail.editTitle')}
-      okText={tc('actions.save')}
-      cancelText={tc('actions.cancel')}
-      confirmLoading={busy}
-      maskClosable={!busy}
-      onOk={save}
-      onCancel={onClose}
-    >
-      <Form layout="vertical">
-        <Form.Item
-          label={t('list.name')}
-          validateStatus={errors.name ? 'error' : undefined}
-          help={errors.name}
-        >
-          <Input value={name} onChange={(event) => setName(event.target.value)} />
-        </Form.Item>
-        <Form.Item label={t('form.description')}>
-          <Input.TextArea rows={3} value={description} onChange={(event) => setDescription(event.target.value)} />
-        </Form.Item>
-        <Form.Item
-          label={t('list.date')}
-          validateStatus={errors.date ? 'error' : undefined}
-          help={errors.date}
-        >
-          <DatePicker
-            value={date ? dayjs(date, 'YYYY-MM-DD') : null}
-            onChange={(value) => setDate(value ? value.format('YYYY-MM-DD') : '')}
-            format="YYYY-MM-DD"
-            style={{ width: '100%' }}
-          />
-        </Form.Item>
-        <Space size="middle">
-          <Form.Item label={t('form.startTime')} style={{ marginBottom: 0 }}>
-            <TimePicker
-              value={startTime ? dayjs(startTime, 'HH:mm') : null}
-              onChange={(value) => setStartTime(value ? value.format('HH:mm') : '')}
-              format="HH:mm"
-              style={{ width: 120 }}
-            />
-          </Form.Item>
-          <Form.Item
-            label={t('form.endTime')}
-            style={{ marginBottom: 0 }}
-            validateStatus={errors.endTime ? 'error' : undefined}
-            help={errors.endTime}
-          >
-            <TimePicker
-              value={endTime ? dayjs(endTime, 'HH:mm') : null}
-              onChange={(value) => setEndTime(value ? value.format('HH:mm') : '')}
-              format="HH:mm"
-              style={{ width: 120 }}
-            />
-          </Form.Item>
-        </Space>
-        <Form.Item
-          label={t('list.location')}
-          validateStatus={errors.location ? 'error' : undefined}
-          help={errors.location}
-        >
-          <Input value={location} onChange={(event) => setLocation(event.target.value)} />
-        </Form.Item>
-        {error ? (
-          <Alert
-            type="error"
-            showIcon
-            message={
-              error instanceof ApiError && error.code === 'SESSION_LOCKED'
-                ? t('detail.locked')
-                : tc(`errors.${errorCode(error)}`)
-            }
-          />
-        ) : null}
-      </Form>
-    </Modal>
-  )
-}

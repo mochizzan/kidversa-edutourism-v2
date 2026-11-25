@@ -1722,19 +1722,19 @@ func TestSpxGroupListFASForeignSessionIsNotFound(t *testing.T) {
 // Group / member mutations behind the row-lock status gate (02 §2b)
 // ---------------------------------------------------------------------------
 
-// TestSpxEditableLockFailuresAcrossGroupRoutes pins the shared
-// lockSessionEditable guard on EVERY mutation route: Begin failure →
-// DB_UNAVAILABLE, unknown session → NOT_FOUND, FINISHED → SESSION_LOCKED,
-// lock-read failure → DB_UNAVAILABLE — each answered before any write.
-func TestSpxEditableLockFailuresAcrossGroupRoutes(t *testing.T) {
+// TestSpxRosterLockFailuresAcrossGroupRoutes pins the DRAFT-only
+// lockSessionDraft guard on every STRUCTURAL mutation route: Begin failure →
+// DB_UNAVAILABLE, unknown session → NOT_FOUND, OPENED/FINISHED →
+// SESSION_ROSTER_LOCKED, lock-read failure → DB_UNAVAILABLE — each answered
+// before any write. Group PATCH is excluded: rename/facilitator changes stay
+// legal after Draft (its own lock matrix lives below).
+func TestSpxRosterLockFailuresAcrossGroupRoutes(t *testing.T) {
 	routes := []struct {
 		name, method, target string
 		body                 any
 	}{
 		{"group-create", "POST", "/api/sessions/2/groups",
 			map[string]any{"name": "Kelompok Baru"}},
-		{"group-patch", "PATCH", "/api/sessions/2/groups/10",
-			map[string]any{"name": "Baru"}},
 		{"group-delete", "DELETE", "/api/sessions/2/groups/10", nil},
 		{"members-add", "POST", "/api/sessions/2/groups/10/members",
 			map[string]any{"child_ids": []int64{31}}},
@@ -1745,7 +1745,8 @@ func TestSpxEditableLockFailuresAcrossGroupRoutes(t *testing.T) {
 	}{
 		{"begin-fails", CodeDBUnavailable},
 		{"missing-session", CodeNotFound},
-		{"finished-session", CodeSessionLocked},
+		{"opened-session", CodeSessionRosterLocked},
+		{"finished-session", CodeSessionRosterLocked},
 		{"lock-read-fails", CodeDBUnavailable},
 	}
 	for _, tc := range routes {
@@ -1761,6 +1762,11 @@ func TestSpxEditableLockFailuresAcrossGroupRoutes(t *testing.T) {
 					mock.ExpectBegin()
 					mock.ExpectQuery(q("FROM sessions WHERE id = ? AND school_id = ? FOR UPDATE")).
 						WithArgs(int64(2), int64(1)).WillReturnError(sql.ErrNoRows)
+					mock.ExpectRollback()
+				case "opened-session":
+					mock.ExpectBegin()
+					mock.ExpectQuery(q("FROM sessions WHERE id = ? AND school_id = ? FOR UPDATE")).
+						WithArgs(int64(2), int64(1)).WillReturnRows(statusRows("OPENED"))
 					mock.ExpectRollback()
 				case "finished-session":
 					mock.ExpectBegin()
@@ -1782,6 +1788,43 @@ func TestSpxEditableLockFailuresAcrossGroupRoutes(t *testing.T) {
 				requireErrEnvelope(t, res, m.code)
 			})
 		}
+	}
+}
+
+// TestSpxGroupPatchLockFailures pins the status-claim failures on group PATCH:
+// Begin failure / lock-read failure → DB_UNAVAILABLE, unknown session →
+// NOT_FOUND — before any group read or write.
+func TestSpxGroupPatchLockFailures(t *testing.T) {
+	modes := []struct {
+		mode, code string
+	}{
+		{"begin-fails", CodeDBUnavailable},
+		{"missing-session", CodeNotFound},
+		{"lock-read-fails", CodeDBUnavailable},
+	}
+	for _, m := range modes {
+		t.Run(m.mode, func(t *testing.T) {
+			s, mock := newTestServer(t)
+			app := newTestApp(t, s)
+			h := sessionAdminHeaders(t, s, mock)
+			switch m.mode {
+			case "begin-fails":
+				mock.ExpectBegin().WillReturnError(SpxErr)
+			case "missing-session":
+				mock.ExpectBegin()
+				mock.ExpectQuery(q("FROM sessions WHERE id = ? AND school_id = ? FOR UPDATE")).
+					WithArgs(int64(2), int64(1)).WillReturnError(sql.ErrNoRows)
+				mock.ExpectRollback()
+			case "lock-read-fails":
+				mock.ExpectBegin()
+				mock.ExpectQuery(q("FROM sessions WHERE id = ? AND school_id = ? FOR UPDATE")).
+					WithArgs(int64(2), int64(1)).WillReturnError(SpxErr)
+				mock.ExpectRollback()
+			}
+			res := jsonReq(t, app, "PATCH", "/api/sessions/2/groups/10",
+				map[string]any{"name": "Baru"}, h)
+			requireErrEnvelope(t, res, m.code)
+		})
 	}
 }
 
@@ -2048,6 +2091,99 @@ func TestSpxGroupPatchClearsOwnerOnZero(t *testing.T) {
 	f = covNextFrame(t, sub, "session.changed after facilitator clear")
 	require.Equal(t, "session.changed", f.Entity)
 	covNoFrame(t, sub, "one frame per group patch")
+}
+
+// TestSpxGroupPatchRenamesWhenFinished: renaming is one of the two post-Draft
+// exceptions, so FINISHED still answers 200 and publishes group.changed.
+func TestSpxGroupPatchRenamesWhenFinished(t *testing.T) {
+	s, mock := newTestServer(t)
+	app := newTestApp(t, s)
+	h := sessionAdminHeaders(t, s, mock)
+	sub := covSubscribe(t, s, ScopeSnapshot{Role: "ADMIN", SchoolID: 1})
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(q("FROM sessions WHERE id = ? AND school_id = ? FOR UPDATE")).
+		WithArgs(int64(2), int64(1)).WillReturnRows(statusRows("FINISHED"))
+	mock.ExpectQuery(q("SELECT name FROM session_groups WHERE id = ? AND session_id = ?")).
+		WithArgs(int64(10), int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"name"}).AddRow("Lama"))
+	mock.ExpectExec(q("UPDATE session_groups SET name = ?")).
+		WithArgs("Baru", int64(10), int64(2)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	res := jsonReq(t, app, "PATCH", "/api/sessions/2/groups/10",
+		map[string]any{"name": "Baru"}, h)
+	data := requireDataEnvelope(t, res).(map[string]any)
+	require.Equal(t, float64(10), data["gid"])
+	require.Equal(t, "Baru", data["name"])
+
+	f := covNextFrame(t, sub, "group.changed after finished rename")
+	require.Equal(t, "group.changed", f.Entity)
+	require.Equal(t, "updated", f.Action)
+	covNoFrame(t, sub, "name-only patch publishes no session.changed")
+}
+
+// TestSpxGroupPatchReplacesOwnerWhenOpened: swapping the facilitator is the
+// other post-Draft exception; OPENED accepts a new active FASILITATOR and
+// publishes both group.changed and session.changed.
+func TestSpxGroupPatchReplacesOwnerWhenOpened(t *testing.T) {
+	s, mock := newTestServer(t)
+	app := newTestApp(t, s)
+	h := sessionAdminHeaders(t, s, mock)
+	sub := covSubscribe(t, s, ScopeSnapshot{Role: "ADMIN", SchoolID: 1})
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(q("FROM sessions WHERE id = ? AND school_id = ? FOR UPDATE")).
+		WithArgs(int64(2), int64(1)).WillReturnRows(statusRows("OPENED"))
+	mock.ExpectQuery(q("SELECT name FROM session_groups WHERE id = ? AND session_id = ?")).
+		WithArgs(int64(10), int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"name"}).AddRow("Lama"))
+	mock.ExpectQuery(q("SELECT role, decision, is_active, school_id FROM users WHERE id = ?")).
+		WithArgs(int64(3)).
+		WillReturnRows(sqlmock.NewRows([]string{"role", "decision", "is_active", "school_id"}).
+			AddRow("FASILITATOR", "APPROVED", true, int64(1)))
+	mock.ExpectQuery(q("SELECT name FROM users WHERE id = ?")).
+		WithArgs(int64(3)).
+		WillReturnRows(sqlmock.NewRows([]string{"name"}).AddRow("Fasil Baru"))
+	mock.ExpectExec(q("UPDATE session_groups SET facilitator_id = ?")).
+		WithArgs(int64(3), "Fasil Baru", int64(10), int64(2)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	res := jsonReq(t, app, "PATCH", "/api/sessions/2/groups/10",
+		map[string]any{"facilitator_id": 3}, h)
+	data := requireDataEnvelope(t, res).(map[string]any)
+	require.Equal(t, float64(10), data["gid"])
+	require.Equal(t, "Lama", data["name"])
+
+	f := covNextFrame(t, sub, "group.changed after owner swap")
+	require.Equal(t, "group.changed", f.Entity)
+	f = covNextFrame(t, sub, "session.changed after owner swap")
+	require.Equal(t, "session.changed", f.Entity)
+	covNoFrame(t, sub, "one pair per owner swap")
+}
+
+// TestSpxGroupPatchCannotClearOwnerOutsideDraft: facilitator_id=0 would leave
+// the group ownerless, which makes the reopen gate unsatisfiable. Outside
+// DRAFT it is VALIDATION ("assign a replacement") before any group read.
+func TestSpxGroupPatchCannotClearOwnerOutsideDraft(t *testing.T) {
+	for _, status := range []string{"OPENED", "FINISHED"} {
+		t.Run(status, func(t *testing.T) {
+			s, mock := newTestServer(t)
+			app := newTestApp(t, s)
+			h := sessionAdminHeaders(t, s, mock)
+
+			mock.ExpectBegin()
+			mock.ExpectQuery(q("FROM sessions WHERE id = ? AND school_id = ? FOR UPDATE")).
+				WithArgs(int64(2), int64(1)).WillReturnRows(statusRows(status))
+			mock.ExpectRollback()
+
+			res := jsonReq(t, app, "PATCH", "/api/sessions/2/groups/10",
+				map[string]any{"facilitator_id": 0}, h)
+			requireErrEnvelope(t, res, CodeValidation)
+		})
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -3175,7 +3311,7 @@ func TestSpxSessionDeleteFailureBranches(t *testing.T) {
 			WillReturnResult(sqlmock.NewResult(0, 0))
 		// The re-read shows a status that forbids the wipe (E10 wrong-state:
 		// a rival opened the session) → SESSION_LOCKED, matching how the
-		// PATCH zero-rows branch classifies OPENED/FINISHED.
+		// PATCH zero-rows branch classifies OPENED/closeED.
 		mock.ExpectQuery(q("FROM sessions WHERE id = ? AND school_id = ?")).
 			WithArgs(int64(2), int64(1)).WillReturnRows(statusRows("OPENED"))
 		mock.ExpectRollback()
@@ -3391,7 +3527,7 @@ func TestSpxTransitionFailureBranches(t *testing.T) {
 		mock.ExpectExec(q("UPDATE sessions SET status = ? WHERE id = ?")).
 			WithArgs("OPENED", int64(2), int64(1), "DRAFT").
 			WillReturnResult(sqlmock.NewResult(0, 0))
-		// A status outside DRAFT/OPENED/FINISHED ranks below the target →
+		// A status outside DRAFT/OPENED/closeED ranks below the target →
 		// the loser gets SESSION_LOCKED (E10), never STATE_CONFLICT.
 		mock.ExpectQuery(q("FROM sessions WHERE id = ? AND school_id = ?")).
 			WithArgs(int64(2), int64(1)).WillReturnRows(statusRows("ARCHIVED"))
@@ -3402,7 +3538,7 @@ func TestSpxTransitionFailureBranches(t *testing.T) {
 	})
 }
 
-// TestSpxTransitionCommitFailureIsDBUnavailable: the guarded reopen commits…
+// TestSpxTransitionCommitFailureIsDBUnavailable: the guarded close commits…
 // and the COMMIT itself failing is a 200 DB_UNAVAILABLE.
 func TestSpxTransitionCommitFailureIsDBUnavailable(t *testing.T) {
 	s, mock := newTestServer(t)
@@ -3410,16 +3546,16 @@ func TestSpxTransitionCommitFailureIsDBUnavailable(t *testing.T) {
 	h := sessionAdminHeaders(t, s, mock)
 
 	mock.ExpectQuery(q("FROM sessions WHERE id = ? AND school_id = ?")).
-		WithArgs(int64(4), int64(1)).WillReturnRows(statusRows("FINISHED"))
+		WithArgs(int64(4), int64(1)).WillReturnRows(statusRows("OPENED"))
 	mock.ExpectBegin()
 	mock.ExpectQuery(q("FROM sessions WHERE id = ? AND school_id = ? FOR UPDATE")).
-		WithArgs(int64(4), int64(1)).WillReturnRows(statusRows("FINISHED"))
+		WithArgs(int64(4), int64(1)).WillReturnRows(statusRows("OPENED"))
 	mock.ExpectExec(q("UPDATE sessions SET status = ? WHERE id = ?")).
-		WithArgs("OPENED", int64(4), int64(1), "FINISHED").
+		WithArgs("FINISHED", int64(4), int64(1), "OPENED").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit().WillReturnError(SpxErr)
 
-	res := doReq(t, app, "POST", "/api/sessions/4/reopen", "", h)
+	res := doReq(t, app, "POST", "/api/sessions/4/close", "", h)
 	requireErrEnvelope(t, res, CodeDBUnavailable)
 }
 

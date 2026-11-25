@@ -29,8 +29,8 @@ function errorKeys(lang: string): string[] {
 
 describe('error-code catalogue parity (06 §1, 33 codes)', () => {
   it('pins exactly 33 codes', () => {
-    expect(PINNED_ERROR_CODES).toHaveLength(33)
-    expect(new Set(PINNED_ERROR_CODES).size, 'pinned codes must be unique').toBe(33)
+    expect(PINNED_ERROR_CODES).toHaveLength(34)
+    expect(new Set(PINNED_ERROR_CODES).size, 'pinned codes must be unique').toBe(34)
   })
 
   it.each(['id', 'en'])(

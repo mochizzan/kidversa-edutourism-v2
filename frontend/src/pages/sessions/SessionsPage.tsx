@@ -1,12 +1,20 @@
 /**
  * Session list (F-08): server-paged, server-side status/q filters, SSE
- * same-params refetch (`session.changed`), `session.deleted` drops the row
- * (soft same-params refetch). No client slicing, no polling.
+ * same-params refetch (`session.changed` / `session.status`), `session.deleted`
+ * drops the row (soft same-params refetch). No client slicing, no polling.
+ *
+ * Every row carries the same inline lifecycle actions for SA/ADMIN — Edit,
+ * Open, Close, Delete — so managers never have to open a session just to act
+ * on it. A status that forbids an action leaves its button visible but
+ * disabled with a reason, keeping the column predictable from row to row.
+ * Open-gate failures open a dialog that names the groups to fix and links to
+ * the detail page; delete fetches the detail first so its typed wipe gate
+ * keeps the real scope counts.
  */
 import { useState } from 'react'
-import { Alert, Button, Input, Select, Space, Tooltip } from 'antd'
+import { Alert, App as AntApp, Button, Input, Select, Space, Tooltip } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import { EyeOutlined, PlusOutlined } from '@ant-design/icons'
+import { PlusOutlined } from '@ant-design/icons'
 import { Link, useNavigate } from 'react-router'
 import { useTranslation } from 'react-i18next'
 import DataTable from '../../components/DataTable'
@@ -15,37 +23,108 @@ import FilterBar, { FilterField } from '../../components/FilterBar'
 import PageHeader from '../../components/PageHeader'
 import Pager from '../../components/Pager'
 import RefreshButton from '../../components/RefreshButton'
-import { RowAction, RowActions } from '../../components/RowActions'
 import StatusChip from '../../components/StatusChip'
-import { errorCode } from '../../lib/api'
+import { api, errorCode } from '../../lib/api'
 import { useAuth } from '../../lib/auth'
+import { useErrorToast } from '../../lib/errors'
 import { useListLoader } from '../../lib/list'
-import type { SessionListItem } from '../../lib/session-contracts'
+import type { SessionDetail, SessionListItem } from '../../lib/session-contracts'
+import DeleteSessionDialog from './DeleteSessionDialog'
+import SessionMetaModal from './SessionMetaModal'
+import SessionRowActions from './SessionRowActions'
+import StartGateDialog from './StartGateDialog'
 import './sessions.css'
 
 export default function SessionsPage() {
   const { t } = useTranslation('session')
   const { t: tc } = useTranslation('common')
+  const { message } = AntApp.useApp()
+  const toastError = useErrorToast()
   const { user } = useAuth()
   const navigate = useNavigate()
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(20)
   const [status, setStatus] = useState('')
   const [q, setQ] = useState('')
+  const [editing, setEditing] = useState<SessionListItem | null>(null)
+  const [openingId, setOpeningId] = useState<number | null>(null)
+  const [closingId, setClosingId] = useState<number | null>(null)
+  const [openGate, setOpenGate] = useState<{ session: SessionListItem; failure: unknown } | null>(
+    null,
+  )
+  const [preparingDeleteId, setPreparingDeleteId] = useState<number | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<SessionDetail | null>(null)
 
   const { rows, meta, error, loading, reload } = useListLoader<SessionListItem>(
     '/api/sessions',
     { page, per_page: perPage, status: status || undefined, q: q || undefined },
-    ['session.changed', 'session.deleted'],
+    ['session.changed', 'session.status', 'session.deleted'],
   )
 
   const canManage = user?.role === 'SA' || user?.role === 'ADMIN'
+
+  const openSession = async (row: SessionListItem) => {
+    setOpeningId(row.id)
+    try {
+      await api.post<{ status: string; already?: boolean }>(`/api/sessions/${row.id}/open`)
+      message.success(t('detail.openDone'))
+      reload()
+    } catch (failure: unknown) {
+      const code = errorCode(failure)
+      if (code === 'VALIDATION' || code === 'GROUP_WITHOUT_FACILITATOR') {
+        setOpenGate({ session: row, failure })
+      } else if (code === 'STATE_CONFLICT' || code === 'SESSION_LOCKED') {
+        toastError(failure)
+        reload()
+      } else {
+        toastError(failure)
+      }
+    } finally {
+      setOpeningId(null)
+    }
+  }
+
+  const closeSession = async (row: SessionListItem) => {
+    setClosingId(row.id)
+    try {
+      await api.post<{ status: string; already?: boolean }>(`/api/sessions/${row.id}/close`)
+      message.success(t('detail.closeDone'))
+      reload()
+    } catch (failure: unknown) {
+      toastError(failure)
+      const code = errorCode(failure)
+      if (code === 'STATE_CONFLICT' || code === 'SESSION_LOCKED') {
+        reload()
+      }
+    } finally {
+      setClosingId(null)
+    }
+  }
+
+  const openDelete = async (row: SessionListItem) => {
+    setPreparingDeleteId(row.id)
+    try {
+      const detail = await api.get<SessionDetail>(`/api/sessions/${row.id}`)
+      if (detail.session.status === 'OPENED') {
+        // The row was stale: an open session must be closed first.
+        message.warning(t('list.actionHints.deleteOpened'))
+        reload()
+        return
+      }
+      setDeleteTarget(detail)
+    } catch (failure: unknown) {
+      toastError(failure)
+      if (errorCode(failure) === 'NOT_FOUND') reload()
+    } finally {
+      setPreparingDeleteId(null)
+    }
+  }
 
   const columns: ColumnsType<SessionListItem> = [
     {
       title: t('list.name'),
       dataIndex: 'name',
-      width: 220,
+      width: 200,
       ellipsis: true,
       render: (name: string, row) => (
         <span className="kv-sessions-name">
@@ -63,9 +142,9 @@ export default function SessionsPage() {
         </span>
       ),
     },
-    { title: t('list.program'), dataIndex: 'program_name', width: 180, ellipsis: true },
+    { title: t('list.program'), dataIndex: 'program_name', width: 150, ellipsis: true },
     { title: t('list.date'), dataIndex: 'date', width: 110 },
-    { title: t('list.location'), dataIndex: 'location', width: 180, ellipsis: true },
+    { title: t('list.location'), dataIndex: 'location', width: 150, ellipsis: true },
     {
       title: t('list.status'),
       dataIndex: 'status',
@@ -75,33 +154,39 @@ export default function SessionsPage() {
     {
       title: t('list.groups'),
       dataIndex: 'group_count',
-      width: 90,
+      width: 80,
       align: 'right',
       className: 'kv-num',
     },
     {
       title: t('list.members'),
       dataIndex: 'member_count',
-      width: 100,
+      width: 90,
       align: 'right',
       className: 'kv-num',
     },
-    {
+  ]
+
+  if (canManage) {
+    columns.push({
       title: tc('columns.actions'),
       key: 'actions',
-      width: 92,
+      width: 148,
       fixed: 'right',
       render: (_, row) => (
-        <RowActions>
-          <RowAction
-            label={tc('actions.view')}
-            icon={<EyeOutlined />}
-            onClick={() => navigate(`/sessions/${row.id}`)}
-          />
-        </RowActions>
+        <SessionRowActions
+          status={row.status}
+          opening={openingId === row.id}
+          closing={closingId === row.id}
+          deleting={preparingDeleteId === row.id}
+          onEdit={() => setEditing(row)}
+          onOpen={() => void openSession(row)}
+          onClose={() => void closeSession(row)}
+          onDelete={() => void openDelete(row)}
+        />
       ),
-    },
-  ]
+    })
+  }
 
   return (
     <>
@@ -173,7 +258,7 @@ export default function SessionsPage() {
             columns={columns}
             dataSource={rows}
             pagination={false}
-            scroll={{ x: 1092 }}
+            scroll={{ x: 1038 }}
             empty={
               <EmptyState
                 title={t('list.empty')}
@@ -206,6 +291,45 @@ export default function SessionsPage() {
           ) : null}
         </>
       )}
+
+      {editing ? (
+        <SessionMetaModal
+          session={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null)
+            message.success(t('detail.metaSaved'))
+            reload()
+          }}
+        />
+      ) : null}
+
+      {openGate ? (
+        <StartGateDialog
+          sessionName={openGate.session.name}
+          status={openGate.session.status}
+          failure={openGate.failure}
+          onClose={() => setOpenGate(null)}
+          onReview={() => {
+            const sid = openGate.session.id
+            setOpenGate(null)
+            navigate(`/sessions/${sid}`)
+          }}
+        />
+      ) : null}
+
+      {deleteTarget ? (
+        <DeleteSessionDialog
+          detail={deleteTarget}
+          open
+          onCancel={() => setDeleteTarget(null)}
+          onDeleted={() => {
+            setDeleteTarget(null)
+            message.success(t('detail.deleted'))
+            reload()
+          }}
+        />
+      ) : null}
     </>
   )
 }

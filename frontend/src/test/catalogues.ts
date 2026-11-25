@@ -6,7 +6,7 @@
  * from either side; when the spec grows, update BOTH pins.
  */
 
-/** 06 §1 error taxonomy: E1..E32 + EX — 33 envelope codes. */
+/** 06 §1 error taxonomy: E1..E33 + EX — 34 envelope codes. */
 export const PINNED_ERROR_CODES: readonly string[] = [
   'VALIDATION',
   'EMAIL_TAKEN',
@@ -40,6 +40,7 @@ export const PINNED_ERROR_CODES: readonly string[] = [
   'NOT_FOUND',
   'HAS_OPEN_GROUPS',
   'CHILD_INACTIVE',
+  'SESSION_ROSTER_LOCKED',
   'INTERNAL',
 ]
 

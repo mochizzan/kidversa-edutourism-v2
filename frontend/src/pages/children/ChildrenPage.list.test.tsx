@@ -4,7 +4,7 @@
  * the is_active filter/search/sort/pager cursor contract, age 1–10 direct
  * save with the WA normalisation previews, blocked father numbers, the
  * standing `age_confirmed` acknowledgement on edit, the counts-gated typed
- * delete (`GET /api/children/:id` → `{child, counts}`), activate/deactivate
+ * delete (`GET /api/children/:id` → `{child, counts, sessions}`), activate/deactivate
  * POSTs with `errors.<CODE>` toasts and the `child.changed` SSE refetch.
  */
 import { describe, expect, it } from 'vitest'
@@ -311,6 +311,32 @@ describe('children delete', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     await waitFor(() => expect(list.seen.length).toBeGreaterThan(initialFetches))
     await expectToast('Anak “Aisyah Putri” dihapus')
+  })
+
+  it('warns when the child belongs to non-draft sessions', async () => {
+    const list = pagedList('/api/children', [CHILD])
+    server.use(
+      list.handler,
+      http.get('/api/children/7', () =>
+        ok({
+          child: CHILD,
+          counts: { members: 2, assessments: 0, photos: 0, narratives: 0, missions: 0, links: 0 },
+          sessions: [
+            { id: 3, name: 'Sesi Batik', status: 'OPENED' },
+            { id: 4, name: 'Sesi Tari', status: 'FINISHED' },
+          ],
+        }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderAs(<ChildrenPage />)
+    await screen.findByText('Aisyah Putri')
+
+    await user.click(within(rowOf('Aisyah Putri')).getByRole('button', { name: /Hapus/ }))
+    const dialog = await screen.findByRole('dialog')
+
+    await within(dialog).findByText(/Sesi Batik \(Dibuka\), Sesi Tari \(Selesai\)/)
+    await within(dialog).findByText(/Daftar anggotanya dibekukan/)
   })
 
   it('a failed counts fetch toasts errors.<CODE> and opens no dialog', async () => {

@@ -250,27 +250,39 @@ never waterfall; FAS foreign groups reduced to
 session's status — `session_groups` has no status column, the value is
 DERIVED from the session row (user decision 44 / D-8, 2026-10-11; `own`
 marks group ownership), contracts doc pinned identically),
-`PATCH /api/sessions/:id` (ADMIN/SA; Draft=anything; Opened=groups/members
-only; Finished → 200 `SESSION_LOCKED`, use reopen),
+`PATCH /api/sessions/:id` (ADMIN/SA; metadata name/description/date/time/
+location editable while Draft only — a real metadata change on Opened or
+Finished → 200 `SESSION_LOCKED`; `program_id` always → 200
+`SESSION_LOCKED`),
 `DELETE /api/sessions/:id` (ADMIN/SA; Draft/Finished = typed-text modal
-wipe with scope counts; Opened → 200 `SESSION_LOCKED`, finish first),
-`POST /api/sessions/:id/open|finish|reopen` (ADMIN/SA; guarded transitions —
-already-in-target returns 200 `{data:{status, already:true}}`),
-groups: `GET|POST /api/sessions/:id/groups` (mutate ADMIN/SA; Draft/Opened;
-Finished → 200 `SESSION_LOCKED`),
+wipe with scope counts; Opened → 200 `SESSION_LOCKED`, close first),
+`POST /api/sessions/:id/open|close` (ADMIN/SA; guarded transitions — open
+accepts DRAFT or FINISHED and re-runs the open gates on every start; close
+accepts OPENED with no completion prerequisites; already-in-target returns
+200 `{data:{status, already:true}}`),
+groups (post-Draft roster freeze): `GET|POST /api/sessions/:id/groups`
+(read every status; create ADMIN/SA + DRAFT only — Opened/Finished → 200
+`SESSION_ROSTER_LOCKED`),
 `PATCH /api/sessions/:id/groups/:gid {name?, facilitator_id?}` (ADMIN/SA;
-Draft/Opened only, Finished → 200 `SESSION_LOCKED`; new owner must be an
-active `FASILITATOR` of the same school else 200 `VALIDATION`),
-`DELETE /api/sessions/:id/groups/:gid` (ADMIN/SA; Draft/Opened only,
-Finished → 200 `SESSION_LOCKED`; user decision 2026-10-08 option B cascade
-wipe: deletes the group + removes ALL its members from the session + wipes
-their session-scoped data — assessments, photo rows + disk files,
-narratives, mission picks, consent/public links for those children in this
-session — in one Tx (disk after commit); masters/children untouched;
+allowed in EVERY status — rename + facilitator replacement are the only
+post-Draft exceptions; new owner must be an active `FASILITATOR` of the
+same school else 200 `VALIDATION`; outside Draft `facilitator_id:0` → 200
+`VALIDATION` ("assign a replacement") — an ownerless group could never pass
+the reopen gate),
+`DELETE /api/sessions/:id/groups/:gid` (ADMIN/SA; DRAFT only —
+Opened/Finished → 200 `SESSION_ROSTER_LOCKED`; user decision 2026-10-08
+option B cascade wipe: deletes the group + removes ALL its members from the
+session + wipes their session-scoped data — assessments, photo rows + disk
+files, narratives, mission picks, consent/public links for those children in
+this session — in one Tx (disk after commit); masters/children untouched;
 client confirms via typed-text modal with member + artefact counts),
 `POST /api/sessions/:id/groups/:gid/members {child_ids[]}` (bulk add, active children, dedup) /
 `DELETE /api/sessions/:id/groups/:gid/members/:childId` (single remove; same per-child session wipe
-as group delete, silently — no trash for MVP).
+as group delete, silently — no trash for MVP) — both DRAFT only,
+Opened/Finished → 200 `SESSION_ROSTER_LOCKED`. The structural freeze exists
+because OPENED → FINISHED accepts the roster as-is while every reopen
+re-runs the open gates: an Opened add/remove can produce a closed session
+that can never reopen (delete-only).
 
 Copy-data [ADMIN/SA] (user decision round 6): `GET
 /api/sessions/:sid/children/:cid/copy-candidates` → other same-program
@@ -440,7 +452,7 @@ ignored without request):
 | `frame.changed` | frame CRUD + frame_programs edit | `GET /api/frames?…` + capture frame list |
 | `child.changed` | child CRUD / activate / deactivate / delete | `GET /api/children` (+ open detail) |
 | `session.changed` (`created\|updated`) | session create / PATCH | `GET /api/sessions` + open detail |
-| `session.status` | open / finish / reopen (guarded Tx winner only) | session detail + status chip |
+| `session.status` | open / close (guarded Tx winner only) | session detail + status chip |
 | `session.deleted` | Draft/Finished wipe commit | session list (drop row) + close detail if open |
 | `group.changed` | group create / PATCH / delete | `GET /api/sessions/:id` groups section |
 | `member.changed` | member add AND member remove — `copy_available` hint recomputed server-side at publish on BOTH (child in other same-program sessions?) | groups section + (if modal trigger) `GET …/copy-candidates` |

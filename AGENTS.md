@@ -160,7 +160,7 @@ go test ./internal/integration/... -v -tags=integration  # Integration tests
 
 - **Naming**: camelCase for unexported, PascalCase for exported, ALL_CAPS for env vars
 - **Structure**: Package per domain, vertical slices, no service/repository/dto layers
-- **Error Handling**: Custom codes E1-E32 + EX taxonomy (VALIDATION, INVALID_CREDENTIALS, TOKEN_INVALID, etc.)
+- **Error Handling**: Custom codes E1-E33 + EX taxonomy (VALIDATION, INVALID_CREDENTIALS, TOKEN_INVALID, etc.)
 - **No HTTP Errors**: No 401/403/404/409/422/429 — all are HTTP 200 envelopes
 - **Middleware Pipeline Order**:
   1. recover

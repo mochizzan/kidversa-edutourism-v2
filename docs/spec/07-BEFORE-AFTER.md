@@ -103,7 +103,7 @@ Nothing.
 
 ### REQUESTED CHANGE
 Session copies one whole program + groups; Draft→Opened→Finished;
-reopen by ADMIN/SA. Post-audit decision: NO CANCELED state —
+open again by ADMIN/SA. Post-audit decision: NO CANCELED state —
 Draft/Finished DELETE = physical wipe, no trace.
 
 ### AFTER

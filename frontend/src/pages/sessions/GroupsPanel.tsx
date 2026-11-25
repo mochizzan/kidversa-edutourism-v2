@@ -1,7 +1,13 @@
 /**
  * Session groups panel (F-08 / FL-08): add / rename / reassign owner /
- * add-remove members / cascade-delete, mutable only while Draft or Opened
- * (Finished hides the actions — the server would answer SESSION_LOCKED).
+ * add-remove members / cascade-delete.
+ *
+ * Mutability is split by lifecycle:
+ * - DRAFT: every action (roster + group meta).
+ * - OPENED / FINISHED: roster is FROZEN (server answers
+ *   SESSION_ROSTER_LOCKED); only rename and facilitator replacement remain.
+ *   This keeps the reopen gate satisfiable (≥1 non-empty group with an active
+ *   facilitator) for a session that has already left DRAFT.
  *
  * FAS sees own groups fully and foreign groups reduced to
  * `{gid, name, own:false, member_count, status}` (no owner/consent/members, no
@@ -19,6 +25,7 @@ import { Alert, App as AntApp, Button, Card, Input, Modal, Space, Typography } f
 import {
   DeleteOutlined,
   EditOutlined,
+  LockOutlined,
   PlusOutlined,
   UserAddOutlined,
 } from '@ant-design/icons'
@@ -35,6 +42,7 @@ import {
   type SessionDetail,
   type SessionGroup,
   type SessionMember,
+  type SessionStatus,
 } from '../../lib/session-contracts'
 
 interface ProgressTopic {
@@ -80,7 +88,11 @@ export default function GroupsPanel({
   const { t: tc } = useTranslation('common')
   const { message } = AntApp.useApp()
   const sid = detail.session.id
-  const mutable = canManage && detail.session.status !== 'FINISHED'
+  const status = detail.session.status
+  /** Structural roster actions: DRAFT only (server: SESSION_ROSTER_LOCKED). */
+  const canEditRoster = canManage && status === 'DRAFT'
+  /** Post-Draft exceptions: rename + facilitator replacement, every status. */
+  const canEditGroupMeta = canManage
   const firstStid = detail.topics[0]?.stid
 
   const { rows: children } = useListLoader<ChildRow>(
@@ -104,6 +116,12 @@ export default function GroupsPanel({
   const [deleteTarget, setDeleteTarget] = useState<SessionGroup | null>(null)
   const [removeBusy, setRemoveBusy] = useState(false)
   const [removeError, setRemoveError] = useState<unknown>(null)
+
+  // Status is derived into dialog visibility rather than synced via an
+  // effect: a transition to OPENED/FINISHED instantly hides every structural
+  // dialog (create group / add members / remove / delete). The group editor
+  // stays reachable because rename + facilitator replacement remain legal,
+  // and a session can never return to DRAFT after leaving it.
 
   const removeMember = async () => {
     if (!removeTarget) return
@@ -137,7 +155,7 @@ export default function GroupsPanel({
             </span>
           ) : null}
         </div>
-        {mutable ? (
+        {canEditRoster ? (
           <Button
             size="small"
             icon={<PlusOutlined aria-hidden="true" />}
@@ -148,9 +166,23 @@ export default function GroupsPanel({
         ) : null}
       </div>
 
+      {canManage && status !== 'DRAFT' ? (
+        <p className="kv-groups-lock">
+          <LockOutlined aria-hidden="true" />
+          <span>{t(status === 'FINISHED' ? 'group.rosterLockedFinished' : 'group.rosterLockedOpened')}</span>
+        </p>
+      ) : null}
+
       {detail.groups.length === 0 ? (
         <div className="kv-groups-empty">
-          <EmptyState title={t('detail.noGroups')} />
+          {status === 'DRAFT' ? (
+            <EmptyState title={t('detail.noGroups')} />
+          ) : (
+            <EmptyState
+              title={t('detail.noGroupsLocked')}
+              description={t('detail.noGroupsLockedHint')}
+            />
+          )}
         </div>
       ) : null}
 
@@ -168,7 +200,7 @@ export default function GroupsPanel({
                   {t('list.members')}: {group.member_count}
                 </p>
               </div>
-              {mutable ? (
+              {canEditGroupMeta ? (
                 <div className="kv-group-card__actions">
                   <Button
                     size="small"
@@ -178,23 +210,27 @@ export default function GroupsPanel({
                   >
                     {t('group.edit')}
                   </Button>
-                  <Button
-                    size="small"
-                    type="text"
-                    icon={<UserAddOutlined aria-hidden="true" />}
-                    onClick={() => setMemberModalGid(group.gid)}
-                  >
-                    {t('group.addMembers')}
-                  </Button>
-                  <Button
-                    size="small"
-                    type="text"
-                    danger
-                    icon={<DeleteOutlined aria-hidden="true" />}
-                    onClick={() => setDeleteTarget(group)}
-                  >
-                    {t('group.delete')}
-                  </Button>
+                  {canEditRoster ? (
+                    <>
+                      <Button
+                        size="small"
+                        type="text"
+                        icon={<UserAddOutlined aria-hidden="true" />}
+                        onClick={() => setMemberModalGid(group.gid)}
+                      >
+                        {t('group.addMembers')}
+                      </Button>
+                      <Button
+                        size="small"
+                        type="text"
+                        danger
+                        icon={<DeleteOutlined aria-hidden="true" />}
+                        onClick={() => setDeleteTarget(group)}
+                      >
+                        {t('group.delete')}
+                      </Button>
+                    </>
+                  ) : null}
                 </div>
               ) : null}
             </div>
@@ -214,7 +250,7 @@ export default function GroupsPanel({
 
             {(group.members ?? []).length === 0 ? (
               <div className="kv-member-empty">
-                <EmptyState title={t('group.empty')} />
+                <EmptyState title={t(status === 'DRAFT' ? 'group.empty' : 'group.emptyLocked')} />
               </div>
             ) : (
               <ul className="kv-member-list">
@@ -232,7 +268,7 @@ export default function GroupsPanel({
                       <Button type="link" size="small">{t('group.gallery')}</Button>
                     </Link>,
                   )
-                  if (mutable) {
+                  if (canEditRoster) {
                     actions.push(
                       <Button
                         key="remove"
@@ -279,9 +315,10 @@ export default function GroupsPanel({
         ),
       )}
 
-      {groupModal.open ? (
+      {groupModal.open && (groupModal.editing !== null || canEditRoster) ? (
         <GroupFormModal
           sid={sid}
+          sessionStatus={status}
           initial={groupModal.editing}
           onCancel={() => setGroupModal({ open: false, editing: null })}
           onDone={(created) => {
@@ -292,7 +329,7 @@ export default function GroupsPanel({
         />
       ) : null}
 
-      {memberModalGroup ? (
+      {memberModalGroup && canEditRoster ? (
         <MemberAddModal
           sid={sid}
           group={memberModalGroup}
@@ -313,7 +350,7 @@ export default function GroupsPanel({
       ) : null}
 
       <ConfirmDialog
-        open={removeTarget !== null}
+        open={canEditRoster && removeTarget !== null}
         title={t('group.removeTitle', { name: removeTarget?.member.name ?? '' })}
         danger
         loading={removeBusy}
@@ -337,7 +374,7 @@ export default function GroupsPanel({
         ) : null}
       </ConfirmDialog>
 
-      {deleteTarget ? (
+      {deleteTarget && canEditRoster ? (
         <DeleteGroupDialog
           sid={sid}
           group={deleteTarget}
@@ -355,35 +392,68 @@ export default function GroupsPanel({
 
 function GroupFormModal({
   sid,
+  sessionStatus,
   initial,
   onCancel,
   onDone,
 }: {
   sid: number
+  sessionStatus: SessionStatus
   initial: SessionGroup | null
   onCancel: () => void
   onDone: (created: boolean) => void
 }) {
   const { t } = useTranslation('session')
   const { t: tc } = useTranslation('common')
+  const draft = sessionStatus === 'DRAFT'
+  const initialOwner = initial?.owner?.id ?? null
   const [name, setName] = useState(initial?.name ?? '')
-  const [owner, setOwner] = useState<number | null>(initial?.owner?.id ?? null)
+  const [owner, setOwner] = useState<number | null>(initialOwner)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<unknown>(null)
   const [nameError, setNameError] = useState<string | null>(null)
+  const [ownerError, setOwnerError] = useState<string | null>(null)
 
   const save = async () => {
-    if (!name.trim()) {
+    const trimmed = name.trim()
+    let invalid = false
+    if (!trimmed) {
       setNameError(t('form.errors.groupName'))
-      return
+      invalid = true
+    } else {
+      setNameError(null)
     }
-    setNameError(null)
+    // Outside DRAFT the group must keep an owner: clearing it would make the
+    // reopen gate unsatisfiable (server: VALIDATION / MsgFacilitatorRequired).
+    if (!draft && owner === null) {
+      setOwnerError(t('group.ownerRequired'))
+      invalid = true
+    } else {
+      setOwnerError(null)
+    }
+    if (invalid) return
+
     setBusy(true)
     setError(null)
     try {
-      const body = { name: name.trim(), facilitator_id: owner }
-      if (initial) await api.patch(`/api/sessions/${sid}/groups/${initial.gid}`, body)
-      else await api.post(`/api/sessions/${sid}/groups`, body)
+      if (!initial) {
+        await api.post(`/api/sessions/${sid}/groups`, {
+          name: trimmed,
+          facilitator_id: owner ?? 0,
+        })
+      } else {
+        // PATCH only the fields the user actually changed: a no-op body is
+        // VALIDATION, and outside DRAFT an explicit facilitator_id 0 is
+        // rejected because it would leave the group ownerless.
+        const body: { name?: string; facilitator_id?: number } = {}
+        if (trimmed !== initial.name) body.name = trimmed
+        if (owner !== initialOwner) body.facilitator_id = owner ?? 0
+        if (body.name === undefined && body.facilitator_id === undefined) {
+          onCancel()
+          return
+        }
+        await api.patch(`/api/sessions/${sid}/groups/${initial.gid}`, body)
+      }
       onDone(initial === null)
     } catch (failure: unknown) {
       setError(failure)
@@ -391,6 +461,20 @@ function GroupFormModal({
       setBusy(false)
     }
   }
+
+  const errorMessage = (() => {
+    if (!error) return null
+    if (
+      error instanceof ApiError &&
+      error.code === 'VALIDATION' &&
+      (initial === null || owner !== initialOwner)
+    ) {
+      return t('group.ownerInactive')
+    }
+    return error instanceof ApiError && error.message !== error.code
+      ? error.message
+      : tc(`errors.${errorCode(error)}`)
+  })()
 
   return (
     <Modal
@@ -405,30 +489,35 @@ function GroupFormModal({
     >
       <Space direction="vertical" style={{ width: '100%' }}>
         <div className="kv-field">
-          <span className="kv-field-label">{t('form.groupName')}</span>
+          <label className="kv-field-label" htmlFor="kv-group-name">
+            {t('form.groupName')}
+          </label>
           <Input
+            id="kv-group-name"
             placeholder={t('form.groupNamePlaceholder')}
             value={name}
+            aria-invalid={nameError !== null}
             onChange={(event) => setName(event.target.value)}
           />
         </div>
         {nameError ? <FormError>{nameError}</FormError> : null}
         <div className="kv-field">
-          <span className="kv-field-label">{t('form.owner')}</span>
-          <OwnerPicker value={owner} onChange={setOwner} />
-        </div>
-        <Typography.Text type="secondary">{t('group.ownerOptional')}</Typography.Text>
-        {error ? (
-          <Alert
-            type="error"
-            showIcon
-            message={
-              error instanceof ApiError && error.code === 'VALIDATION'
-                ? t('group.ownerInactive')
-                : tc(`errors.${errorCode(error)}`)
-            }
+          <label className="kv-field-label" htmlFor="kv-group-owner">
+            {t('form.owner')}
+          </label>
+          <OwnerPicker
+            id="kv-group-owner"
+            ariaLabel={t('form.owner')}
+            value={owner}
+            onChange={setOwner}
+            allowClear={draft}
           />
-        ) : null}
+        </div>
+        {ownerError ? <FormError>{ownerError}</FormError> : null}
+        <Typography.Text type="secondary">
+          {draft ? t('group.ownerOptional') : t('group.ownerLockedHint')}
+        </Typography.Text>
+        {errorMessage ? <Alert type="error" showIcon message={errorMessage} /> : null}
       </Space>
     </Modal>
   )
@@ -473,7 +562,7 @@ function MemberAddModal({
     <Modal
       open
       title={`${t('group.addMembers')} — ${group.name}`}
-      okText={tc('actions.create')}
+      okText={t('group.addMembers')}
       cancelText={tc('actions.cancel')}
       confirmLoading={busy}
       okButtonProps={{ disabled: selected.length === 0 }}
@@ -483,7 +572,13 @@ function MemberAddModal({
     >
       <Space direction="vertical" style={{ width: '100%' }}>
         <Typography.Text type="secondary">{t('form.childrenHint')}</Typography.Text>
-        <ChildPicker rows={rows} value={selected} excludeIds={existing} onChange={setSelected} />
+        <ChildPicker
+          rows={rows}
+          value={selected}
+          excludeIds={existing}
+          onChange={setSelected}
+          ariaLabel={t('form.children')}
+        />
         {error ? (
           <Alert
             type="error"

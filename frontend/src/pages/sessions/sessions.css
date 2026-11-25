@@ -44,3 +44,48 @@
   border-radius: 50%;
   background: var(--kv-violet);
 }
+
+/* ---------- start-gate dialog ----------
+   A gate failure is a short list of names to fix, not a paragraph to parse. */
+
+.kv-session-gate {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kv-space-3);
+}
+
+.kv-session-gate__reason {
+  margin: 0;
+  padding-left: var(--kv-space-3);
+  border-left: 2px solid var(--kv-olive-deep);
+  color: var(--kv-text);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.kv-session-gate__groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kv-session-gate__group {
+  padding: 2px 9px;
+  border: 1px solid var(--kv-border);
+  border-radius: var(--kv-radius-pill);
+  background: var(--kv-surface);
+  color: var(--kv-text);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.kv-session-gate__hint {
+  margin: 0;
+  color: var(--kv-text-2);
+  font-size: 11px;
+  line-height: 16px;
+}
+

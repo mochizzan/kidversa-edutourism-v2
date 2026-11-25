@@ -148,8 +148,8 @@ func statusRows(status string) *sqlmock.Rows {
 	return sqlmock.NewRows([]string{"status"}).AddRow(status)
 }
 
-// expectTransition wires one guarded OPENED↔FINISHED transition through the
-// full request path (auth → steady-state read → locked Tx → publish).
+// expectTransition wires one guarded close transition through the full request
+// path (auth → steady-state read → locked Tx → publish).
 func expectTransition(mock sqlmock.Sqlmock, sid int64, from, to string) {
 	mock.ExpectQuery(q(sqlUserByID)).WithArgs(int64(2)).WillReturnRows(sqlAdminRow())
 	mock.ExpectQuery(q("FROM sessions WHERE id = ? AND school_id = ?")).
@@ -159,6 +159,31 @@ func expectTransition(mock sqlmock.Sqlmock, sid int64, from, to string) {
 		WithArgs(sid, int64(1)).WillReturnRows(statusRows(from))
 	mock.ExpectExec(q("UPDATE sessions SET status = ? WHERE id = ?")).
 		WithArgs(to, sid, int64(1), from).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+}
+
+// expectOpenFromFinished wires a restart (FINISHED → OPENED), which runs the
+// same group/child/facilitator gates as the first start.
+func expectOpenFromFinished(mock sqlmock.Sqlmock, sid int64) {
+	mock.ExpectQuery(q(sqlUserByID)).WithArgs(int64(2)).WillReturnRows(sqlAdminRow())
+	mock.ExpectQuery(q("FROM sessions WHERE id = ? AND school_id = ?")).
+		WithArgs(sid, int64(1)).WillReturnRows(statusRows("FINISHED"))
+	mock.ExpectBegin()
+	mock.ExpectQuery(q("FROM sessions WHERE id = ? AND school_id = ? FOR UPDATE")).
+		WithArgs(sid, int64(1)).WillReturnRows(statusRows("FINISHED"))
+	mock.ExpectQuery(q("SELECT COUNT(*) FROM session_groups WHERE session_id = ?")).
+		WithArgs(sid).
+		WillReturnRows(sqlmock.NewRows([]string{"n"}).AddRow(1))
+	mock.ExpectQuery(q("FROM session_groups g WHERE g.session_id = ?")).
+		WithArgs(sid).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "facilitator_id", "members"}).
+			AddRow(10, "Kelompok Merah", 3, 2))
+	mock.ExpectQuery(q("SELECT EXISTS(SELECT 1 FROM users")).
+		WithArgs(int64(3), int64(1)).
+		WillReturnRows(sqlmock.NewRows([]string{"ok"}).AddRow(1))
+	mock.ExpectExec(q("UPDATE sessions SET status = ? WHERE id = ?")).
+		WithArgs("OPENED", sid, int64(1), "FINISHED").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 }
@@ -173,7 +198,7 @@ func TestIntegrationSSEHandshakeReplayAndLiveFrame(t *testing.T) {
 	expectTransition(mock, 2, "OPENED", "FINISHED")
 	h := bearer(mintAccess(t, 2, "ADMIN", 1))
 	h["X-School-ID"] = "1"
-	res := jsonReq(t, app, "POST", "/api/sessions/2/finish", nil, h)
+	res := jsonReq(t, app, "POST", "/api/sessions/2/close", nil, h)
 	data := requireDataEnvelope(t, res).(map[string]any)
 	require.Equal(t, "FINISHED", data["status"])
 
@@ -194,9 +219,10 @@ func TestIntegrationSSEHandshakeReplayAndLiveFrame(t *testing.T) {
 	require.Contains(t, ev.data, `"action":"finished"`)
 
 	// A second transition publishes rev2 while the stream is live — no
-	// reconnect, the frame is pushed.
-	expectTransition(mock, 2, "FINISHED", "OPENED")
-	res = jsonReq(t, app, "POST", "/api/sessions/2/reopen", nil, h)
+	// reconnect, the frame is pushed. A FINISHED session starts again through
+	// the same open gates.
+	expectOpenFromFinished(mock, 2)
+	res = jsonReq(t, app, "POST", "/api/sessions/2/open", nil, h)
 	requireDataEnvelope(t, res)
 	ev = nextEvent(t, events)
 	require.Equal(t, "session.status", ev.name)

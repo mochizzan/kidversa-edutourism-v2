@@ -60,7 +60,13 @@ function assessmentHandlers(capture: PutCapture) {
     http.get('/api/sessions/1/topics/3/children/2/readiness', () =>
       ok({ complete: false, missing: [{ said: 10, name: 'Mengamati motif' }] }),
     ),
-    http.get('/api/children/2', () => ok({ id: 2, name: 'Aisyah Putri', is_active: true })),
+    http.get('/api/children/2', () =>
+      ok({
+        child: { id: 2, name: 'Aisyah Putri', is_active: true },
+        counts: { members: 1, assessments: 0, photos: 0, narratives: 0, missions: 0, links: 0 },
+        sessions: [],
+      }),
+    ),
     http.put('/api/sessions/1/topics/3/children/2/activities/10', async ({ request }) => {
       capture.calls += 1
       capture.url = request.url
@@ -80,7 +86,7 @@ describe('assessment form save', () => {
     renderApp(null, {
       routes: ROUTES,
       route: '/assessment/1/2/3',
-      session: makeLoginData({ user: makeUser({ role: 'ADMIN' }) }),
+      session: makeLoginData({ user: makeUser({ role: 'FASILITATOR' }) }),
     })
 
     // Cards render once detail + assessments are loaded.

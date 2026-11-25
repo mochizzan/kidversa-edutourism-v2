@@ -38,7 +38,7 @@
 //     mutation).
 //   - Open-gate failures (GROUP_WITHOUT_FACILITATOR / VALIDATION) carry the
 //     offending groups as an extra `error.groups:[{gid,name,reason}]` key
-//     (B11 / 02 §2b + 08); finish/reopen gates have no offender list.
+//     (B11 / 02 §2b + 08); close has no offender list.
 //   - is_candidate is NEVER copied (05 §2 "Copy-data NEVER copies
 //     is_candidate" — F-15/decision-21 "candidate preserved" wording is the
 //     spec's internal conflict; 05 §2 rationale wins: a pending row must not
@@ -51,7 +51,8 @@
 //     report-link.changed + link.revoked for every token that dies, plus one
 //     consent.changed so the consent list refetches.
 //   - GET /api/sessions/:sid/groups stays readable in Finished (the
-//     Draft/Opened + SESSION_LOCKED rule in 02 §2b guards mutation).
+//     DRAFT-only structural + SESSION_LOCKED rule in 02 §2b guards mutation;
+//     group rename/facilitator PATCH remains available after Draft).
 package internal
 
 import (
@@ -359,24 +360,52 @@ func (s *Server) requestOwner(ctx context.Context, q queryRower, school, fid int
 	return "", nil
 }
 
-// lockSessionEditable claims the session row (FOR UPDATE) inside the caller's
-// Tx and verifies it is DRAFT/OPENED — the guarded status gate every
-// group/member mutation runs behind. false = NOT_FOUND or SESSION_LOCKED
-// already written to the envelope.
-func (s *Server) lockSessionEditable(ctx context.Context, tx *sql.Tx, c fiber.Ctx, school, sid int64) (bool, error) {
+// lockSessionStatus claims the session row (FOR UPDATE) inside the caller's
+// Tx and returns its current status. false = NOT_FOUND already written to the
+// envelope. Callers decide which statuses their mutation permits.
+func (s *Server) lockSessionStatus(ctx context.Context, tx *sql.Tx, c fiber.Ctx, school, sid int64) (string, bool, error) {
 	tcond, targs := schoolCond(school, "school_id")
 	var status string
 	err := tx.QueryRowContext(ctx,
 		`SELECT status FROM sessions WHERE id = ?`+tcond+` FOR UPDATE`,
 		append([]any{sid}, targs...)...).Scan(&status)
 	if err == sql.ErrNoRows {
-		return false, fail(c, CodeNotFound, MsgNotFound)
+		return "", false, fail(c, CodeNotFound, MsgNotFound)
 	}
 	if err != nil {
-		return false, failDB(c, err)
+		return "", false, failDB(c, err)
+	}
+	return status, true, nil
+}
+
+// lockSessionEditable is the DRAFT/OPENED gate used by mutations that remain
+// writable while a session is open (mission picks). FINISHED →
+// SESSION_LOCKED. It is deliberately NOT the gate for group/participant
+// structure: those are DRAFT-only (lockSessionDraft).
+func (s *Server) lockSessionEditable(ctx context.Context, tx *sql.Tx, c fiber.Ctx, school, sid int64) (bool, error) {
+	status, ok, err := s.lockSessionStatus(ctx, tx, c, school, sid)
+	if !ok || err != nil {
+		return false, err
 	}
 	if status == "FINISHED" {
 		return false, fail(c, CodeSessionLocked, MsgSessionLocked)
+	}
+	return true, nil
+}
+
+// lockSessionDraft is the DRAFT-only gate for structural roster mutations:
+// group create/delete and member add/remove. Once a session leaves DRAFT its
+// roster is frozen, because OPENED → FINISHED accepts the current roster and
+// a later reopen re-validates the open gates (≥1 non-empty group with an
+// active facilitator). Allowing structural edits in OPENED lets the client
+// create a state that close accepts but reopen can never accept.
+func (s *Server) lockSessionDraft(ctx context.Context, tx *sql.Tx, c fiber.Ctx, school, sid int64) (bool, error) {
+	status, ok, err := s.lockSessionStatus(ctx, tx, c, school, sid)
+	if !ok || err != nil {
+		return false, err
+	}
+	if status != "DRAFT" {
+		return false, fail(c, CodeSessionRosterLocked, MsgSessionRosterLocked)
 	}
 	return true, nil
 }
@@ -396,8 +425,7 @@ func (s *Server) RegisterSessions(api fiber.Router) {
 	api.Patch("/sessions/:sid", s.authed("SA", "ADMIN"), s.handleSessionPatch)
 	api.Delete("/sessions/:sid", s.authed("SA", "ADMIN"), s.handleSessionDelete)
 	api.Post("/sessions/:sid/open", s.authed("SA", "ADMIN"), s.handleSessionOpen)
-	api.Post("/sessions/:sid/finish", s.authed("SA", "ADMIN"), s.handleSessionFinish)
-	api.Post("/sessions/:sid/reopen", s.authed("SA", "ADMIN"), s.handleSessionReopen)
+	api.Post("/sessions/:sid/close", s.authed("SA", "ADMIN"), s.handleSessionClose)
 	api.Get("/sessions/:sid/readiness", s.authed(), s.handleSessionReadiness)
 
 	api.Get("/sessions/:sid/groups", s.authed(), s.handleGroupList)
@@ -1200,11 +1228,11 @@ func fmtClock(s string) string {
 	return t.Format("15:04:05")
 }
 
-// handleSessionPatch — Draft edits snapshot fields; Opened only groups/
-// members (any snapshot field → SESSION_LOCKED); Finished always locked. A
-// PATCH body containing program_id is always SESSION_LOCKED (the snapshot
-// program is immutable — 08 acceptance), gated before any read or write.
-// Guarded UPDATE … WHERE status='DRAFT'; 0 rows → re-read (E10/E11).
+// handleSessionPatch — Draft edits snapshot fields; Opened/Finished snapshot
+// fields → SESSION_LOCKED (group rename/facilitator changes live on the group
+// PATCH route). A PATCH body containing program_id is always SESSION_LOCKED
+// (the snapshot program is immutable — 08 acceptance), gated before any read
+// or write. Guarded UPDATE … WHERE status='DRAFT'; 0 rows → re-read (E10/E11).
 func (s *Server) handleSessionPatch(c fiber.Ctx) error {
 	sid, okID := idParam(c, "sid")
 	if !okID {
@@ -1416,7 +1444,7 @@ func (s *Server) handleSessionDelete(c fiber.Ctx) error {
 	}
 	defer tx.Rollback()
 
-	// Guarded status claim (FL-08): Opened sessions must finish first.
+	// Guarded status claim (FL-08): Opened sessions must be closed first.
 	tcond, targs := schoolCond(school, "school_id")
 	var status string
 	err = tx.QueryRowContext(ctx,
@@ -1515,15 +1543,16 @@ func sessionChildIDs(ctx context.Context, tx *sql.Tx, sid int64) ([]int64, error
 // ---------------------------------------------------------------------------
 
 func (s *Server) handleSessionOpen(c fiber.Ctx) error {
-	return s.transitionSession(c, "DRAFT", "OPENED")
+	// Open from DRAFT (first start) or FINISHED (start again): both enter
+	// OPENED through the same gates, so a restart is held to the same
+	// group/child/facilitator requirements as the first start.
+	return s.transitionSession(c, []string{"DRAFT", "FINISHED"}, "OPENED")
 }
 
-func (s *Server) handleSessionFinish(c fiber.Ctx) error {
-	return s.transitionSession(c, "OPENED", "FINISHED")
-}
-
-func (s *Server) handleSessionReopen(c fiber.Ctx) error {
-	return s.transitionSession(c, "FINISHED", "OPENED")
+func (s *Server) handleSessionClose(c fiber.Ctx) error {
+	// Closing has no completion prerequisites (partial finish allowed) and a
+	// FINISHED session is an idempotent success. A DRAFT must be opened first.
+	return s.transitionSession(c, []string{"OPENED"}, "FINISHED")
 }
 
 // statusRank orders the lifecycle DRAFT < OPENED < FINISHED for the E10/E11
@@ -1540,15 +1569,16 @@ func statusRank(status string) int {
 	return -1
 }
 
-// transitionSession: the steady-state read decides `already` (no publish)
-// and wrong-state SESSION_LOCKED (E10); inside one Tx the row is locked, the
-// start state re-verified (a rival that moved first → STATE_CONFLICT, E11,
-// nothing published), open gates run fresh, then the spec'd guarded
-// UPDATE … WHERE status=<expected> commits and publishes session.status.
-// If that UPDATE matches 0 rows the mandated E10/E11 re-read classifies the
-// loss: rival at-or-beyond the target → STATE_CONFLICT, otherwise the
-// current state itself forbids the op → SESSION_LOCKED — never published.
-func (s *Server) transitionSession(c fiber.Ctx, from, to string) error {
+// transitionSession: the steady-state read decides `already` (no publish) and
+// wrong-state SESSION_LOCKED (E10); inside one Tx the row is locked, the
+// source state re-verified (a rival that moved first → STATE_CONFLICT, E11,
+// nothing published), open gates run fresh whenever the target is OPENED,
+// then the spec'd guarded UPDATE … WHERE status=<source> commits and
+// publishes session.status. If that UPDATE matches 0 rows the mandated
+// E10/E11 re-read classifies the loss: rival at-or-beyond the target →
+// STATE_CONFLICT, otherwise the current state itself forbids the op →
+// SESSION_LOCKED — never published.
+func (s *Server) transitionSession(c fiber.Ctx, sources []string, to string) error {
 	sid, okID := idParam(c, "sid")
 	if !okID {
 		return nil
@@ -1572,7 +1602,7 @@ func (s *Server) transitionSession(c fiber.Ctx, from, to string) error {
 	if cur == to {
 		return ok(c, fiber.Map{"status": cur, "already": true})
 	}
-	if cur != from {
+	if !slices.Contains(sources, cur) {
 		return fail(c, CodeSessionLocked, MsgSessionLocked)
 	}
 
@@ -1591,11 +1621,11 @@ func (s *Server) transitionSession(c fiber.Ctx, from, to string) error {
 	if err != nil {
 		return failDB(c, err)
 	}
-	if cur != from {
+	if !slices.Contains(sources, cur) {
 		return fail(c, CodeStateConflict, MsgStateConflict) // rival transitioned first
 	}
 
-	if from == "DRAFT" { // open gates (decision 17)
+	if to == "OPENED" { // open gates (decision 17) — every start, including restarts
 		code, offenders, err := s.openGates(ctx, tx, sid, school)
 		if err != nil {
 			return failDB(c, err)
@@ -1611,7 +1641,7 @@ func (s *Server) transitionSession(c fiber.Ctx, from, to string) error {
 
 	res, err := tx.ExecContext(ctx,
 		`UPDATE sessions SET status = ? WHERE id = ?`+tcond+` AND status = ?`,
-		append([]any{to, sid}, append(targs, from)...)...)
+		append([]any{to, sid}, append(targs, cur)...)...)
 	if err != nil {
 		return failDB(c, err)
 	}
@@ -1685,34 +1715,46 @@ func (s *Server) openGates(ctx context.Context, tx *sql.Tx, sid, school int64) (
 		return "", nil, err
 	}
 	defer rows.Close()
-	var empty, ownerless []gateGroup
+	// Buffer the group rows and close the result set BEFORE the per-owner
+	// lookups: the MySQL protocol does not permit executing another statement
+	// on the same Tx connection while a result set is still streaming
+	// ("driver: bad connection"), which surfaced to clients as a spurious
+	// DB_UNAVAILABLE ("service busy, retry") on every start with a valid owner.
+	type gateRow struct {
+		gid     int64
+		name    string
+		owner   sql.NullInt64
+		members int
+	}
+	gates := make([]gateRow, 0, 8)
 	for rows.Next() {
-		var (
-			gid     int64
-			name    string
-			owner   sql.NullInt64
-			members int
-		)
-		if err := rows.Scan(&gid, &name, &owner, &members); err != nil {
+		var g gateRow
+		if err := rows.Scan(&g.gid, &g.name, &g.owner, &g.members); err != nil {
 			return "", nil, err
 		}
-		if members == 0 {
-			empty = append(empty, gateGroup{GID: gid, Name: name, Reason: "empty"})
+		gates = append(gates, g)
+	}
+	if err := rows.Err(); err != nil {
+		return "", nil, err
+	}
+	rows.Close()
+
+	var empty, ownerless []gateGroup
+	for _, g := range gates {
+		if g.members == 0 {
+			empty = append(empty, gateGroup{GID: g.gid, Name: g.name, Reason: "empty"})
 		}
-		if !owner.Valid {
-			ownerless = append(ownerless, gateGroup{GID: gid, Name: name, Reason: "owner_missing"})
+		if !g.owner.Valid {
+			ownerless = append(ownerless, gateGroup{GID: g.gid, Name: g.name, Reason: "owner_missing"})
 			continue
 		}
-		ok, err := ownerOK(ctx, tx, school, owner.Int64)
+		ok, err := ownerOK(ctx, tx, school, g.owner.Int64)
 		if err != nil {
 			return "", nil, err
 		}
 		if !ok {
-			ownerless = append(ownerless, gateGroup{GID: gid, Name: name, Reason: "owner_missing"})
+			ownerless = append(ownerless, gateGroup{GID: g.gid, Name: g.name, Reason: "owner_missing"})
 		}
-	}
-	if err := rows.Err(); err != nil {
-		return "", nil, err
 	}
 	if len(empty) > 0 {
 		return CodeValidation, empty, nil
@@ -1756,7 +1798,7 @@ func (s *Server) fasOwnScope(ctx context.Context, u *userRow, sid, school int64)
 var errNotVisible = errors.New("session not visible")
 
 // handleGroupList — GET /sessions/:sid/groups (readable in any status; the
-// Draft/Opened + SESSION_LOCKED rule guards mutation only).
+// DRAFT-only structural rule guards mutation only).
 func (s *Server) handleGroupList(c fiber.Ctx) error {
 	sid, okID := idParam(c, "sid")
 	if !okID {
@@ -1788,7 +1830,7 @@ func (s *Server) handleGroupList(c fiber.Ctx) error {
 	return ok(c, groups)
 }
 
-// handleGroupCreate — POST /sessions/:sid/groups (Draft/Opened; owner
+// handleGroupCreate — POST /sessions/:sid/groups (Draft only; owner
 // optional here — the open gate enforces owners, E14).
 func (s *Server) handleGroupCreate(c fiber.Ctx) error {
 	sid, okID := idParam(c, "sid")
@@ -1816,7 +1858,7 @@ func (s *Server) handleGroupCreate(c fiber.Ctx) error {
 	}
 	defer tx.Rollback()
 
-	okE, err := s.lockSessionEditable(ctx, tx, c, school, sid)
+	okE, err := s.lockSessionDraft(ctx, tx, c, school, sid)
 	if err != nil {
 		return err
 	}
@@ -1876,6 +1918,8 @@ func msgForCode(code string) string {
 		return MsgGroupNoFacilitator
 	case CodeSessionLocked:
 		return MsgSessionLocked
+	case CodeSessionRosterLocked:
+		return MsgSessionRosterLocked
 	case CodeChildInactive:
 		return MsgChildInactive
 	case CodeReportIncomplete:
@@ -1892,8 +1936,11 @@ type patchGroupReq struct {
 	FacilitatorID *int64  `json:"facilitator_id"` // >0 assign, 0 clear, absent keep
 }
 
-// handleGroupPatch — name/owner edit (Draft/Opened; new owner must be an
-// active same-school FASILITATOR else VALIDATION).
+// handleGroupPatch — name/owner edit allowed in every status (the two
+// post-Draft exceptions); a new owner must be an active same-school
+// FASILITATOR else VALIDATION. Clearing the owner is Draft-only: outside
+// Draft it would leave the group ownerless and make the session impossible
+// to reopen.
 func (s *Server) handleGroupPatch(c fiber.Ctx) error {
 	sid, okID := idParam(c, "sid")
 	if !okID {
@@ -1930,12 +1977,15 @@ func (s *Server) handleGroupPatch(c fiber.Ctx) error {
 	}
 	defer tx.Rollback()
 
-	okE, err := s.lockSessionEditable(ctx, tx, c, school, sid)
+	status, okS, err := s.lockSessionStatus(ctx, tx, c, school, sid)
 	if err != nil {
 		return err
 	}
-	if !okE {
+	if !okS {
 		return nil
+	}
+	if req.FacilitatorID != nil && *req.FacilitatorID == 0 && status != "DRAFT" {
+		return fail(c, CodeValidation, MsgFacilitatorRequired)
 	}
 	var curName string
 	err = tx.QueryRowContext(ctx,
@@ -2002,9 +2052,9 @@ func (s *Server) handleGroupPatch(c fiber.Ctx) error {
 	return ok(c, fiber.Map{"gid": gid, "name": curName})
 }
 
-// handleGroupDelete — option-B cascade (decision 13): ONE Tx removes the
-// group, its membership and every affected child's session-scoped data
-// (assessments, photo rows, narratives, mission picks, consent + public
+// handleGroupDelete — Draft-only option-B cascade (decision 13): ONE Tx
+// removes the group, its membership and every affected child's session-scoped
+// data (assessments, photo rows, narratives, mission picks, consent + public
 // links); disk files unlink after commit; revocation signals last.
 func (s *Server) handleGroupDelete(c fiber.Ctx) error {
 	sid, okID := idParam(c, "sid")
@@ -2028,7 +2078,7 @@ func (s *Server) handleGroupDelete(c fiber.Ctx) error {
 	}
 	defer tx.Rollback()
 
-	okE, err := s.lockSessionEditable(ctx, tx, c, school, sid)
+	okE, err := s.lockSessionDraft(ctx, tx, c, school, sid)
 	if err != nil {
 		return err
 	}
@@ -2097,9 +2147,10 @@ type membersReq struct {
 	ChildIDs []int64 `json:"child_ids"`
 }
 
-// handleMembersAdd — bulk add (active children, dedup; request-internal or
-// already-in-session duplicate → CHILD_DUPLICATE, inactive → CHILD_INACTIVE,
-// unknown/cross-school → NOT_FOUND; children rows locked FOR UPDATE).
+// handleMembersAdd — Draft-only bulk add (active children, dedup;
+// request-internal or already-in-session duplicate → CHILD_DUPLICATE,
+// inactive → CHILD_INACTIVE, unknown/cross-school → NOT_FOUND; children rows
+// locked FOR UPDATE).
 func (s *Server) handleMembersAdd(c fiber.Ctx) error {
 	sid, okID := idParam(c, "sid")
 	if !okID {
@@ -2134,7 +2185,7 @@ func (s *Server) handleMembersAdd(c fiber.Ctx) error {
 	}
 	defer tx.Rollback()
 
-	okE, err := s.lockSessionEditable(ctx, tx, c, school, sid)
+	okE, err := s.lockSessionDraft(ctx, tx, c, school, sid)
 	if err != nil {
 		return err
 	}
@@ -2248,10 +2299,10 @@ func (s *Server) handleMembersAdd(c fiber.Ctx) error {
 	return ok(c, fiber.Map{"added": added})
 }
 
-// handleMemberRemove — single remove with the SAME per-child wipe as the
-// group cascade, silent (decision 13 / FL-08): rows in the Tx, disk after
-// commit, link revocations published (consent + public links die with the
-// child's session scope).
+// handleMemberRemove — Draft-only single remove with the SAME per-child wipe
+// as the group cascade, silent (decision 13 / FL-08): rows in the Tx, disk
+// after commit, link revocations published (consent + public links die with
+// the child's session scope).
 func (s *Server) handleMemberRemove(c fiber.Ctx) error {
 	sid, okID := idParam(c, "sid")
 	if !okID {
@@ -2278,7 +2329,7 @@ func (s *Server) handleMemberRemove(c fiber.Ctx) error {
 	}
 	defer tx.Rollback()
 
-	okE, err := s.lockSessionEditable(ctx, tx, c, school, sid)
+	okE, err := s.lockSessionDraft(ctx, tx, c, school, sid)
 	if err != nil {
 		return err
 	}

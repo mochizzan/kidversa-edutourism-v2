@@ -114,7 +114,8 @@
     "activate": "Activate",
     "deactivate": "Deactivate",
     "inactiveHint": "Inactive children do not appear in pickers.",
-    "deleteCounts": "{{members}} memberships, {{assessments}} assessments, {{photos}} photos, {{narratives}} narratives, {{missions}} mission picks, and {{links}} report links are permanently deleted too."
+    "deleteCounts": "{{members}} memberships, {{assessments}} assessments, {{photos}} photos, {{narratives}} narratives, {{missions}} mission picks, and {{links}} report links are permanently deleted too.",
+    "deleteSessionsWarning": "This child also belongs to non-draft sessions: {{sessions}}. Their rosters are frozen, so deleting the child removes them from these sessions and can make a session impossible to reopen."
   },
   "actions": {
     "activate": "Activate",

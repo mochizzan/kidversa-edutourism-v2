@@ -1,10 +1,10 @@
 /**
  * Groups panel (F-08 / FL-08): full render of an own group (owner, consent
- * tallies, member rows with assess/gallery links), FAS reduced foreign groups
- * and the Finished read-only state, group create/rename contracts incl. the
- * VALIDATION owner notice, member remove/add with error passthrough, and the
- * typed group-wipe dialog whose counts derive from the progress + reports
- * matrices.
+ * tallies, member rows with assess/gallery links), FAS reduced foreign groups,
+ * the post-Draft roster freeze (structural actions hidden, rename/facilitator
+ * kept, lock notice), group create/rename contracts incl. the VALIDATION owner
+ * notice, member remove/add with error passthrough, and the typed group-wipe
+ * dialog whose counts derive from the progress + reports matrices.
  */
 import { describe, expect, it, vi } from 'vitest'
 import { act, screen, waitFor, within } from '@testing-library/react'
@@ -134,15 +134,34 @@ describe('groups panel render', () => {
     expect(screen.queryByRole('button', { name: /Tambah kelompok/ })).toBeNull()
   })
 
-  it('Finished sessions hide every mutate action (server would answer SESSION_LOCKED)', () => {
+  it('Opened sessions freeze the roster but keep rename/facilitator edit', () => {
+    server.use(childrenHandler())
+    renderPanel(detailFixture({ status: 'OPENED' }))
+
+    expect(screen.queryByRole('button', { name: /Tambah kelompok/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Hapus kelompok/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Tambah anggota/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Keluarkan dari sesi' })).toBeNull()
+    expect(screen.getByRole('button', { name: /Ubah kelompok/ })).toBeInTheDocument()
+    expect(
+      screen.getByText(/terkunci selama sesi dibuka.*ganti nama kelompok atau fasilitatornya/),
+    ).toBeInTheDocument()
+    // Read-only data still renders.
+    expect(screen.getByText('Kelompok Merah')).toBeInTheDocument()
+  })
+
+  it('Finished sessions freeze the roster but keep rename/facilitator edit', () => {
     server.use(childrenHandler())
     renderPanel(detailFixture({ status: 'FINISHED' }))
 
     expect(screen.queryByRole('button', { name: /Tambah kelompok/ })).toBeNull()
-    expect(screen.queryByRole('button', { name: /Ubah kelompok/ })).toBeNull()
     expect(screen.queryByRole('button', { name: /Hapus kelompok/ })).toBeNull()
     expect(screen.queryByRole('button', { name: /Tambah anggota/ })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Keluarkan dari sesi' })).toBeNull()
+    expect(screen.getByRole('button', { name: /Ubah kelompok/ })).toBeInTheDocument()
+    expect(
+      screen.getByText(/terkunci setelah sesi ditutup.*ganti nama kelompok atau fasilitatornya/),
+    ).toBeInTheDocument()
     // Read-only data still renders.
     expect(screen.getByText('Kelompok Merah')).toBeInTheDocument()
   })
@@ -220,8 +239,82 @@ describe('groups panel mutations', () => {
     await user.click(within(modal).getByRole('button', { name: 'Simpan' }))
 
     await screen.findByText('Kelompok diperbarui.')
-    expect(patched).toMatchObject({ name: 'Kelompok Baru' })
+    expect(patched).toEqual({ name: 'Kelompok Baru' })
     expect(onChanged).toHaveBeenCalled()
+  })
+
+  it('renames a group in a finished session with a name-only PATCH', async () => {
+    let patched: unknown = null
+    server.use(
+      childrenHandler(),
+      usersHandler(),
+      http.patch('/api/sessions/1/groups/5', async ({ request }) => {
+        patched = await request.json()
+        return ok({})
+      }),
+    )
+    renderPanel(detailFixture({ status: 'FINISHED' }))
+    const user = userEvent.setup()
+
+    await user.click(screen.getByRole('button', { name: /Ubah kelompok/ }))
+    const modal = await screen.findByRole('dialog')
+    // Post-Draft hint replaces the Draft "owner optional" copy.
+    expect(
+      within(modal).getByText(/bisa diganti, tetapi tidak bisa dikosongkan/),
+    ).toBeInTheDocument()
+    const nameInput = within(modal).getByDisplayValue('Kelompok Merah')
+    await user.clear(nameInput)
+    await user.type(nameInput, 'Kelompok Baru')
+    await user.click(within(modal).getByRole('button', { name: 'Simpan' }))
+
+    await screen.findByText('Kelompok diperbarui.')
+    // Dirty-field PATCH: unchanged facilitator_id is omitted.
+    expect(patched).toEqual({ name: 'Kelompok Baru' })
+  })
+
+  it('refuses to save a post-draft group without a facilitator', async () => {
+    let patches = 0
+    server.use(
+      childrenHandler(),
+      usersHandler(),
+      http.patch('/api/sessions/1/groups/5', () => {
+        patches += 1
+        return ok({})
+      }),
+    )
+    renderPanel(
+      detailFixture({
+        status: 'OPENED',
+        groups: [
+          {
+            gid: 5,
+            name: 'Kelompok Merah',
+            own: true,
+            owner: null,
+            owner_missing: true,
+            member_count: 2,
+            consent: { PENDING: 1, SETUJU: 1 },
+            members: [
+              { child_id: 2, name: 'Aisyah Putri', age: 8, school: 'SD Cendekia', consent: 'PENDING' },
+              { child_id: 3, name: 'Budi Santoso', age: 9, school: 'SD Melati', consent: 'SETUJU' },
+            ],
+          },
+        ],
+      }),
+    )
+    const user = userEvent.setup()
+
+    await user.click(screen.getByRole('button', { name: /Ubah kelompok/ }))
+    const modal = await screen.findByRole('dialog')
+    const nameInput = within(modal).getByDisplayValue('Kelompok Merah')
+    await user.clear(nameInput)
+    await user.type(nameInput, 'Kelompok Baru')
+    await user.click(within(modal).getByRole('button', { name: 'Simpan' }))
+
+    await within(modal).findByText(
+      'Tugaskan fasilitator pengganti. Fasilitator saat ini tidak bisa dikosongkan setelah draf.',
+    )
+    expect(patches).toBe(0)
   })
 
   it('removes a member after the confirm and surfaces the server message on failure', async () => {
@@ -288,7 +381,7 @@ describe('groups panel mutations', () => {
     // The existing member is excluded (disabled); only Citra is selectable.
     await chooseOption('Citra Ayu · SD Cendekia')
     await user.keyboard('{Escape}')
-    await user.click(within(modal).getByRole('button', { name: 'Buat' }))
+    await user.click(within(modal).getByRole('button', { name: 'Tambah anggota' }))
 
     await screen.findByText('Anggota ditambahkan.')
     expect(posted).toEqual({ child_ids: [4] })
@@ -315,7 +408,7 @@ describe('groups panel mutations', () => {
     await openDropdown(picker)
     await chooseOption('Citra Ayu · SD Cendekia')
     await user.keyboard('{Escape}')
-    await user.click(within(modal).getByRole('button', { name: 'Buat' }))
+    await user.click(within(modal).getByRole('button', { name: 'Tambah anggota' }))
 
     await within(modal).findByText('Anak sudah berada di kelompok lain pada sesi ini.')
   })
@@ -469,6 +562,6 @@ describe('groups panel children SSE refetch', () => {
     // exist); picking it unblocks the submit (disabled while selection=[]).
     await chooseOption('Dara Ayu · SD Cendekia')
     await user.keyboard('{Escape}')
-    expect(within(modal).getByRole('button', { name: 'Buat' })).toBeEnabled()
+    expect(within(modal).getByRole('button', { name: 'Tambah anggota' })).toBeEnabled()
   })
 })

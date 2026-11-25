@@ -15,16 +15,26 @@
  * - `RowActionGroup` collapses secondary actions into one overflow button;
  *   clicking it opens a menu that names every action it holds.
  * - `confirm` builds the Popconfirm around the real button, so the confirm
- *   popover never depends on prop cloning through a custom component.
+ *   popover never depends on prop cloning through a custom component. A
+ *   disabled action skips the popover; its reason is the only explanation.
+ * - `disabledReason` replaces the tooltip copy while disabled and is mirrored
+ *   as an sr-only description, so a gated icon still explains itself.
  */
-import { cloneElement, isValidElement, useState, type ReactElement, type ReactNode } from 'react'
+import {
+  cloneElement,
+  isValidElement,
+  useId,
+  useState,
+  type ReactElement,
+  type ReactNode,
+} from 'react'
 import { Button, Dropdown, Popconfirm, Tooltip } from 'antd'
 import type { MenuProps } from 'antd'
 import { EllipsisOutlined } from '@ant-design/icons'
 import './row-actions.css'
 
 export interface RowActionProps {
-  /** Accessible name + tooltip copy: use the action's existing verb. */
+  /** Accessible name and default tooltip copy: use the action's verb. */
   label: string
   icon: ReactNode
   onClick?: () => void
@@ -34,8 +44,12 @@ export interface RowActionProps {
   danger?: boolean
   disabled?: boolean
   loading?: boolean
+  /** Tooltip copy while disabled: says why the action is unavailable. */
+  disabledReason?: ReactNode
   /** Popconfirm title; the confirm's OK calls `onClick`. */
   confirm?: ReactNode
+  /** Second Popconfirm line; use it for the consequence of confirming. */
+  confirmDescription?: ReactNode
 }
 
 export function RowAction({
@@ -46,14 +60,22 @@ export function RowAction({
   danger = false,
   disabled = false,
   loading = false,
+  disabledReason,
   confirm,
+  confirmDescription,
 }: RowActionProps) {
+  const reasonId = useId()
+  // A disabled icon still needs a way to say why. The reason becomes the
+  // tooltip and an sr-only description; the accessible name stays the verb.
+  const reason = disabled ? disabledReason : undefined
+
   const button = (
     <Button
       type="text"
       size="small"
       className={`kv-row-action${accent ? ' kv-row-action--accent' : ''}`}
       aria-label={label}
+      aria-describedby={reason ? reasonId : undefined}
       icon={icon}
       disabled={disabled}
       loading={loading}
@@ -63,17 +85,26 @@ export function RowAction({
   )
 
   return (
-    <Tooltip title={label} mouseEnterDelay={0.35}>
+    <Tooltip title={reason ?? label} mouseEnterDelay={0.35}>
       {/* The span keeps the tooltip reachable when the button is disabled and
           keeps Popconfirm's cloned handlers on the button itself. */}
       <span className="kv-row-action__target">
-        {confirm ? (
-          <Popconfirm title={confirm} onConfirm={onClick} disabled={disabled}>
+        {confirm && !disabled ? (
+          <Popconfirm
+            title={confirm}
+            description={confirmDescription}
+            onConfirm={onClick}
+          >
             {button}
           </Popconfirm>
         ) : (
           button
         )}
+        {reason ? (
+          <span id={reasonId} className="kv-sr-only">
+            {reason}
+          </span>
+        ) : null}
       </span>
     </Tooltip>
   )

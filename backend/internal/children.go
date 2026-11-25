@@ -189,8 +189,10 @@ func (s *Server) listChildren(c fiber.Ctx) error {
 	return okPaged(c, out, p.Page, p.PerPage, total)
 }
 
-// getChild returns {child, counts} — counts feed the client's typed-delete
-// modal (members/assessments/photos/narratives/mission picks/active links).
+// getChild returns {child, counts, sessions} — counts feed the client's
+// typed-delete modal (members/assessments/photos/narratives/mission
+// picks/active links); sessions lists the child's OPENED/FINISHED
+// memberships so the dialog can warn before a roster-changing master delete.
 // FAS foreign child → NOT_FOUND (row outside its scope behaves unknown).
 func (s *Server) getChild(c fiber.Ctx) error {
 	id, okID := idParam(c, "id")
@@ -233,12 +235,47 @@ func (s *Server) getChild(c fiber.Ctx) error {
 		Scan(&members, &assessments, &photos, &narratives, &picks, &consents, &links); err != nil {
 		return failDB(c, err)
 	}
+
+	// Non-draft memberships drive the delete warning: deleting the child
+	// removes them from these sessions even though their rosters are frozen,
+	// which can make a closed session impossible to reopen. Names + statuses
+	// let the dialog say exactly which sessions are affected.
+	type childSessionRef struct {
+		ID     int64  `json:"id"`
+		Name   string `json:"name"`
+		Status string `json:"status"`
+	}
+	affectedSessions := make([]childSessionRef, 0, 4)
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT s.id, s.name, s.status
+		 FROM session_members sm
+		 JOIN sessions s ON s.id = sm.session_id AND s.school_id = sm.school_id
+		 WHERE sm.child_id = ? AND sm.school_id = ? AND s.status IN ('OPENED','FINISHED')
+		 ORDER BY s.status DESC, s.date DESC, s.id DESC`, id, schoolID)
+	if err != nil {
+		return failDB(c, err)
+	}
+	for rows.Next() {
+		var ref childSessionRef
+		if err := rows.Scan(&ref.ID, &ref.Name, &ref.Status); err != nil {
+			rows.Close()
+			return failDB(c, err)
+		}
+		affectedSessions = append(affectedSessions, ref)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return failDB(c, err)
+	}
+	rows.Close()
+
 	return ok(c, fiber.Map{
 		"child": it,
 		"counts": fiber.Map{
 			"members": members, "assessments": assessments, "photos": photos,
 			"narratives": narratives, "missions": picks, "links": consents + links,
 		},
+		"sessions": affectedSessions,
 	})
 }
 

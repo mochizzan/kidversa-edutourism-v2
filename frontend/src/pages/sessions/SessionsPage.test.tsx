@@ -6,16 +6,17 @@
  * translated code with a working retry.
  */
 import { describe, expect, it } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import StreamGate from '../../components/StreamGate'
 import SessionsPage from './SessionsPage'
 import { renderApp } from '../../test/render'
 import { server } from '../../test/setup'
-import { makeLoginData, makeUser, paged, sseChannel } from '../../test/handlers'
+import { makeLoginData, makeUser, ok, paged, sseChannel } from '../../test/handlers'
 import {
   advance,
+  detailFixture,
   pushFrame,
   sessionRow,
   until,
@@ -219,5 +220,320 @@ describe('session list SSE refetch', () => {
     pushFrame(channel, 'session.deleted', { rev: 2, entity_id: 2 })
     await until(() => screen.queryByText('Kelas Batik Selasa') === null)
     expect(screen.getByText('Kelas Batik Senin')).toBeInTheDocument()
+  })
+
+  it('session.status refetches the list so open gates and row buttons stay current', async () => {
+    useSseFakeTimers()
+    const seen: URL[] = []
+    const rowsRef = { rows: [sessionRow(1, 'Kelas Batik Senin')] }
+    const channel = sseChannel('/api/stream')
+    server.use(channel.handler, listHandler(seen, rowsRef))
+    renderApp(
+      <>
+        <StreamGate />
+        <SessionsPage />
+      </>,
+      { route: '/sessions', session: ADMIN_SESSION() },
+    )
+
+    await until(() => channel.handshakes === 1)
+    await until(() => screen.queryByText('Kelas Batik Senin') !== null)
+    const count = seen.length
+
+    pushFrame(channel, 'session.status', { rev: 1, entity_id: 1, status: 'OPENED' })
+    await advance(300)
+    await advance(0)
+    expect(seen).toHaveLength(count + 1)
+  })
+})
+
+describe('session list row actions', () => {
+  it('renders Edit, Open, Close and Delete on every row and gates them by status', async () => {
+    const rows = [
+      sessionRow(1, 'Kelas Batik Draf', { status: 'DRAFT' }),
+      sessionRow(2, 'Kelas Batik Dibuka', { status: 'OPENED' }),
+      sessionRow(3, 'Kelas Batik Selesai', { status: 'FINISHED' }),
+    ]
+    server.use(http.get('/api/sessions', () => paged(rows, { page: 1, per_page: 20, total: 3 })))
+    renderApp(<SessionsPage />, { route: '/sessions', session: ADMIN_SESSION() })
+
+    await screen.findByText('Kelas Batik Draf')
+    expect(screen.getAllByRole('button', { name: 'Ubah' })).toHaveLength(3)
+    expect(screen.getAllByRole('button', { name: 'Buka' })).toHaveLength(3)
+    expect(screen.getAllByRole('button', { name: 'Tutup' })).toHaveLength(3)
+    expect(screen.getAllByRole('button', { name: 'Hapus' })).toHaveLength(3)
+
+    const rowOf = (name: string) => screen.getByText(name).closest('tr') as HTMLElement
+    const draft = within(rowOf('Kelas Batik Draf'))
+    expect(draft.getByRole('button', { name: 'Ubah' })).toBeEnabled()
+    expect(draft.getByRole('button', { name: 'Buka' })).toBeEnabled()
+    expect(draft.getByRole('button', { name: 'Tutup' })).toBeDisabled()
+    expect(draft.getByRole('button', { name: 'Hapus' })).toBeEnabled()
+    expect(
+      draft.getByText('Buka sesi terlebih dahulu sebelum menutupnya.'),
+    ).toBeInTheDocument()
+
+    const opened = within(rowOf('Kelas Batik Dibuka'))
+    expect(opened.getByRole('button', { name: 'Ubah' })).toBeDisabled()
+    expect(opened.getByRole('button', { name: 'Buka' })).toBeDisabled()
+    expect(opened.getByRole('button', { name: 'Tutup' })).toBeEnabled()
+    expect(opened.getByRole('button', { name: 'Hapus' })).toBeDisabled()
+    expect(opened.getByText('Sesi ini sudah dibuka.')).toBeInTheDocument()
+    expect(opened.getByText('Sesi yang dibuka tidak dapat dihapus. Tutup dulu.')).toBeInTheDocument()
+
+    const finished = within(rowOf('Kelas Batik Selesai'))
+    expect(finished.getByRole('button', { name: 'Ubah' })).toBeDisabled()
+    expect(finished.getByRole('button', { name: 'Buka' })).toBeEnabled()
+    expect(finished.getByRole('button', { name: 'Tutup' })).toBeDisabled()
+    expect(finished.getByRole('button', { name: 'Hapus' })).toBeEnabled()
+    expect(finished.getByText('Sesi yang sudah selesai hanya dapat dibaca.')).toBeInTheDocument()
+    expect(finished.getByText('Sesi ini sudah ditutup.')).toBeInTheDocument()
+  })
+
+  it('FASILITATOR never sees the actions column', async () => {
+    server.use(
+      http.get('/api/sessions', () =>
+        paged([sessionRow(1, 'Kelas Batik Senin')], { page: 1, per_page: 20, total: 1 }),
+      ),
+    )
+    renderApp(<SessionsPage />, { route: '/sessions', session: FAS_SESSION() })
+
+    await screen.findByText('Kelas Batik Senin')
+    expect(screen.queryByText('Tindakan')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Ubah' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Buka' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Tutup' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Hapus' })).toBeNull()
+  })
+
+  it('Edit opens the shared detail form and PATCHes the row without a detail fetch', async () => {
+    let detailCalls = 0
+    let patched: unknown = null
+    const seen: URL[] = []
+    const rowsRef = { rows: [sessionRow(1, 'Kelas Batik')] }
+    server.use(
+      listHandler(seen, rowsRef),
+      http.get('/api/sessions/1', () => {
+        detailCalls += 1
+        return ok(detailFixture())
+      }),
+      http.patch('/api/sessions/1', async ({ request }) => {
+        patched = await request.json()
+        return ok({})
+      }),
+    )
+    const user = userEvent.setup()
+    renderApp(<SessionsPage />, { route: '/sessions', session: ADMIN_SESSION() })
+
+    await screen.findByText('Kelas Batik')
+    await user.click(screen.getByRole('button', { name: 'Ubah' }))
+    await screen.findByText('Ubah detail sesi')
+
+    const nameInput = screen.getByDisplayValue('Kelas Batik')
+    await user.clear(nameInput)
+    await user.type(nameInput, 'Kelas Batik Baru')
+    await user.click(screen.getByRole('button', { name: 'Simpan' }))
+
+    await screen.findByText('Detail sesi diperbarui.')
+    expect(patched).toMatchObject({ name: 'Kelas Batik Baru' })
+    expect(detailCalls).toBe(0)
+    await waitFor(() => expect(seen.length).toBeGreaterThan(1))
+  })
+
+  it('Open confirms, POSTs the open transition and refetches the list', async () => {
+    let openCalls = 0
+    const seen: URL[] = []
+    const rowsRef = { rows: [sessionRow(1, 'Kelas Batik')] }
+    server.use(
+      listHandler(seen, rowsRef),
+      http.post('/api/sessions/1/open', () => {
+        openCalls += 1
+        return ok({ status: 'OPENED' })
+      }),
+    )
+    const user = userEvent.setup()
+    renderApp(<SessionsPage />, { route: '/sessions', session: ADMIN_SESSION() })
+
+    await screen.findByText('Kelas Batik')
+    await user.click(screen.getByRole('button', { name: 'Buka' }))
+    await screen.findByText('Buka sesi ini?')
+    expect(screen.getByText('Detail sesi terkunci setelah dibuka.')).toBeInTheDocument()
+    // The shared RowAction confirm uses antd's default buttons (test renderer
+    // carries no antd locale, so they read "OK" / "Cancel").
+    await user.click(screen.getByRole('button', { name: 'OK' }))
+
+    await screen.findByText('Sesi dibuka.')
+    expect(openCalls).toBe(1)
+    await waitFor(() => expect(seen.length).toBeGreaterThan(1))
+  })
+
+  it('Open works on a FINISHED row and re-runs the gates', async () => {
+    let openCalls = 0
+    const seen: URL[] = []
+    const rowsRef = { rows: [sessionRow(1, 'Kelas Batik Selesai', { status: 'FINISHED' })] }
+    server.use(
+      listHandler(seen, rowsRef),
+      http.post('/api/sessions/1/open', () => {
+        openCalls += 1
+        return ok({ status: 'OPENED' })
+      }),
+    )
+    const user = userEvent.setup()
+    renderApp(<SessionsPage />, { route: '/sessions', session: ADMIN_SESSION() })
+
+    await screen.findByText('Kelas Batik Selesai')
+    await user.click(screen.getByRole('button', { name: 'Buka' }))
+    await screen.findByText('Buka sesi ini?')
+    await user.click(screen.getByRole('button', { name: 'OK' }))
+
+    await screen.findByText('Sesi dibuka.')
+    expect(openCalls).toBe(1)
+  })
+
+  it('Close confirms, POSTs the close transition and refetches the list', async () => {
+    let closeCalls = 0
+    const seen: URL[] = []
+    const rowsRef = { rows: [sessionRow(1, 'Kelas Batik Dibuka', { status: 'OPENED' })] }
+    server.use(
+      listHandler(seen, rowsRef),
+      http.post('/api/sessions/1/close', () => {
+        closeCalls += 1
+        return ok({ status: 'FINISHED' })
+      }),
+    )
+    const user = userEvent.setup()
+    renderApp(<SessionsPage />, { route: '/sessions', session: ADMIN_SESSION() })
+
+    await screen.findByText('Kelas Batik Dibuka')
+    await user.click(screen.getByRole('button', { name: 'Tutup' }))
+    await screen.findByText('Tutup sesi ini?')
+    expect(
+      screen.getByText(
+        'Sesi menjadi hanya-baca setelah ditutup. Anda masih dapat membukanya kembali.',
+      ),
+    ).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'OK' }))
+
+    await screen.findByText('Sesi ditutup.')
+    expect(closeCalls).toBe(1)
+    await waitFor(() => expect(seen.length).toBeGreaterThan(1))
+  })
+
+  it('Open gate failure names the groups and links to the session detail page', async () => {
+    const seen: URL[] = []
+    const rowsRef = { rows: [sessionRow(1, 'Kelas Batik')] }
+    server.use(
+      listHandler(seen, rowsRef),
+      http.post('/api/sessions/1/open', () =>
+        HttpResponse.json({
+          error: {
+            code: 'GROUP_WITHOUT_FACILITATOR',
+            message: 'group has no facilitator',
+            groups: [{ gid: 9, name: 'Kelompok Merah', reason: 'owner_missing' }],
+          },
+        }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderApp(null, {
+      routes: [
+        { path: '/sessions', element: <SessionsPage /> },
+        { path: '/sessions/:sid', element: <div>SESSION DETAIL</div> },
+      ],
+      route: '/sessions',
+      session: ADMIN_SESSION(),
+    })
+
+    await screen.findByText('Kelas Batik')
+    await user.click(screen.getByRole('button', { name: 'Buka' }))
+    await screen.findByText('Buka sesi ini?')
+    await user.click(screen.getByRole('button', { name: 'OK' }))
+
+    await screen.findByText('Kelas Batik belum bisa dibuka')
+    expect(
+      screen.getByText(
+        'Kelompok berikut belum punya fasilitator aktif. Tugaskan fasilitator sebelum sesi dibuka.',
+      ),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Kelompok Merah')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Buka detail' }))
+    await screen.findByText('SESSION DETAIL')
+  })
+
+  it('a finished zero-group gate failure says the session can only be deleted', async () => {
+    const seen: URL[] = []
+    const rowsRef = { rows: [sessionRow(1, 'Kelas Batik', { status: 'FINISHED' })] }
+    server.use(
+      listHandler(seen, rowsRef),
+      http.post('/api/sessions/1/open', () =>
+        HttpResponse.json({
+          error: { code: 'VALIDATION', message: 'invalid or missing field' },
+        }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderApp(null, {
+      routes: [
+        { path: '/sessions', element: <SessionsPage /> },
+        { path: '/sessions/:sid', element: <div>SESSION DETAIL</div> },
+      ],
+      route: '/sessions',
+      session: ADMIN_SESSION(),
+    })
+
+    await screen.findByText('Kelas Batik')
+    await user.click(screen.getByRole('button', { name: 'Buka' }))
+    await screen.findByText('Buka sesi ini?')
+    await user.click(screen.getByRole('button', { name: 'OK' }))
+
+    await screen.findByText('Kelas Batik tidak bisa dibuka lagi')
+    expect(
+      screen.getByText(/tidak bisa dibuka lagi\. Hapus sesi dan buat sesi baru\./),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'Daftar anggota dibekukan setelah sesi ditutup. Buka detail untuk menghapus sesi ini.',
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('Delete fetches the detail first, then keeps the typed wipe gate', async () => {
+    let detailCalls = 0
+    let deleteCalls = 0
+    const seen: URL[] = []
+    const rowsRef = { rows: [sessionRow(1, 'Kelas Batik')] }
+    server.use(
+      listHandler(seen, rowsRef),
+      http.get('/api/sessions/1', () => {
+        detailCalls += 1
+        return ok(detailFixture({ status: 'DRAFT', name: 'Kelas Batik' }))
+      }),
+      http.delete('/api/sessions/1', () => {
+        deleteCalls += 1
+        rowsRef.rows = []
+        return ok({})
+      }),
+    )
+    const user = userEvent.setup()
+    renderApp(<SessionsPage />, { route: '/sessions', session: ADMIN_SESSION() })
+
+    await screen.findByText('Kelas Batik')
+    await user.click(screen.getByRole('button', { name: 'Hapus' }))
+
+    await screen.findByText('Hapus sesi Kelas Batik?')
+    expect(detailCalls).toBe(1)
+    expect(screen.getByText('2 kelompok, 5 anggota, dan 3 topik penilaian ikut terhapus.')).toBeInTheDocument()
+
+    const dialog = screen.getByRole('dialog')
+    const confirm = within(dialog).getByRole('button', { name: 'Hapus sesi' })
+    expect(confirm).toBeDisabled()
+    await user.type(within(dialog).getByPlaceholderText('Kelas Batik'), 'Kelas Batik')
+    expect(confirm).toBeEnabled()
+    await user.click(confirm)
+
+    await screen.findByText('Sesi dihapus.')
+    expect(deleteCalls).toBe(1)
+    await waitFor(() => expect(screen.queryByText('Kelas Batik')).toBeNull())
   })
 })

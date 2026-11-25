@@ -30,7 +30,7 @@ application. Fresh build (no v1). See `00-SCOPE.md`.
 | `03-FEATURES.md` | feature inventory + functional requirements + business rules per role (F-01..F-17 incl. realtime SSE + endpoint feedback notifications) |
 | `04-FLOWS.md` | canonical end-to-end flows FL-01..FL-17 (FL-01..FL-16 product flows + FL-17 test flows) with snapshot ids, failure branches, and SSE publish → signal → refetch tails (FL-10 honest bytes) |
 | `05-DATA.md` | entities, fields, checks, indexes, shapes (incl. SSE frame), transforms, persistence (durable-file rule), hub + publish-after-commit |
-| `06-ERRORS-AND-EDGE-CASES.md` | HTTP-200 envelope taxonomy (E1..E32 + EX), stream propagation/reconnect/filter/caps, retry, races, edges (incl. SSE gap/orphan/revoke) |
+| `06-ERRORS-AND-EDGE-CASES.md` | HTTP-200 envelope taxonomy (E1..E33 + EX), stream propagation/reconnect/filter/caps, retry, races, edges (incl. SSE gap/orphan/revoke) |
 | `07-BEFORE-AFTER.md` | BEFORE (empty) vs AFTER per change incl. decisions recorded per change (Change 11 = SSE migration, Change 12 = server-side paging, Change 13 = test strategy + A4 fixed, Change 14 = spec-code sync remediation round 10, Change 15 = upload rule 50 MB client-side only, Pembaruan 2026-10-11, Change 16 = project structure decisions 33–37, Change 17 = spec↔code audit + total antd migration decisions 38–45, Change 18 = consistency audit round 12 + antd notification decisions 46–50, Change 19 = audit-§4 closure decisions 51–72, Pembaruan 2026-11-18 = rename penuh ke model School) |
 | `08-ACCEPTANCE-CRITERIA.md` | testable Given/When/Then (all 200-envelope assertions + SSE realtime + paging blocks + test strategy acceptance criteria) |
 | `SPEC-INDEX.md` | document index, locked user decisions 1–72 (incl. project-structure decisions 33–37 + audit & antd-migration decisions 38–45 + consistency/notification decisions 46–50 + audit-§4 closure decisions 51–72), implementation notes |
@@ -171,7 +171,8 @@ Letak pembaruan di tiap berkas:
 
 ## User decisions locked (2026-10-08 re-audit round 4)
 
-13. Group DELETE (Draft/Opened): cascade wipe (option B) — removes members
+13. Group DELETE (DRAFT only since decision 73 — the roster freezes after
+    Draft): cascade wipe (option B) — removes members
     from session + wipes their session data in one Tx; typed-text modal
     with counts. Single member remove: same per-child wipe, silent.
 14. Report attestation: LIVE current owner name at open time, fallback
@@ -559,6 +560,22 @@ Letak pembaruan di tiap berkas:
     seconds_left, revoked, mail_failed, user}` was already unified
     2026-10-11 in `02§2b`/`03 F-01`/`04 FL-03`/`05§2` — confirmed).
 
+## User decisions locked (2026-11-25 — session roster freeze, decision 73)
+
+73. Post-Draft roster freeze: group create/delete and member add/remove are
+    DRAFT-only; from Opened onward they answer 200 `SESSION_ROSTER_LOCKED`
+    (new code E33). The ONLY post-Draft group edits are rename + facilitator
+    replacement, legal in OPENED and FINISHED; an existing facilitator may be
+    swapped but never cleared (`facilitator_id:0` outside DRAFT → 200
+    `VALIDATION` — an ownerless group can never pass the reopen gate).
+    Rationale: OPENED → FINISHED accepts the roster as-is while every reopen
+    re-runs the open gates (≥1 non-empty group with an active owner), so an
+    Opened structural edit could create a closed session that can never
+    reopen. No repair mode: a session that leaves Draft with zero/empty
+    groups is delete-only once closed. Child master delete stays allowed
+    (the delete dialog lists the affected non-draft sessions as a warning).
+    Session metadata edits remain DRAFT-only (200 `SESSION_LOCKED` after).
+
 ## Implementation notes
 
 - Read `01-TECHSTACK.md` first for verbatim API names; `02§2b` for the
@@ -578,7 +595,7 @@ Letak pembaruan di tiap berkas:
 
 ## Unresolved decisions
 
-None blocking among locked spec decisions (1–72). Audit §4 is CLOSED
+None blocking among locked spec decisions (1–73). Audit §4 is CLOSED
 (decisions 51–72, 2026-10-12 — former decision 49 bookkeeping
 superseded). Open VERIFICATION items (decision 72): full frontend
 coverage run + live Docker compose boot — pending dedicated sessions.

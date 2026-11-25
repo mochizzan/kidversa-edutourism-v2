@@ -8,6 +8,8 @@
 import type { TFunction } from 'i18next'
 import type { SessionStatus } from '../components/StatusChip'
 
+export type { SessionStatus }
+
 export type ConsentStatus = 'PENDING' | 'SETUJU' | 'DITOLAK'
 
 export interface SessionListItem {

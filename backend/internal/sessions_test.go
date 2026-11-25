@@ -34,7 +34,7 @@ func TestSessionTransitionLockedWrongState(t *testing.T) {
 	mock.ExpectQuery(q("FROM sessions WHERE id = ? AND school_id = ?")).
 		WithArgs(int64(4), int64(1)).WillReturnRows(statusRows("DRAFT"))
 
-	res := doReq(t, app, "POST", "/api/sessions/4/finish", "", h)
+	res := doReq(t, app, "POST", "/api/sessions/4/close", "", h)
 	requireErrEnvelope(t, res, CodeSessionLocked)
 }
 
@@ -46,7 +46,7 @@ func TestSessionTransitionAlreadyInTargetState(t *testing.T) {
 	mock.ExpectQuery(q("FROM sessions WHERE id = ? AND school_id = ?")).
 		WithArgs(int64(4), int64(1)).WillReturnRows(statusRows("FINISHED"))
 
-	res := doReq(t, app, "POST", "/api/sessions/4/finish", "", h)
+	res := doReq(t, app, "POST", "/api/sessions/4/close", "", h)
 	data := requireDataEnvelope(t, res).(map[string]any)
 	require.Equal(t, "FINISHED", data["status"])
 	require.Equal(t, true, data["already"])
@@ -60,7 +60,7 @@ func TestSessionTransitionUnknownSessionIsNotFound(t *testing.T) {
 	mock.ExpectQuery(q("FROM sessions WHERE id = ? AND school_id = ?")).
 		WithArgs(int64(404), int64(1)).WillReturnError(sql.ErrNoRows)
 
-	res := doReq(t, app, "POST", "/api/sessions/404/finish", "", h)
+	res := doReq(t, app, "POST", "/api/sessions/404/close", "", h)
 	requireErrEnvelope(t, res, CodeNotFound)
 }
 
@@ -80,7 +80,7 @@ func TestSessionTransitionHappyPathCommitsGuardedUpdate(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 
-	res := doReq(t, app, "POST", "/api/sessions/4/finish", "", h)
+	res := doReq(t, app, "POST", "/api/sessions/4/close", "", h)
 	data := requireDataEnvelope(t, res).(map[string]any)
 	require.Equal(t, "FINISHED", data["status"])
 	_, hasAlready := data["already"]
@@ -101,7 +101,7 @@ func TestSessionTransitionStateConflictWhenRivalMovedFirst(t *testing.T) {
 		WithArgs(int64(4), int64(1)).WillReturnRows(statusRows("DRAFT"))
 	mock.ExpectRollback()
 
-	res := doReq(t, app, "POST", "/api/sessions/4/finish", "", h)
+	res := doReq(t, app, "POST", "/api/sessions/4/close", "", h)
 	requireErrEnvelope(t, res, CodeStateConflict)
 }
 
@@ -236,7 +236,7 @@ func TestSessionFinishUpdateZeroRowsLockedWhenStateForbids(t *testing.T) {
 		WithArgs(int64(4), int64(1)).WillReturnRows(statusRows("DRAFT"))
 	mock.ExpectRollback()
 
-	res := doReq(t, app, "POST", "/api/sessions/4/finish", "", h)
+	res := doReq(t, app, "POST", "/api/sessions/4/close", "", h)
 	requireErrEnvelope(t, res, CodeSessionLocked)
 	covNoFrame(t, sub, "the SESSION_LOCKED loser publishes nothing")
 }
@@ -1014,7 +1014,7 @@ func TestSessionListFASCarriesMyAssignment(t *testing.T) {
 }
 
 // TestSessionListRejectsUnknownStatusFilter: the ?status= value must be one
-// of DRAFT/OPENED/FINISHED — validated before any SQL (05 §3).
+// of DRAFT/OPENED/closeED — validated before any SQL (05 §3).
 func TestSessionListRejectsUnknownStatusFilter(t *testing.T) {
 	s, mock := newTestServer(t)
 	app := newTestApp(t, s)
@@ -1443,7 +1443,7 @@ func TestSessionMemberRemoveWipesAndPublishes(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Copy candidates + reopen + Draft PATCH happy path
+// Copy candidates + open-from-finished + Draft PATCH happy path
 // ---------------------------------------------------------------------------
 
 // TestSessionCopyCandidatesListShape: same-school same-program sessions that
@@ -1480,9 +1480,10 @@ func TestSessionCopyCandidatesListShape(t *testing.T) {
 	require.Equal(t, float64(2), counts["photos"])
 }
 
-// TestSessionReopenFinishesToOpened: FINISHED → OPENED carries no open gates
-// and publishes session.status with action "opened".
-func TestSessionReopenFinishesToOpened(t *testing.T) {
+// TestSessionOpenFromFinishedRunsGatesAndPublishes: FINISHED → OPENED is the
+// same start path as DRAFT → OPENED — it re-runs every open gate, commits the
+// guarded UPDATE and publishes session.status with action "opened".
+func TestSessionOpenFromFinishedRunsGatesAndPublishes(t *testing.T) {
 	s, mock := newTestServer(t)
 	app := newTestApp(t, s)
 	h := sessionAdminHeaders(t, s, mock)
@@ -1493,17 +1494,52 @@ func TestSessionReopenFinishesToOpened(t *testing.T) {
 	mock.ExpectBegin()
 	mock.ExpectQuery(q("FROM sessions WHERE id = ? AND school_id = ? FOR UPDATE")).
 		WithArgs(int64(4), int64(1)).WillReturnRows(statusRows("FINISHED"))
+	// A restart must satisfy the same group/child/facilitator gates.
+	mock.ExpectQuery(q("SELECT COUNT(*) FROM session_groups WHERE session_id = ?")).
+		WithArgs(int64(4)).
+		WillReturnRows(sqlmock.NewRows([]string{"n"}).AddRow(1))
+	mock.ExpectQuery(q("FROM session_groups g WHERE g.session_id = ?")).
+		WithArgs(int64(4)).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "facilitator_id", "members"}).
+			AddRow(10, "Kelompok Merah", 3, 2))
+	mock.ExpectQuery(q("SELECT EXISTS(SELECT 1 FROM users")).
+		WithArgs(int64(3), int64(1)).
+		WillReturnRows(sqlmock.NewRows([]string{"ok"}).AddRow(1))
 	mock.ExpectExec(q("UPDATE sessions SET status = ? WHERE id = ?")).
 		WithArgs("OPENED", int64(4), int64(1), "FINISHED").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 
-	res := doReq(t, app, "POST", "/api/sessions/4/reopen", "", h)
+	res := doReq(t, app, "POST", "/api/sessions/4/open", "", h)
 	data := requireDataEnvelope(t, res).(map[string]any)
 	require.Equal(t, "OPENED", data["status"])
-	f := covNextFrame(t, sub, "session.status after reopen")
+	f := covNextFrame(t, sub, "session.status after restart")
 	require.Equal(t, "session.status", f.Entity)
 	require.Equal(t, "opened", f.Action)
+}
+
+// TestSessionOpenFromFinishedGateFailurePublishesNothing: restarting a
+// FINISHED session is not a bypass — a now-empty group still blocks the open.
+func TestSessionOpenFromFinishedGateFailurePublishesNothing(t *testing.T) {
+	s, mock := newTestServer(t)
+	app := newTestApp(t, s)
+	h := sessionAdminHeaders(t, s, mock)
+	sub := covSubscribe(t, s, ScopeSnapshot{Role: "ADMIN", SchoolID: 1})
+
+	mock.ExpectQuery(q("FROM sessions WHERE id = ? AND school_id = ?")).
+		WithArgs(int64(4), int64(1)).WillReturnRows(statusRows("FINISHED"))
+	mock.ExpectBegin()
+	mock.ExpectQuery(q("FROM sessions WHERE id = ? AND school_id = ? FOR UPDATE")).
+		WithArgs(int64(4), int64(1)).WillReturnRows(statusRows("FINISHED"))
+	mock.ExpectQuery(q("SELECT COUNT(*) FROM session_groups WHERE session_id = ?")).
+		WithArgs(int64(4)).
+		WillReturnRows(sqlmock.NewRows([]string{"n"}).AddRow(0))
+	mock.ExpectRollback()
+
+	res := doReq(t, app, "POST", "/api/sessions/4/open", "", h)
+	env := requireErrEnvelope(t, res, CodeValidation)
+	require.Empty(t, env["groups"], "a session with zero groups has no offender to name")
+	covNoFrame(t, sub, "a failed restart publishes nothing")
 }
 
 // TestSessionPatchDraftHappyPathPublishes: a Draft snapshot edit commits the

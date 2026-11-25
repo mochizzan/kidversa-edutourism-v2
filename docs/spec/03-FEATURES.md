@@ -192,7 +192,9 @@ Conventions: `[ROLE: SA/ADMIN/FAS]` = who may use. All school-scoped.
 - Hard delete (typed confirm): removes child row + `session_members` +
   assessments + photo rows + disk files + narratives + `report_missions` +
   consent/public link rows for that child (links revoked). `wa_outbox`
-  retained. Masters untouched.
+  retained. Masters untouched. The dialog lists any OPENED/FINISHED
+  memberships as a warning: rosters are frozen after Draft, so removing the
+  child can leave such a session unopenable once it closes (delete-only).
 
 ## F-08 Session (Sesi) [ADMIN create; SA full; FAS view/own-groups]
 
@@ -222,10 +224,16 @@ Conventions: `[ROLE: SA/ADMIN/FAS]` = who may use. All school-scoped.
   masters/children kept. After wipe, opening an old link → 200
   `TOKEN_INVALID` ("link invalid"); `wa_outbox` rows retained 90 d as
   send audit. No other cancel state exists.
-- Draft: edit anything (`PATCH`). Opened: only groups/members/owner edits.
-  Snapshot names/dates/program immutable after creation (200 `SESSION_LOCKED`
-  on attempt). Finish allowed with partial assessments (warn list).
-  Reopen (ADMIN/SA) → Opened (writes resume; badges recompute).
+- Draft: edit anything (`PATCH`, group create/delete, member add/remove).
+  Post-Draft roster freeze: from Opened onward groups and participants are
+  structural-frozen (200 `SESSION_ROSTER_LOCKED`); the ONLY post-Draft group
+  edits are rename + facilitator replacement (an owner can be swapped, never
+  cleared → 200 `VALIDATION`). Snapshot names/dates/program immutable after
+  creation (200 `SESSION_LOCKED` on attempt). Close allowed with partial
+  assessments (no completion prerequisites, no warn list). A Finished session
+  can be opened again (same gates; writes resume; badges recompute). Because
+  the roster is frozen after Draft, a session that leaves Draft with zero
+  groups or empty groups can never reopen — delete-only.
 - Assessment allowed only while Opened AND group has active owner;
   otherwise 200 `GROUP_WITHOUT_FACILITATOR` / `SESSION_LOCKED`.
 - Session detail: other groups show name/headcount only

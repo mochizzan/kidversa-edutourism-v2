@@ -269,6 +269,28 @@
   background: var(--kv-canvas);
 }
 
+/* Post-Draft roster lock notice: a quiet explanation strip, not a warning —
+   nothing is broken, the roster is intentionally frozen. The lock icon is
+   decorative; the sentence carries the meaning. */
+.kv-groups-lock {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--kv-border);
+  border-radius: var(--kv-radius-control);
+  background: var(--kv-surface);
+  color: var(--kv-text-2);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.kv-groups-lock .anticon {
+  flex: none;
+  margin-top: 2px;
+}
+
 .kv-groups-empty .kv-empty {
   padding: 28px 20px;
 }

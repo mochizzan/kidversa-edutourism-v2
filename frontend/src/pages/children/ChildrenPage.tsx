@@ -79,6 +79,13 @@ interface ChildCounts {
   links: number
 }
 
+/** Non-draft membership from GET `/api/children/:id` (delete warning). */
+interface ChildSessionRef {
+  id: number
+  name: string
+  status: 'OPENED' | 'FINISHED'
+}
+
 interface ChildPayload {
   name: string
   age: number
@@ -353,7 +360,11 @@ export default function ChildrenPage() {
   const [search, setSearch] = useState('')
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<Child | null>(null)
-  const [deleting, setDeleting] = useState<{ row: Child; counts: ChildCounts } | null>(null)
+  const [deleting, setDeleting] = useState<{
+    row: Child
+    counts: ChildCounts
+    sessions: ChildSessionRef[]
+  } | null>(null)
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [togglingId, setTogglingId] = useState<number | null>(null)
 
@@ -382,8 +393,10 @@ export default function ChildrenPage() {
 
   const startDelete = async (row: Child) => {
     try {
-      const data = await api.get<{ counts: ChildCounts }>(`/api/children/${row.id}`)
-      setDeleting({ row, counts: data.counts })
+      const data = await api.get<{ counts: ChildCounts; sessions: ChildSessionRef[] }>(
+        `/api/children/${row.id}`,
+      )
+      setDeleting({ row, counts: data.counts, sessions: data.sessions ?? [] })
     } catch (error) {
       toast(error) // NOT_FOUND (stale row) → toast, no dialog
       list.refetch()
@@ -632,6 +645,21 @@ export default function ChildrenPage() {
         }}
         onCancel={() => setDeleting(null)}
       >
+        {deleting && deleting.sessions.length > 0 ? (
+          <Alert
+            style={{ marginBottom: 12 }}
+            type="warning"
+            showIcon
+            message={t('master:children.deleteSessionsWarning', {
+              sessions: deleting.sessions
+                .map(
+                  (session) =>
+                    `${session.name} (${t(`common:status.${session.status.toLowerCase()}`)})`,
+                )
+                .join(', '),
+            })}
+          />
+        ) : null}
         <Typography.Paragraph>
           {t('master:children.deleteCounts', {
             members: deleting?.counts.members ?? 0,

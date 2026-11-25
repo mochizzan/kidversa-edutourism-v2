@@ -266,6 +266,10 @@ func TestChildrenGetDetailReturnsChildAndCounts(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{
 			"members", "assessments", "photos", "narratives", "missions", "consents", "links",
 		}).AddRow(2, 3, 1, 4, 5, 6, 7))
+	mock.ExpectQuery(q("JOIN sessions s ON s.id = sm.session_id")).
+		WithArgs(int64(4), int64(1)).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "status"}).
+			AddRow(2, "Sesi A", "OPENED"))
 
 	res := doReq(t, app, "GET", "/api/children/4", "", hAdmin(t, s))
 	data := requireDataEnvelope(t, res).(map[string]any)
@@ -281,6 +285,10 @@ func TestChildrenGetDetailReturnsChildAndCounts(t *testing.T) {
 		"members": float64(2), "assessments": float64(3), "photos": float64(1),
 		"narratives": float64(4), "missions": float64(5), "links": float64(13),
 	}, data["counts"])
+	// sessions lists the non-draft memberships behind the delete warning.
+	require.Equal(t, []any{
+		map[string]any{"id": float64(2), "name": "Sesi A", "status": "OPENED"},
+	}, data["sessions"])
 }
 
 func TestChildrenGetUnknownIDIsNotFoundBeforeCounts(t *testing.T) {

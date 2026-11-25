@@ -190,79 +190,82 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// Error codes (06 §1 taxonomy E1..E32 + EX). HTTP is 200 for all of them;
+// Error codes (06 §1 taxonomy E1..E33 + EX). HTTP is 200 for all of them;
 // only CodeInternal ever travels with HTTP 500 (app ErrorHandler).
 const (
-	CodeValidation         = "VALIDATION"                // E1
-	CodeEmailTaken         = "EMAIL_TAKEN"               // E2
-	CodeInvalidCredentials = "INVALID_CREDENTIALS"       // E3
-	CodeInvalidToken       = "INVALID_TOKEN"             // E4
-	CodeAccountInactive    = "ACCOUNT_INACTIVE"          // E5
-	CodeSchoolInactive     = "SCHOOL_INACTIVE"           // E6
-	CodeSchoolMismatch     = "SCHOOL_MISMATCH"           // E7
-	CodeForbiddenRole      = "FORBIDDEN_ROLE"            // E8
-	CodeNotOwner           = "NOT_OWNER"                 // E9
-	CodeSessionLocked      = "SESSION_LOCKED"            // E10
-	CodeStateConflict      = "STATE_CONFLICT"            // E11
-	CodeChildDuplicate     = "CHILD_DUPLICATE"           // E12
-	CodeProgramIncomplete  = "PROGRAM_INCOMPLETE"        // E13
-	CodeGroupNoFacilitator = "GROUP_WITHOUT_FACILITATOR" // E14
-	CodePhotoLimit         = "PHOTO_LIMIT"               // E15
-	CodeConsentLocked      = "CONSENT_LOCKED"            // E16
-	CodeReportIncomplete   = "REPORT_INCOMPLETE"         // E17
-	CodeNothingToNarrate   = "NOTHING_TO_NARRATE"        // E18
-	CodeMissionLimit       = "MISSION_LIMIT"             // E19
-	CodeAIFailed           = "AI_FAILED"                 // E20
-	CodeWAFailed           = "WA_FAILED"                 // E21
-	CodeMailFailed         = "MAIL_FAILED"               // E22
-	CodeRateLimited        = "RATE_LIMITED"              // E23
-	CodeTokenInvalid       = "TOKEN_INVALID"             // E24
-	CodeResetExpired       = "RESET_EXPIRED"             // E25
-	CodeResetUsed          = "RESET_USED"                // E26
-	CodeDBUnavailable      = "DB_UNAVAILABLE"            // E27
-	CodeCameraDenied       = "CAMERA_DENIED"             // E28 (client-side only)
-	CodePhotoMissing       = "PHOTO_MISSING"             // E29 (item flag, never an envelope)
-	CodeNotFound           = "NOT_FOUND"                 // E30
-	CodeHasOpenGroups      = "HAS_OPEN_GROUPS"           // E31
-	CodeChildInactive      = "CHILD_INACTIVE"            // E32
-	CodeInternal           = "INTERNAL"                  // EX (HTTP 500 only)
+	CodeValidation          = "VALIDATION"                // E1
+	CodeEmailTaken          = "EMAIL_TAKEN"               // E2
+	CodeInvalidCredentials  = "INVALID_CREDENTIALS"       // E3
+	CodeInvalidToken        = "INVALID_TOKEN"             // E4
+	CodeAccountInactive     = "ACCOUNT_INACTIVE"          // E5
+	CodeSchoolInactive      = "SCHOOL_INACTIVE"           // E6
+	CodeSchoolMismatch      = "SCHOOL_MISMATCH"           // E7
+	CodeForbiddenRole       = "FORBIDDEN_ROLE"            // E8
+	CodeNotOwner            = "NOT_OWNER"                 // E9
+	CodeSessionLocked       = "SESSION_LOCKED"            // E10
+	CodeStateConflict       = "STATE_CONFLICT"            // E11
+	CodeChildDuplicate      = "CHILD_DUPLICATE"           // E12
+	CodeProgramIncomplete   = "PROGRAM_INCOMPLETE"        // E13
+	CodeGroupNoFacilitator  = "GROUP_WITHOUT_FACILITATOR" // E14
+	CodePhotoLimit          = "PHOTO_LIMIT"               // E15
+	CodeConsentLocked       = "CONSENT_LOCKED"            // E16
+	CodeReportIncomplete    = "REPORT_INCOMPLETE"         // E17
+	CodeNothingToNarrate    = "NOTHING_TO_NARRATE"        // E18
+	CodeMissionLimit        = "MISSION_LIMIT"             // E19
+	CodeAIFailed            = "AI_FAILED"                 // E20
+	CodeWAFailed            = "WA_FAILED"                 // E21
+	CodeMailFailed          = "MAIL_FAILED"               // E22
+	CodeRateLimited         = "RATE_LIMITED"              // E23
+	CodeTokenInvalid        = "TOKEN_INVALID"             // E24
+	CodeResetExpired        = "RESET_EXPIRED"             // E25
+	CodeResetUsed           = "RESET_USED"                // E26
+	CodeDBUnavailable       = "DB_UNAVAILABLE"            // E27
+	CodeCameraDenied        = "CAMERA_DENIED"             // E28 (client-side only)
+	CodePhotoMissing        = "PHOTO_MISSING"             // E29 (item flag, never an envelope)
+	CodeNotFound            = "NOT_FOUND"                 // E30
+	CodeHasOpenGroups       = "HAS_OPEN_GROUPS"           // E31
+	CodeChildInactive       = "CHILD_INACTIVE"            // E32
+	CodeSessionRosterLocked = "SESSION_ROSTER_LOCKED"     // E33
+	CodeInternal            = "INTERNAL"                  // EX (HTTP 500 only)
 )
 
 // Default messages (06 §1 user-visible text; clients retranslate by code).
 const (
-	MsgValidation         = "invalid or missing field"
-	MsgEmailTaken         = "email already used"
-	MsgInvalidCredentials = "wrong email or password"
-	MsgInvalidToken       = "invalid or expired token"
-	MsgAccountInactive    = "account pending approval or deactivated"
-	MsgSchoolInactive     = "school disabled"
-	MsgSchoolMismatch     = "school changed, reloading"
-	MsgForbiddenRole      = "no access"
-	MsgNotOwner           = "not your group"
-	MsgSessionLocked      = "session is locked"
-	MsgStateConflict      = "changed elsewhere, reloading"
-	MsgChildDuplicate     = "child already belongs to a group in this session"
-	MsgProgramIncomplete  = "program is incomplete"
-	MsgGroupNoFacilitator = "group has no facilitator"
-	MsgPhotoLimit         = "maximum 10 photos"
-	MsgConsentLocked      = "waiting for parent approval"
-	MsgReportIncomplete   = "report incomplete"
-	MsgNothingToNarrate   = "no assessments to narrate"
-	MsgMissionLimit       = "maximum 4 missions"
-	MsgAIFailed           = "AI failed, try again"
-	MsgWAFailed           = "WhatsApp send failed"
-	MsgMailFailed         = "email failed, ask an admin for the code"
-	MsgRateLimited        = "too many requests, try again shortly"
-	MsgTokenInvalid       = "link invalid"
-	MsgResetExpired       = "code expired"
-	MsgResetUsed          = "code already used"
-	MsgDBUnavailable      = "service busy, retry"
-	MsgCameraDenied       = "allow the camera or upload a file"
-	MsgPhotoMissing       = "photo file missing"
-	MsgNotFound           = "not found"
-	MsgHasOpenGroups      = "reassign this user's groups first"
-	MsgChildInactive      = "child inactive"
-	MsgInternal           = "unexpected error"
+	MsgValidation          = "invalid or missing field"
+	MsgEmailTaken          = "email already used"
+	MsgInvalidCredentials  = "wrong email or password"
+	MsgInvalidToken        = "invalid or expired token"
+	MsgAccountInactive     = "account pending approval or deactivated"
+	MsgSchoolInactive      = "school disabled"
+	MsgSchoolMismatch      = "school changed, reloading"
+	MsgForbiddenRole       = "no access"
+	MsgNotOwner            = "not your group"
+	MsgSessionLocked       = "session is locked"
+	MsgStateConflict       = "changed elsewhere, reloading"
+	MsgChildDuplicate      = "child already belongs to a group in this session"
+	MsgProgramIncomplete   = "program is incomplete"
+	MsgGroupNoFacilitator  = "group has no facilitator"
+	MsgPhotoLimit          = "maximum 10 photos"
+	MsgConsentLocked       = "waiting for parent approval"
+	MsgReportIncomplete    = "report incomplete"
+	MsgNothingToNarrate    = "no assessments to narrate"
+	MsgMissionLimit        = "maximum 4 missions"
+	MsgAIFailed            = "AI failed, try again"
+	MsgWAFailed            = "WhatsApp send failed"
+	MsgMailFailed          = "email failed, ask an admin for the code"
+	MsgRateLimited         = "too many requests, try again shortly"
+	MsgTokenInvalid        = "link invalid"
+	MsgResetExpired        = "code expired"
+	MsgResetUsed           = "code already used"
+	MsgDBUnavailable       = "service busy, retry"
+	MsgCameraDenied        = "allow the camera or upload a file"
+	MsgPhotoMissing        = "photo file missing"
+	MsgNotFound            = "not found"
+	MsgHasOpenGroups       = "reassign this user's groups first"
+	MsgChildInactive       = "child inactive"
+	MsgSessionRosterLocked = "groups and participants can only be changed in draft"
+	MsgFacilitatorRequired = "assign a replacement facilitator after the session opens"
+	MsgInternal            = "unexpected error"
 )
 
 // Request-context Locals keys (set by authed/idempotency/stream guards).

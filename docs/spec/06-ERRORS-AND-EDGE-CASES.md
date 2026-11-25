@@ -66,7 +66,7 @@ All rows: HTTP 200 (except INTERNAL → 500).
 | E7 | SCHOOL_MISMATCH | `X-School-ID` ≠ JWT claim for a NON-SA member (tampered/forged header) or a malformed header; SA with a valid school header is always accepted (switcher semantics) — SA to an inactive/deleted school → 200 SCHOOL_INACTIVE | "school changed, reloading" | SA: client reloads context + re-switch; non-SA: client clears to own school from JWT claim; both logged as auth-anomaly |
 | E8 | FORBIDDEN_ROLE | wrong role for endpoint (incl. FAS consent-send, FAS children mutate, non-SA school admin) | "no access" | switch account / hide button |
 | E9 | NOT_OWNER | facilitator touches foreign group/child | thumbnail only | open own group |
-| E10 | SESSION_LOCKED | wrong-STATE call by a single writer (stars/notes write on Draft or Finished; snapshot/program/groups/members write on Finished; DELETE on Opened; finish-on-Draft / open-on-Finished / reopen-on-non-Finished) — decided by a status RE-READ after the guarded UPDATE hits 0 (expected≠current and no rival transition: current state itself forbids the op) | read-only notice | open/reopen/finish first |
+| E10 | SESSION_LOCKED | wrong-STATE call by a single writer (stars/notes write on Draft or Finished; session metadata write outside Draft; snapshot/program write in any status; DELETE on Opened; close-on-Draft) — decided by a status RE-READ after the guarded UPDATE hits 0 (expected≠current and no rival transition: current state itself forbids the op) | read-only notice | open/close in the allowed state first |
 | E11 | STATE_CONFLICT | concurrent status transition lost (guarded `UPDATE…WHERE status` hit 0 AND re-read shows status already moved to the wanted-or-beyond state by a rival) — decided by the same re-read (rival won the race) | "changed elsewhere, reloaded" | reload session |
 | E12 | CHILD_DUPLICATE | child in 2 groups same session | blocked with names | remove from one |
 | E13 | PROGRAM_INCOMPLETE | program w/o topics/activities into session | blocked with reason | complete master |
@@ -89,6 +89,7 @@ All rows: HTTP 200 (except INTERNAL → 500).
 | E30 | NOT_FOUND | unknown id or cross-school id (no leak; same shape); non-member child on any per-child-per-topic `P` op or consent-send (round 5 membership gate) | "not found" | back to list |
 | E31 | HAS_OPEN_GROUPS | delete user owning OPENED groups | "reassign groups first" + list | reassign then delete |
 | E32 | CHILD_INACTIVE | any inactive-child gate of §5: session-create `groups[].child_ids`, member add, send-consent, assessment/photo/narrative/mission ops, send-report/batch items | "child inactive" | reactivate |
+| E33 | SESSION_ROSTER_LOCKED | structural roster mutation (group create/delete, member add/remove) on an OPENED or FINISHED session — the roster is DRAFT-only by design (post-Draft freeze). Rename + facilitator replacement remain legal; their owner problems are E1 | locked notice, rename/facilitator still offered | change only name/facilitator, or delete + recreate the session |
 | EX | INTERNAL | unhandled panic/DB-boot fail (HTTP 500 only) | "unexpected error" | retry; check logs |
 
 Removed codes (do not implement): `SCHOOL_DISABLED` (folded into
@@ -114,7 +115,7 @@ SMTP down → 200 {sent:true} + masked dashboard row → ADMIN reveals +
 Camera denied → E28 client state → gallery-upload button
 Token miss/revoked → 200 TOKEN_INVALID identical shape (no oracle)
 Stale SA tab → 200 SCHOOL_MISMATCH → client reloads school context
-Concurrent open/finish/reopen → loser 200 STATE_CONFLICT → reload
+Concurrent open/close → loser 200 STATE_CONFLICT → reload
 SSE stream (round 7): publish is best-effort — hub-full/DB-down at
   publish time → drop + `slog`, mutation already committed (client learns
   via its own 200 `{data}` + own refetch; other tabs catch up on the
@@ -289,6 +290,14 @@ connection state is reported inside `data`.
   then state gates (SESSION_LOCKED etc.); consent send: membership →
   state (non-member in FINISHED session → 200 `NOT_FOUND`, not
   `SESSION_LOCKED`).
+- Post-Draft roster freeze (decision 73): group create/delete and member
+  add/remove on OPENED/FINISHED → 200 `SESSION_ROSTER_LOCKED`; rename +
+  facilitator replacement stay legal in every status, but `facilitator_id:0`
+  outside DRAFT → 200 `VALIDATION` (assign a replacement). An OPENED
+  session already damaged (zero groups or an empty group from before the
+  freeze) cannot be repaired: closing it makes every reopen fail the gates
+  → delete-only. Child-master hard delete still removes memberships in any
+  status — the dialog warns and lists the affected non-draft sessions.
 - Clock skew → 60 s JWT leeway; TTLs server-side.
 - Browser refresh mid-assessment → per-activity saves persist; unsaved
   card input lost (draft-notice).
