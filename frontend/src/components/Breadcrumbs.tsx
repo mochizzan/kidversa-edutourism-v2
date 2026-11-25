@@ -30,7 +30,12 @@ interface Crumb {
 /** The five masters hang off the rail's Masters accordion, so they nest too. */
 const MASTER_PAGES = new Set(['programs', 'topics', 'activities', 'missions', 'frames'])
 
-function buildCrumbs(pathname: string, names: CrumbNames, t: TFunction<'menu'>): Crumb[] {
+function buildCrumbs(
+  pathname: string,
+  search: string,
+  names: CrumbNames,
+  t: TFunction<'menu'>,
+): Crumb[] {
   const parts = pathname.split('/').filter(Boolean)
   const home: Crumb = { key: 'home', label: t('dashboard') }
   if (parts.length === 0) return [home]
@@ -61,6 +66,19 @@ function buildCrumbs(pathname: string, names: CrumbNames, t: TFunction<'menu'>):
       if (third === 'gallery') {
         // A child gallery nests one leaf deeper: Session → Gallery → child.
         if (parts[3] === 'children') {
+          // Keep the camera's topic scope when walking back to the child.
+          const stid = new URLSearchParams(search).get('stid')
+          const topic = stid === null ? '' : `?stid=${encodeURIComponent(stid)}`
+          const childPath = `/sessions/${second}/gallery/children/${parts[4]}${topic}`
+          if (parts[5] === 'capture') {
+            // The camera is a leaf under the child: … → child → Camera.
+            return [
+              ...ancestors,
+              { key: 'gallery', label: t('breadcrumb.gallery'), to: `/sessions/${second}/gallery` },
+              { key: 'childGallery', label: names.cid ?? t('breadcrumb.childGallery'), to: childPath },
+              { key: 'capture', label: t('breadcrumb.capture') },
+            ]
+          }
           return [
             ...ancestors,
             { key: 'gallery', label: t('breadcrumb.gallery'), to: `/sessions/${second}/gallery` },
@@ -107,11 +125,11 @@ const LabelledBreadcrumb = Breadcrumb as ComponentType<BreadcrumbProps & { 'aria
 
 export default function Breadcrumbs() {
   const { t } = useTranslation('menu')
-  const { pathname } = useLocation()
+  const { pathname, search } = useLocation()
   const names = useCrumbNames()
 
   const items = useMemo(() => {
-    const crumbs = buildCrumbs(pathname, names, t)
+    const crumbs = buildCrumbs(pathname, search, names, t)
     return crumbs.map((crumb, index) => {
       const last = index === crumbs.length - 1
       return {
@@ -120,7 +138,7 @@ export default function Breadcrumbs() {
         'aria-current': last ? ('page' as const) : undefined,
       }
     })
-  }, [pathname, names, t])
+  }, [pathname, search, names, t])
 
   return (
     <div className="kv-topbar">

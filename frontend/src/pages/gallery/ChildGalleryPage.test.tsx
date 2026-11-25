@@ -1,64 +1,44 @@
 /**
- * Dedicated child gallery (`/sessions/:sid/gallery/children/:cid`): the
- * consent gate locks this workspace (and the gallery offers no consent-sending
- * action — send/resend lives on the consent page), the honest-file upload flow
- * (multipart contract, transient preview only, item appears solely via
- * `photo.changed` → refetch), PHOTO_LIMIT inline, the client pre-check that
- * blocks oversize (>50 MB) and wrong-format photos before send, candidate
- * toggling and deletion, plus the `copy.completed` photo refetch.
+ * Dedicated child gallery (`/sessions/:sid/gallery/children/:cid`): photos
+ * only. The consent gate locks this workspace (and offers no consent-sending
+ * action — send/resend lives on the consent page), direct uploads follow the
+ * honest-file rule (multipart contract, no optimistic row, item appears solely
+ * via `photo.changed` → refetch), PHOTO_LIMIT renders inline, the client
+ * pre-check blocks oversize/wrong-format files before send, candidate toggling
+ * and deletion work, `copy.completed` refetches, and the primary action opens
+ * the separate camera studio with the topic intact.
  *
- * Topic selection lives here now; it is hidden when the session has one topic.
+ * Topic selection lives here; it is hidden when the session has one topic.
  */
-import { describe, expect, it, vi } from 'vitest'
-import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { describe, expect, it } from 'vitest'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { delay, http, HttpResponse } from 'msw'
-import StreamGate from '../../components/StreamGate'
+import { useSearchParams } from 'react-router'
 import ChildGalleryPage from './ChildGalleryPage'
 import { emitSignal } from '../../lib/stream'
 import { renderApp } from '../../test/render'
 import { server } from '../../test/setup'
-import { makeLoginData, makeUser, ok, paged, sseChannel } from '../../test/handlers'
-import {
-  detailFixture,
-  photoItem,
-  pushFrame,
-  until,
-  useSseFakeTimers,
-} from '../../test/helpers.cov-session'
+import { makeLoginData, makeUser, ok } from '../../test/handlers'
+import { detailFixture, photoItem } from '../../test/helpers.cov-session'
 import type { PhotoItem, SessionDetail } from '../../lib/session-contracts'
 import type { RouteObject } from 'react-router'
 
-const CHILD_ROUTES = (gate = false): RouteObject[] => [
-  {
-    path: '/sessions/:sid/gallery',
-    element: <div>GALLERY INDEX</div>,
-  },
-  {
-    path: '/sessions/:sid/gallery/children/:cid',
-    element: gate ? (
-      <>
-        <StreamGate />
-        <ChildGalleryPage />
-      </>
-    ) : (
-      <ChildGalleryPage />
-    ),
-  },
+/** The capture route is a separate page; the stub proves the navigation target
+ * and carries the topic query the studio needs. */
+function CaptureStub() {
+  const [params] = useSearchParams()
+  return <div>CAMERA STUDIO {params.get('stid')}</div>
+}
+
+const CHILD_ROUTES: RouteObject[] = [
+  { path: '/sessions/:sid/gallery', element: <div>GALLERY INDEX</div> },
+  { path: '/sessions/:sid/gallery/children/:cid', element: <ChildGalleryPage /> },
+  { path: '/sessions/:sid/gallery/children/:cid/capture', element: <CaptureStub /> },
 ]
 
 const ADMIN_SESSION = () => makeLoginData({ user: makeUser({ role: 'ADMIN' }) })
 const FAS_SESSION = () => makeLoginData({ user: makeUser({ role: 'FASILITATOR' }) })
-
-function framesHandler() {
-  return http.get('/api/frames', () =>
-    paged([{ id: 11, name: 'Bingkai Cantik', image_url: '/uploads/frames/11.png' }], {
-      page: 1,
-      per_page: 1000,
-      total: 1,
-    }),
-  )
-}
 
 /** Child 2 (Aisyah) is PENDING, child 3 (Budi) is SETUJU — see detailFixture. */
 function photosHandler(prefix: '2' | '3', photosRef: { photos: PhotoItem[] }) {
@@ -69,26 +49,27 @@ function photosHandler(prefix: '2' | '3', photosRef: { photos: PhotoItem[] }) {
 
 function renderChild(
   cid: 2 | 3,
-  options: { gate?: boolean; session?: ReturnType<typeof ADMIN_SESSION>; route?: string } = {},
+  options: { session?: ReturnType<typeof ADMIN_SESSION>; route?: string } = {},
 ) {
-  const { gate = false, session = ADMIN_SESSION(), route } = options
+  const { session = ADMIN_SESSION(), route } = options
   renderApp(null, {
-    routes: CHILD_ROUTES(gate),
+    routes: CHILD_ROUTES,
     route: route ?? `/sessions/1/gallery/children/${cid}`,
     session,
   })
 }
 
 describe('child gallery consent gate', () => {
-  it('PENDING consent locks the gallery; the send action is gone', async () => {
+  it('PENDING consent locks the gallery; no photo affordance is shown', async () => {
     server.use(http.get('/api/sessions/1', () => ok(detailFixture({ status: 'OPENED' }))))
     renderChild(2)
 
     await screen.findByText('Galeri terkunci sampai orang tua menyetujui.')
     screen.getByText('Persetujuan: Menunggu')
-    // No upload affordance while locked.
+    // No direct upload and no camera affordance while locked.
     expect(document.querySelector('input[type="file"]')).toBeNull()
     expect(screen.queryByRole('button', { name: /Ambil foto/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Unggah foto/ })).toBeNull()
     // The gallery offers no consent sending; the consent-page link stays.
     expect(screen.queryByRole('button', { name: /Kirim persetujuan/ })).toBeNull()
     expect(screen.queryByRole('button', { name: /Kirim ulang/ })).toBeNull()
@@ -151,7 +132,7 @@ describe('child gallery consent gate', () => {
   it('an unknown child shows not-found with a way back to the directory', async () => {
     server.use(http.get('/api/sessions/1', () => ok(detailFixture({ status: 'OPENED' }))))
     renderApp(null, {
-      routes: CHILD_ROUTES(),
+      routes: CHILD_ROUTES,
       route: '/sessions/1/gallery/children/99',
       session: ADMIN_SESSION(),
     })
@@ -161,75 +142,70 @@ describe('child gallery consent gate', () => {
   })
 })
 
-describe('child gallery upload (honest-file rule)', () => {
-  it('uploads multipart, keeps the preview transient, then lands via photo.changed', async () => {
-    useSseFakeTimers()
-    // Grant a fake camera: without it PhotoCapture starts in CAMERA_DENIED
-    // and the transient upload preview (a non-denied-mode branch) never renders.
-    Object.defineProperty(navigator, 'mediaDevices', {
-      configurable: true,
-      value: { getUserMedia: vi.fn(async () => ({ getTracks: () => [] })) },
-    })
-    const captured: { raw: string | null } = { raw: null }
-    const photosRef: { photos: PhotoItem[] } = { photos: [] }
-    const channel = sseChannel('/api/stream')
+describe('child gallery camera hand-off', () => {
+  it('the primary action opens the capture route with the active topic', async () => {
     server.use(
-      channel.handler,
       http.get('/api/sessions/1', () => ok(detailFixture({ status: 'OPENED' }))),
-      framesHandler(),
+      photosHandler('3', { photos: [] }),
+    )
+    const user = userEvent.setup()
+    renderChild(3)
+
+    await screen.findByText('Belum ada foto.')
+    await user.click(screen.getByRole('button', { name: /Ambil foto/ }))
+
+    await screen.findByText('CAMERA STUDIO 3')
+  })
+})
+
+describe('child gallery upload (honest-file rule)', () => {
+  it('uploads multipart without a frame, then lands via photo.changed', async () => {
+    const captured: { raw: string | null } = { raw: null }
+    let uploadDone = false
+    const photosRef: { photos: PhotoItem[] } = { photos: [] }
+    server.use(
+      http.get('/api/sessions/1', () => ok(detailFixture({ status: 'OPENED' }))),
       photosHandler('3', photosRef),
       // NB: request.formData() hits a jsdom-File/undici webidl assertion here —
-      // the multipart contract is asserted on the raw body instead. The
-      // artificial delay keeps `uploading` observable while the response is
-      // still in flight (fake-timer stepped by `until`).
+      // the multipart contract is asserted on the raw body instead. The delay
+      // keeps the upload observably in flight.
       http.post('/api/sessions/1/topics/3/children/3/photos', async ({ request }) => {
         captured.raw = await request.text()
-        await delay(500)
+        await delay(100)
+        uploadDone = true
         return ok({ photo: photoItem(7) })
       }),
     )
-    renderChild(3, { gate: true })
-    await until(() => channel.handshakes === 1)
-    await until(() => screen.queryByText('Belum ada foto.') !== null)
-    // The default frame is selected before the capture, so frame_id rides along.
-    await until(() => screen.queryByTitle('Bingkai Cantik') !== null)
+    renderChild(3)
+    await screen.findByText('Belum ada foto.')
 
-    // Camera is unavailable in jsdom → the fallback picker carries the file input.
     const input = document.querySelector('input[type="file"]') as HTMLInputElement
     const file = new File([new Uint8Array(16)], 'foto.jpg', { type: 'image/jpeg' })
     fireEvent.change(input, { target: { files: [file] } })
 
-    // While the upload is in flight: the transient preview shows, but NO
-    // gallery item exists yet (honest-file rule). NB: asserted via the preview
-    // block's class — PhotoCapture's `capture.*` i18n keys miss (the locale
-    // nests them at `gallery.capture.*`), so its label renders as the raw key.
-    await until(() => captured.raw !== null)
-    expect(document.querySelector('.kv-capture__preview')).not.toBeNull()
+    // While the upload is in flight: NO gallery item exists yet.
+    await waitFor(() => expect(captured.raw).not.toBeNull())
     expect(screen.queryByAltText('/uploads/photos/7.jpg')).toBeNull()
 
-    // Multipart contract: file field name + JPEG type + the default frame
-    // overlay value. (The serialized filename reads "blob" — the jsdom File
-    // name does not survive the undici body bridge; not an app concern.)
+    // Multipart contract: file field name + JPEG type, and NO frame overlay —
+    // direct gallery uploads stay raw.
     expect(captured.raw).toContain('name="file"')
     expect(captured.raw).toContain('Content-Type: image/jpeg')
-    expect(captured.raw).toContain('name="frame_id"')
-    expect(captured.raw).toContain('11')
+    expect(captured.raw).not.toContain('name="frame_id"')
 
-    // The preview drops with the 200; the grid stays empty.
-    await until(() => document.querySelector('.kv-capture__preview') === null)
+    await waitFor(() => expect(uploadDone).toBe(true))
     expect(screen.queryByText('Belum ada foto.')).not.toBeNull()
 
     // The honest-file rule: the item lands ONLY via photo.changed → refetch.
     photosRef.photos = [photoItem(7)]
-    pushFrame(channel, 'photo.changed', { rev: 1 })
-    await until(() => screen.queryByAltText('/uploads/photos/7.jpg') !== null)
+    emitSignal('photo.changed', { rev: 1 })
+    await screen.findByAltText('/uploads/photos/7.jpg')
   })
 
   it('the >50 MB client pre-check blocks the request', async () => {
     let uploadCalls = 0
     server.use(
       http.get('/api/sessions/1', () => ok(detailFixture({ status: 'OPENED' }))),
-      framesHandler(),
       photosHandler('3', { photos: [] }),
       http.post('/api/sessions/1/topics/3/children/3/photos', () => {
         uploadCalls += 1
@@ -253,7 +229,6 @@ describe('child gallery upload (honest-file rule)', () => {
     let uploadCalls = 0
     server.use(
       http.get('/api/sessions/1', () => ok(detailFixture({ status: 'OPENED' }))),
-      framesHandler(),
       photosHandler('3', { photos: [] }),
       http.post('/api/sessions/1/topics/3/children/3/photos', () => {
         uploadCalls += 1
@@ -277,7 +252,6 @@ describe('child gallery upload (honest-file rule)', () => {
     let uploadCalls = 0
     server.use(
       http.get('/api/sessions/1', () => ok(detailFixture({ status: 'OPENED' }))),
-      framesHandler(),
       photosHandler('3', { photos: [] }),
       http.post('/api/sessions/1/topics/3/children/3/photos', () => {
         uploadCalls += 1
@@ -308,14 +282,14 @@ describe('child gallery topic selection', () => {
   it('shows no topic picker for a single-topic session', async () => {
     server.use(
       http.get('/api/sessions/1', () => ok(detailFixture({ status: 'OPENED' }))),
-      framesHandler(),
       photosHandler('3', { photos: [] }),
     )
     renderChild(3)
 
     await screen.findByText('Belum ada foto.')
     expect(screen.queryByRole('combobox', { name: 'Topik' })).toBeNull()
-    screen.getByRole('combobox', { name: 'Bingkai' })
+    // The frame picker lives on the camera page now, not beside the grid.
+    expect(screen.queryByRole('combobox', { name: 'Bingkai' })).toBeNull()
   })
 
   it('switches the photo scope when another topic is picked', async () => {
@@ -330,7 +304,6 @@ describe('child gallery topic selection', () => {
     })
     server.use(
       http.get('/api/sessions/1', () => ok(detail)),
-      framesHandler(),
       http.get('/api/sessions/1/topics/:stid/children/3/photos', ({ request }) => {
         lastPath = new URL(request.url).pathname
         return ok([])
@@ -357,7 +330,6 @@ describe('child gallery photo actions', () => {
     const photosRef: { photos: PhotoItem[] } = { photos: [photoItem(7)] }
     server.use(
       http.get('/api/sessions/1', () => ok(detailFixture({ status: 'OPENED' }))),
-      framesHandler(),
       photosHandler('3', photosRef),
       http.patch('/api/sessions/1/topics/3/children/3/photos/7', async ({ request }) => {
         patched = await request.json()
@@ -386,7 +358,6 @@ describe('child gallery photo actions', () => {
     const photosRef: { photos: PhotoItem[] } = { photos: [photoItem(7)] }
     server.use(
       http.get('/api/sessions/1', () => ok(detailFixture({ status: 'OPENED' }))),
-      framesHandler(),
       photosHandler('3', photosRef),
       http.delete('/api/sessions/1/topics/3/children/3/photos/7', () => {
         deleted += 1
@@ -416,7 +387,6 @@ describe('child gallery photo actions', () => {
     const photosRef: { photos: PhotoItem[] } = { photos: [photoItem(7)] }
     server.use(
       http.get('/api/sessions/1', () => ok(detailFixture({ status: 'OPENED' }))),
-      framesHandler(),
       http.get('/api/sessions/1/topics/3/children/3/photos', () => {
         photoCalls += 1
         return ok(photosRef.photos)
@@ -429,7 +399,7 @@ describe('child gallery photo actions', () => {
 
     // The copy lands new photos server-side; the refetch pulls them in.
     photosRef.photos = [photoItem(7), photoItem(8)]
-    act(() => emitSignal('copy.completed', { rev: 1 }))
+    emitSignal('copy.completed', { rev: 1 })
     await waitFor(() => expect(photoCalls).toBe(2))
     await screen.findByAltText('/uploads/photos/8.jpg')
   })

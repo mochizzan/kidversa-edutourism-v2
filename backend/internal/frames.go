@@ -152,13 +152,74 @@ func (s *Server) frameProgramIDs(ctx context.Context, c fiber.Ctx, school int64,
 	return refs, true, true
 }
 
-// RegisterFrames mounts the frame routes (F-06).
+// RegisterFrames mounts the frame routes (F-06). The master CRUD stays
+// ADMIN/SA; `/frames/options` is the read-only capture picker every
+// authenticated role needs (FAS captures photos too, F-06 "facilitator picks
+// 1 frame"). Register it before `/frames/:id` so "options" never parses as an
+// id.
 func (s *Server) RegisterFrames(api fiber.Router) {
+	api.Get("/frames/options", s.authed(), s.frameOptions)
 	api.Get("/frames", s.authed("ADMIN"), s.listFrames)
 	api.Post("/frames", s.authed("ADMIN"), s.createFrame)
 	api.Get("/frames/:id", s.authed("ADMIN"), s.getFrame)
 	api.Patch("/frames/:id", s.authed("ADMIN"), s.patchFrame)
 	api.Delete("/frames/:id", s.authed("ADMIN"), s.deleteFrame)
+}
+
+// frameOption is the narrow wire object the capture canvas needs: identity,
+// label and the overlay image. It intentionally omits program links (the
+// caller already scoped by program_id).
+type frameOption struct {
+	ID       int64  `json:"id"`
+	Name     string `json:"name"`
+	ImageURL string `json:"image_url"`
+}
+
+// frameOptions — GET /frames/options?program_id= (any authenticated role):
+// frames linked to that program, ordered by name for a stable picker. The
+// program filter is required so a capture surface can never enumerate the
+// whole school's frame library by accident.
+func (s *Server) frameOptions(c fiber.Ctx) error {
+	school, okT := requireSchool(c)
+	if !okT {
+		return nil
+	}
+	programID, found, okF := queryIDFilter(c, "program_id")
+	if !okF {
+		return nil
+	}
+	if !found {
+		return fail(c, CodeValidation, MsgValidation)
+	}
+
+	ctx, cancel := dbCtx(c)
+	defer cancel()
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT f.id, f.name, f.image_path FROM frames f
+		 WHERE f.school_id = ? AND EXISTS (
+		   SELECT 1 FROM frame_programs fp
+		   WHERE fp.frame_id = f.id AND fp.program_id = ?
+		 )
+		 ORDER BY f.name ASC, f.id ASC`, school, programID)
+	if err != nil {
+		return failDB(c, err)
+	}
+	defer rows.Close()
+
+	out := make([]frameOption, 0)
+	for rows.Next() {
+		var it frameOption
+		var imagePath string
+		if err := rows.Scan(&it.ID, &it.Name, &imagePath); err != nil {
+			return failDB(c, err)
+		}
+		it.ImageURL = "/uploads/" + imagePath
+		out = append(out, it)
+	}
+	if err := rows.Err(); err != nil {
+		return failDB(c, err)
+	}
+	return ok(c, out)
 }
 
 func (s *Server) listFrames(c fiber.Ctx) error {

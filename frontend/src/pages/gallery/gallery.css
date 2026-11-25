@@ -1,7 +1,8 @@
 /* Gallery index + child gallery.
    Two surfaces, one language: the index is a hairline table whose rows are
-   doors; the child page puts the capture tray beside the photo field. Both
-   stay on the sheet's warm-neutral palette — no new shadows, no new radii. */
+   doors; the child page is the photo field itself (capture lives on its own
+   route, see capture.css). Both stay on the sheet's warm-neutral palette —
+   no new shadows, no new radii. */
 
 /* ---------- index: the whole row is the door ---------- */
 
@@ -60,39 +61,7 @@
   transform: translateX(2px);
 }
 
-/* ---------- child page: capture tray beside the photo field ---------- */
-
-.kv-gallery-layout {
-  display: grid;
-  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
-  gap: var(--kv-space-5);
-  align-items: start;
-}
-
-.kv-gallery-capture {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  padding: var(--kv-space-3);
-  border: 1px solid var(--kv-border);
-  border-radius: var(--kv-radius-card);
-  background: var(--kv-surface);
-}
-
-.kv-gallery-capture .kv-capture {
-  border-radius: var(--kv-radius-control);
-}
-
-.kv-gallery-frame {
-  display: flex;
-  flex-direction: column;
-  gap: var(--kv-space-1);
-  margin-top: var(--kv-space-3);
-}
-
-.kv-gallery-frame .ant-select {
-  width: 100%;
-}
+/* ---------- child page: the photo field ---------- */
 
 .kv-gallery-upload-error {
   margin-top: var(--kv-space-2);
@@ -119,14 +88,4 @@
   font-size: 10px;
   font-variant-numeric: tabular-nums;
   line-height: 14px;
-}
-
-@media (max-width: 1024px) {
-  .kv-gallery-layout {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .kv-gallery-capture {
-    max-width: 460px;
-  }
 }

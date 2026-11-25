@@ -110,4 +110,31 @@ describe('breadcrumb top bar', () => {
     expect(within(nav).getByText('Aisyah Putri')).toHaveAttribute('aria-current', 'page')
     expect(within(nav).queryByRole('link', { name: 'Aisyah Putri' })).toBeNull()
   })
+
+  it('nests the camera under the child gallery', () => {
+    function NamedBar() {
+      useCrumbName('sid', 'Kunjungan SDN 3')
+      useCrumbName('cid', 'Aisyah Putri')
+      return <Breadcrumbs />
+    }
+
+    renderApp(
+      <CrumbNamesProvider>
+        <NamedBar />
+      </CrumbNamesProvider>,
+      { route: '/sessions/12/gallery/children/2/capture?stid=3' },
+    )
+    const nav = screen.getByRole('navigation', { name: 'Jejak navigasi' })
+    expect(within(nav).getByRole('link', { name: 'Galeri' })).toHaveAttribute(
+      'href',
+      '/sessions/12/gallery',
+    )
+    // Walking back keeps the camera's topic scope.
+    expect(within(nav).getByRole('link', { name: 'Aisyah Putri' })).toHaveAttribute(
+      'href',
+      '/sessions/12/gallery/children/2?stid=3',
+    )
+    expect(within(nav).getByText('Kamera')).toHaveAttribute('aria-current', 'page')
+    expect(within(nav).queryByRole('link', { name: 'Kamera' })).toBeNull()
+  })
 })

@@ -166,6 +166,89 @@ func TestFramesRouteGuards(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// frameOptions: the read-only capture picker (any authenticated role)
+// ---------------------------------------------------------------------------
+
+func TestFrameOptionsCapturePicker(t *testing.T) {
+	const optionsSQL = `SELECT f.id, f.name, f.image_path FROM frames f
+		 WHERE f.school_id = ? AND EXISTS (
+		   SELECT 1 FROM frame_programs fp
+		   WHERE fp.frame_id = f.id AND fp.program_id = ?
+		 )
+		 ORDER BY f.name ASC, f.id ASC`
+
+	t.Run("FAS reads only the selected program's frames", func(t *testing.T) {
+		s, mock := newTestServer(t)
+		app := newTestApp(t, s)
+		expectFASAuth(mock)
+		mock.ExpectQuery(q(optionsSQL)).
+			WithArgs(int64(1), int64(3)).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "name", "image_path"}).
+				AddRow(11, "Bingkai Hutan", frameRelA).
+				AddRow(12, "Bingkai Kota", frameRelB))
+
+		res := doReq(t, app, "GET", "/api/frames/options?program_id=3", "", hFAS(t, s))
+		data := requireDataEnvelope(t, res).([]any)
+		require.Len(t, data, 2)
+		require.Equal(t, map[string]any{
+			"id": float64(11), "name": "Bingkai Hutan",
+			"image_url": "/uploads/" + frameRelA,
+		}, data[0])
+		require.Equal(t, map[string]any{
+			"id": float64(12), "name": "Bingkai Kota",
+			"image_url": "/uploads/" + frameRelB,
+		}, data[1])
+	})
+
+	t.Run("program_id is required", func(t *testing.T) {
+		s, mock := newTestServer(t)
+		app := newTestApp(t, s)
+		expectFASAuth(mock) // no frame query may follow
+		requireErrEnvelope(t,
+			doReq(t, app, "GET", "/api/frames/options", "", hFAS(t, s)), CodeValidation)
+	})
+
+	t.Run("malformed program_id is VALIDATION", func(t *testing.T) {
+		s, mock := newTestServer(t)
+		app := newTestApp(t, s)
+		expectFASAuth(mock)
+		requireErrEnvelope(t,
+			doReq(t, app, "GET", "/api/frames/options?program_id=abc", "", hFAS(t, s)),
+			CodeValidation)
+	})
+
+	t.Run("empty program has an empty array, not null", func(t *testing.T) {
+		s, mock := newTestServer(t)
+		app := newTestApp(t, s)
+		expectFASAuth(mock)
+		mock.ExpectQuery(q(optionsSQL)).
+			WithArgs(int64(1), int64(9)).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "name", "image_path"}))
+		res := doReq(t, app, "GET", "/api/frames/options?program_id=9", "", hFAS(t, s))
+		require.Equal(t, []any{}, requireDataEnvelope(t, res))
+	})
+
+	t.Run("query failure is DB_UNAVAILABLE", func(t *testing.T) {
+		s, mock := newTestServer(t)
+		app := newTestApp(t, s)
+		expectFASAuth(mock)
+		mock.ExpectQuery(q(optionsSQL)).
+			WithArgs(int64(1), int64(3)).
+			WillReturnError(errors.New("connection refused"))
+		requireErrEnvelope(t,
+			doReq(t, app, "GET", "/api/frames/options?program_id=3", "", hFAS(t, s)),
+			CodeDBUnavailable)
+	})
+
+	t.Run("no token is INVALID_TOKEN", func(t *testing.T) {
+		s, _ := newTestServer(t)
+		app := newTestApp(t, s)
+		requireErrEnvelope(t,
+			doReq(t, app, "GET", "/api/frames/options?program_id=3", "", nil), CodeInvalidToken)
+	})
+}
+
+// ---------------------------------------------------------------------------
 // listFrames: default sort/paging, item shape, program/search filters
 // ---------------------------------------------------------------------------
 

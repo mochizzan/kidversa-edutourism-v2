@@ -1,0 +1,450 @@
+/* Camera studio (child gallery capture page).
+   The stage is a strict-ratio viewfinder: its width is the smaller of the
+   available column and the height-derived width, so 9:16 / 16:9 never
+   overflows and never needs letterboxing inside the canvas. The rail keeps
+   frame choice, guides, mirror switches and shutter in one column on desktop
+   and drops below the stage on narrow screens. */
+
+.kv-camera__intro.ant-typography {
+  display: block;
+  margin-bottom: var(--kv-space-3);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.kv-camera {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
+  gap: var(--kv-space-4);
+  align-items: start;
+  min-width: 0;
+}
+
+/* ---------- the viewfinder ---------- */
+
+.kv-camera__stagewrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 0;
+  height: clamp(320px, calc(100dvh - 272px), 760px);
+  container-type: size;
+}
+
+.kv-camera__stage {
+  position: relative;
+  flex: none;
+  overflow: hidden;
+  border-radius: var(--kv-radius-card);
+  background: var(--kv-text);
+  box-shadow: 0 0 0 1px var(--kv-border);
+  container-type: size;
+}
+
+/* width = min(available width, height × ratio) — the ratio is preserved by
+   construction, so the stage fits the viewport without page overflow. */
+.kv-camera__stage--portrait {
+  width: min(100cqw, calc(100cqh * 0.5625));
+  aspect-ratio: 9 / 16;
+}
+
+.kv-camera__stage--landscape {
+  width: min(100cqw, calc(100cqh * 1.7777778));
+  aspect-ratio: 16 / 9;
+}
+
+/* Cover, never contain: the live feed and the captured frame fill the stage
+   with a centre crop instead of black bars. */
+.kv-camera__video,
+.kv-camera__preview {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(var(--kv-mirror-x, 1)) scaleY(var(--kv-mirror-y, 1));
+}
+
+/* Frames keep their own proportions and are only ever scaled down. */
+.kv-camera__frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.kv-camera__grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.kv-camera__line {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.55);
+  box-shadow: 0 0 1px rgba(0, 0, 0, 0.45);
+}
+
+.kv-camera__line--v {
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  transform: translateX(-0.5px);
+}
+
+.kv-camera__line--h {
+  left: 0;
+  right: 0;
+  height: 1px;
+  transform: translateY(-0.5px);
+}
+
+.kv-camera__square {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(100cqw, 100cqh);
+  aspect-ratio: 1;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  box-shadow: 0 0 1px rgba(0, 0, 0, 0.45);
+  transform: translate(-50%, -50%);
+}
+
+.kv-camera__starting,
+.kv-camera__badge {
+  position: absolute;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #ffffff;
+  font-size: 10px;
+  line-height: 14px;
+  white-space: nowrap;
+}
+
+.kv-camera__starting {
+  bottom: var(--kv-space-4);
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.kv-camera__badge {
+  top: var(--kv-space-3);
+  left: var(--kv-space-3);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.kv-camera__denied {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  padding: var(--kv-space-4);
+  overflow-y: auto;
+  text-align: center;
+}
+
+/* `margin: auto` centres when there is room and scrolls instead of clipping
+   when a short stage cannot fit the title, hint and upload fallback. */
+.kv-camera__denied-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--kv-space-2);
+  max-width: 100%;
+  margin: auto;
+}
+
+.kv-camera__denied-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--kv-space-2);
+  margin-top: var(--kv-space-1);
+}
+
+/* Autoplay/gesture block: the stream is live, it just needs one tap. */
+.kv-camera__resume {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  padding: 10px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.62);
+  color: #ffffff;
+  font: inherit;
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+  cursor: pointer;
+  transform: translate(-50%, -50%);
+}
+
+.kv-camera__resume:hover {
+  background: rgba(0, 0, 0, 0.78);
+}
+
+.kv-camera__resume:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 2px;
+}
+
+.kv-camera__denied-icon {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 32px;
+}
+
+.kv-camera__denied-title.ant-typography {
+  color: #ffffff;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.kv-camera__denied-hint.ant-typography {
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+/* ---------- control rail ---------- */
+
+.kv-camera__rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kv-space-3);
+  min-width: 0;
+  height: clamp(320px, calc(100dvh - 272px), 760px);
+  padding-right: 2px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.kv-camera__panel {
+  padding: var(--kv-space-3);
+  border: 1px solid var(--kv-border);
+  border-radius: var(--kv-radius-card);
+  background: var(--kv-surface);
+}
+
+.kv-camera__panel .kv-card-title {
+  margin-bottom: var(--kv-space-2);
+}
+
+.kv-camera__note.ant-typography,
+.kv-camera__note {
+  display: block;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.kv-camera__hint.ant-typography {
+  display: block;
+  margin-top: var(--kv-space-2);
+  font-size: 10px;
+  line-height: 14px;
+}
+
+.kv-camera__control {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: var(--kv-space-3);
+}
+
+.kv-camera__label {
+  color: var(--kv-text-2);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 14px;
+  text-transform: uppercase;
+}
+
+.kv-camera__control .ant-segmented {
+  font-size: 10px;
+}
+
+.kv-camera__frames {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 6px;
+}
+
+.kv-camera__frame-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 4px;
+  border: 1px solid var(--kv-border);
+  border-radius: var(--kv-radius-control);
+  background: var(--kv-canvas);
+  color: var(--kv-text-2);
+  font: inherit;
+  font-size: 10px;
+  line-height: 12px;
+  cursor: pointer;
+}
+
+.kv-camera__frame-chip:hover {
+  border-color: var(--kv-olive-deep);
+}
+
+.kv-camera__frame-chip.is-selected {
+  border-color: var(--kv-olive-deep);
+  box-shadow: 0 0 0 1px var(--kv-olive-deep);
+  color: var(--kv-text);
+}
+
+.kv-camera__frame-thumb,
+.kv-camera__frame-none {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--kv-radius-control);
+  background: var(--kv-text);
+}
+
+.kv-camera__frame-thumb {
+  object-fit: contain;
+}
+
+.kv-camera__frame-none {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 24px;
+  line-height: 1;
+}
+
+.kv-camera__frame-name {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kv-camera__mirrors {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kv-space-2);
+  margin-top: var(--kv-space-3);
+  padding-top: var(--kv-space-2);
+  border-top: 1px solid var(--kv-border);
+}
+
+.kv-camera__switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--kv-space-2);
+  color: var(--kv-text);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+/* ---------- shutter / review ---------- */
+
+.kv-camera__actions {
+  display: flex;
+  justify-content: center;
+  padding-top: var(--kv-space-1);
+}
+
+.kv-camera__shutter-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.kv-camera__shutter {
+  width: 62px;
+  height: 62px;
+  border: 4px solid var(--kv-text);
+  border-radius: 50%;
+  background: var(--kv-canvas);
+  box-shadow:
+    0 0 0 4px var(--kv-canvas),
+    0 0 0 5px var(--kv-border);
+  cursor: pointer;
+  transition:
+    transform var(--kv-hover),
+    background var(--kv-hover);
+}
+
+.kv-camera__shutter:hover:not(:disabled) {
+  background: var(--kv-border);
+  transform: scale(1.04);
+}
+
+.kv-camera__shutter:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.kv-camera__shutter:focus-visible {
+  outline: 2px solid var(--kv-olive-deep);
+  outline-offset: 5px;
+}
+
+.kv-camera__shutter-label {
+  color: var(--kv-text-2);
+  font-size: 10px;
+  line-height: 14px;
+}
+
+.kv-camera__review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--kv-space-2);
+  width: 100%;
+}
+
+.kv-camera__review-actions .kv-camera__hint {
+  flex-basis: 100%;
+}
+
+/* ---------- narrow: stage above the rail ---------- */
+
+@media (max-width: 900px) {
+  .kv-camera {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .kv-camera__stagewrap {
+    height: clamp(300px, 62dvh, 560px);
+  }
+
+  .kv-camera__rail {
+    height: auto;
+    padding-right: 0;
+    overflow: visible;
+  }
+
+  .kv-camera__frames {
+    grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+  }
+}
+
+@media (max-width: 480px) {
+  .kv-camera__panel {
+    padding: var(--kv-space-2);
+  }
+
+  .kv-camera__shutter {
+    width: 56px;
+    height: 56px;
+  }
+}
